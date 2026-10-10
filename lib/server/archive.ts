@@ -10,6 +10,7 @@ export const IN_PROGRESS_FOLDER = "قيد التنفيذ";
 export const SUBFOLDERS = { brief: "01 الموجز والمحتوى", quotation: "02 عروض الأسعار", final: "03 التصاميم النهائية" } as const;
 const SUMMARY_NAME = "ملخص المشروع.pdf";
 const MAX_ATTEMPTS = 6;
+const STALLED_MESSAGE = "توقفت الأرشفة قبل اكتمالها عدة مرات. راجع حجم الملفات أو أعد المحاولة من إدارة النظام.";
 
 const clean = (value: string) => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "بدون عنوان";
 export const projectFolderName = (idea: Pick<Idea, "code" | "workType" | "title">) => clean(`${idea.code} · ${WORK_TYPE_LABELS[idea.workType]} · ${idea.title}`);
@@ -151,10 +152,20 @@ export async function enqueueArchive(q: Queryable, ideaId: string) {
   return id;
 }
 
+async function escalateStalled(q: Queryable) {
+  const stalled = (await q.query<{ id: string; idea_id: string }>(`update wasl.archive_jobs set status = 'needs_review', locked_until = null, last_error = $2, notified_failure = true, updated_at = now()
+    where status = 'running' and locked_until < now() and attempts >= $1 and not notified_failure returning id, idea_id`, [MAX_ATTEMPTS, STALLED_MESSAGE])).rows;
+  for (const job of stalled) {
+    await q.query("update wasl.ideas set archive_status = 'needs_review' where id = $1", [job.idea_id]);
+    await notifyAdmins(q, job.idea_id, "تعذّرت أرشفة عمل في Google Drive", STALLED_MESSAGE);
+  }
+}
+
 async function claim(q: Queryable, jobId?: string) {
+  await escalateStalled(q);
   const rows = await q.query<{ id: string; idea_id: string; attempts: number }>(`update wasl.archive_jobs set status = 'running', locked_until = now() + interval '5 minutes', attempts = attempts + 1, updated_at = now()
-    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $1 and" : ""} ((status in ('pending', 'failed') and next_run_at <= now()) or (status = 'running' and locked_until < now())) and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
-    returning id, idea_id, attempts`, jobId ? [jobId] : []);
+    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $2 and" : ""} ((status in ('pending', 'failed') and next_run_at <= now()) or (status = 'running' and locked_until < now() and attempts < $1)) and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
+    returning id, idea_id, attempts`, jobId ? [MAX_ATTEMPTS, jobId] : [MAX_ATTEMPTS]);
   return rows.rows[0] || null;
 }
 

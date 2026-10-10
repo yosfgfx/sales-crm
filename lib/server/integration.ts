@@ -30,12 +30,13 @@ export async function integrationStatus(request: Request) {
   const issues = (await db.query<{ idea_id: string; code: string; title: string; status: string; last_error: string | null; updated_at: Date }>(`select distinct on (j.idea_id) j.idea_id, i.code, i.title, j.status, j.last_error, j.updated_at from wasl.archive_jobs j join wasl.ideas i on i.id = j.idea_id
     where j.status in ('failed', 'needs_review') order by j.idea_id, j.updated_at desc`)).rows;
   const pending = Number((await db.query<{ n: string }>("select count(*) as n from wasl.archive_jobs where status in ('pending', 'running')")).rows[0].n);
+  const lastBackup = (await db.query<{ key: string }>("select key from wasl.job_runs where key like 'backup:%' order by key desc limit 1")).rows[0]?.key.slice("backup:".length) || null;
   return {
     ...base, canConnect: user.id === "root", canChooseFolder: true,
     accountEmail: integration?.account_email || null, connectedAt: integration?.connected_at || null,
     rootFolder: integration?.root_folder_id ? { id: integration.root_folder_id, name: integration.root_folder_name, url: `https://drive.google.com/drive/folders/${encodeURIComponent(integration.root_folder_id)}` } : null,
     lastCheckAt: integration?.last_check_at || null, lastCheckOk: integration?.last_check_ok ?? null,
-    pendingJobs: pending, issues: issues.map((issue) => ({ ideaId: issue.idea_id, code: issue.code, title: issue.title, status: issue.status, error: issue.last_error, updatedAt: issue.updated_at })),
+    pendingJobs: pending, lastBackup, issues: issues.map((issue) => ({ ideaId: issue.idea_id, code: issue.code, title: issue.title, status: issue.status, error: issue.last_error, updatedAt: issue.updated_at })),
     pickerConfigured: Boolean(process.env.GOOGLE_PICKER_API_KEY && process.env.GOOGLE_CLOUD_PROJECT_NUMBER),
   };
 }

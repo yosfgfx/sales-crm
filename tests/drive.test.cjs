@@ -91,6 +91,9 @@ test("large files upload in chunks straight into the project folder and stream b
   assert.equal(ranged.status, 206);
   assert.equal(ranged.headers.get("content-range"), `bytes 4194304-8388607/${bytes.length}`);
   assert.equal(Buffer.from(await ranged.arrayBuffer()).length, 4 * 1024 * 1024);
+  const open = await files.downloadFile(new Request(`${h.ORIGIN}/api/files/${attachment.id}`, { headers: { cookie: h.cookies.faisal, range: "bytes=0-" } }), attachment.id);
+  assert.equal(open.status, 206);
+  assert.equal(Buffer.from(await open.arrayBuffer()).length, 4 * 1024 * 1024);
 });
 
 test("delivery archives automatically into year, month and company with a summary, and says so only after success (C1, C3)", async () => {
@@ -177,10 +180,22 @@ test("the daily backup lands in the archive's backup folder on Drive (H8)", asyn
 });
 
 test("an archive job interrupted mid-run is picked up again once its lock expires (N3)", async () => {
-  await h.pg.query("update wasl.archive_jobs set status = 'running', locked_until = now() - interval '1 minute', next_run_at = now() where idea_id = 'idea-007'");
+  await h.pg.query("update wasl.archive_jobs set status = 'running', attempts = 1, locked_until = now() - interval '1 minute', next_run_at = now() where idea_id = 'idea-007'");
   await h.pg.query("update wasl.ideas set archive_status = 'running' where id = 'idea-007'");
   const [result] = await archive.runDueArchiveJobs(1);
   assert.equal(result.status, "done");
+});
+
+test("a job killed on every attempt stops after the limit and alerts administrators once", async () => {
+  await h.pg.query("update wasl.archive_jobs set status = 'running', attempts = 6, notified_failure = false, locked_until = now() - interval '1 minute', next_run_at = now() where idea_id = 'idea-007'");
+  const before = (await h.pg.query("select count(*)::int as n from wasl.notifications where type = 'archive' and idea_id = 'idea-007' and recipient_id = 'admin'")).rows[0].n;
+  assert.deepEqual(await archive.runDueArchiveJobs(1), []);
+  assert.deepEqual(await archive.runDueArchiveJobs(1), []);
+  const job = (await h.pg.query("select status::text as status from wasl.archive_jobs where idea_id = 'idea-007' order by created_at desc limit 1")).rows[0];
+  assert.equal(job.status, "needs_review");
+  assert.equal((await h.pg.query("select archive_status::text as s from wasl.ideas where id = 'idea-007'")).rows[0].s, "needs_review");
+  const after = (await h.pg.query("select count(*)::int as n from wasl.notifications where type = 'archive' and idea_id = 'idea-007' and recipient_id = 'admin'")).rows[0].n;
+  assert.equal(after - before, 1);
 });
 
 test("attachments larger than 100 MB pass validation up to 2 GB (N2)", async () => {

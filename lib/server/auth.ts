@@ -107,14 +107,23 @@ async function loginDelay(q: Queryable, keys: string[]) {
   const rows = await q.query<{ delay_until: Date | null }>("select delay_until from wasl.login_attempts where key = any($1::text[]) and delay_until > now()", [keys]);
   return rows.rows.length > 0;
 }
-async function recordFailure(q: Queryable, keys: string[]) {
+const thresholdOf = (key: string) => key.startsWith("acct:") ? 30 : 5;
+async function reserveAttempt(q: Queryable, keys: string[]) {
+  let exceeded = false;
   for (const key of keys) {
-    await q.query(`insert into wasl.login_attempts (key, failures, window_started_at) values ($1, 1, now())
+    const threshold = thresholdOf(key);
+    const failures = (await q.query<{ failures: number }>(`insert into wasl.login_attempts (key, failures, window_started_at) values ($1, 1, now())
       on conflict (key) do update set failures = case when wasl.login_attempts.window_started_at < now() - interval '${FAILURE_WINDOW_MS / 60_000} minutes' then 1 else wasl.login_attempts.failures + 1 end,
-      window_started_at = case when wasl.login_attempts.window_started_at < now() - interval '${FAILURE_WINDOW_MS / 60_000} minutes' then now() else wasl.login_attempts.window_started_at end`, [key]);
-    const threshold = key.startsWith("acct:") ? 20 : 5;
-    await q.query("update wasl.login_attempts set delay_until = now() + least(interval '15 minutes', interval '30 seconds' * power(2, failures - $2)) where key = $1 and failures >= $2", [key, threshold]);
+      window_started_at = case when wasl.login_attempts.window_started_at < now() - interval '${FAILURE_WINDOW_MS / 60_000} minutes' then now() else wasl.login_attempts.window_started_at end
+      returning failures`, [key])).rows[0].failures;
+    const cap = key.startsWith("acct:") ? "interval '5 minutes'" : "interval '15 minutes'";
+    if (failures >= threshold) await q.query(`update wasl.login_attempts set delay_until = now() + least(${cap}, interval '30 seconds' * power(2, failures - $2)) where key = $1`, [key, threshold]);
+    if (failures > threshold) exceeded = true;
   }
+  return exceeded;
+}
+async function releaseAttempt(q: Queryable, keys: string[]) {
+  await q.query("update wasl.login_attempts set failures = greatest(failures - 1, 0), delay_until = case when failures - 1 < (case when key like 'acct:%' then 30 else 5 end) then null else delay_until end where key = any($1::text[])", [keys]);
 }
 
 export async function login(request: Request): Promise<Response> {
@@ -127,25 +136,29 @@ export async function login(request: Request): Promise<Response> {
   const address = clientAddress(request);
   const keys = [`ip:${address}`, `account:${username}|ip:${address}`, `acct:${username}`];
   const q = database();
-  if (await loginDelay(q, keys)) throw new MediaServerError("محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر قليلاً ثم حاول مجدداً.", 429, "LOGIN_RATE_LIMIT");
+  const limited = () => new MediaServerError("محاولات دخول خاطئة كثيرة. انتظر قليلاً ثم حاول مجدداً.", 429, "LOGIN_RATE_LIMIT");
+  if (await loginDelay(q, keys)) throw limited();
+  if (await reserveAttempt(q, keys)) throw limited();
   const account = (await q.query<Account>(`select ${ACCOUNT_COLUMNS} from wasl.accounts where username = $1`, [username])).rows[0];
   const verified = password.length >= 1 && password.length <= 1024 && (await passwordMatches(password, account?.password_hash || UNKNOWN_ACCOUNT_HASH)) && Boolean(account);
   const member = account ? await memberById(q, account.member_id) : null;
   if (!verified || !account || !member?.active) {
-    await recordFailure(q, keys);
     throw new MediaServerError("بيانات الدخول غير صحيحة أو الحساب غير مفعّل.", 401, "INVALID_CREDENTIALS");
   }
   if (account.totp_secret_enc) {
     const code = typeof value?.code === "string" ? value.code.replace(/\s/g, "") : "";
-    if (!code) throw new MediaServerError("أدخل رمز التحقق من تطبيق المصادقة.", 401, "MFA_REQUIRED");
+    if (!code) {
+      await releaseAttempt(q, keys);
+      throw new MediaServerError("أدخل رمز التحقق من تطبيق المصادقة.", 401, "MFA_REQUIRED");
+    }
     const step = verifyCode(decryptSecret(account.totp_secret_enc), code, Date.now(), account.totp_last_step === null ? null : Number(account.totp_last_step));
     if (step === null) {
-      await recordFailure(q, keys);
       throw new MediaServerError("رمز التحقق غير صحيح أو انتهت صلاحيته.", 401, "INVALID_MFA");
     }
     await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1", [account.member_id, step]);
   }
   await q.query("delete from wasl.login_attempts where key = any($1::text[])", [[keys[1], keys[2]]]);
+  await releaseAttempt(q, [keys[0]]);
   return Response.json({ user: member, demo: false, configured: true }, { headers: { ...responseHeaders, "Set-Cookie": issueCookie(request, account, member) } });
 }
 

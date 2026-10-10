@@ -47,10 +47,10 @@ export async function runDailyBackup(q: Queryable = database(), today = riyadhDa
   const slot = Math.floor((now.getUTCHours() * 60 + now.getUTCMinutes()) / 30);
   const attempt = await q.query("insert into wasl.job_runs (key) values ($1) on conflict (key) do nothing returning key", [`backup-try:${today}:${slot}`]);
   if (!attempt.rows.length) return { ran: false, reason: "waiting" as const };
-  const backup = await backupToDrive(q, today).catch(() => null);
+  await q.query("delete from wasl.job_runs where key like 'backup-try:%' and key < $1", [`backup-try:${today}`]);
+  const backup = await backupToDrive(q, today).catch((error) => { console.error("Wasl backup failed:", error instanceof Error ? error.message : "unknown"); return null; });
   if (!backup) return { ran: true, saved: false };
   await q.query("insert into wasl.job_runs (key) values ($1) on conflict (key) do nothing", [`backup:${today}`]);
-  await q.query("delete from wasl.job_runs where key like 'backup-try:%' and key < $1", [`backup-try:${today}`]);
   return { ran: true, saved: true, backup };
 }
 
@@ -90,7 +90,7 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => (
 
 export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
   const pending = (await q.query<{ id: string; title: string; body: string; email: string | null; name: string }>(
-    "with claimed as (update wasl.notifications set emailed_at = now() where id in (select id from wasl.notifications where emailed_at is null and created_at > now() - interval '2 days' order by created_at limit $1 for update skip locked) returning id, title, body, recipient_id) select c.id, c.title, c.body, m.email, m.name from claimed c join wasl.members m on m.id = c.recipient_id", [limit])).rows;
+    "with claimed as (update wasl.notifications set email_claimed_at = now() where id in (select id from wasl.notifications where emailed_at is null and created_at > now() - interval '2 days' and (email_claimed_at is null or email_claimed_at < now() - interval '5 minutes') order by created_at limit $1 for update skip locked) returning id, title, body, recipient_id) select c.id, c.title, c.body, m.email, m.name from claimed c join wasl.members m on m.id = c.recipient_id", [limit])).rows;
   const smtp = mailer();
   let sent = 0;
   const origin = process.env.MEDIA_APP_ORIGIN || "";
@@ -103,8 +103,9 @@ export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
           html: `<div dir="rtl" style="font-family:Tahoma,Arial"><p>${escapeHtml(notice.name)}،</p><p><b>${escapeHtml(notice.title)}</b></p><p>${escapeHtml(notice.body)}</p>${origin ? `<p><a href="${escapeHtml(origin)}">فتح نظام وصل</a></p>` : ""}</div>`,
         });
         sent++;
-      } catch { await q.query("update wasl.notifications set emailed_at = null where id = $1", [notice.id]); }
+      } catch { await q.query("update wasl.notifications set email_claimed_at = null where id = $1", [notice.id]); continue; }
     }
+    await q.query("update wasl.notifications set emailed_at = now() where id = $1", [notice.id]);
   }
   return { sent, pending: pending.length };
 }
@@ -112,7 +113,8 @@ export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
 export async function runBackgroundWork(force = false) {
   if (!force && Date.now() - lastRun < 60_000) return null;
   lastRun = Date.now();
-  const results = { archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), backup: await runDailyBackup().catch(() => null), email: await sendPendingEmails().catch(() => null) };
+  const email = await sendPendingEmails().catch(() => null);
+  const results = { email, archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), backup: await runDailyBackup().catch(() => null) };
   return results;
 }
 

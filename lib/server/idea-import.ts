@@ -8,7 +8,7 @@ import { database, type Queryable } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, readJson } from "./http";
 import { loadReference, nextIdeaCode, persistIdea } from "./repository";
 
-const FILE_LIMIT = 5 * 1024 * 1024;
+const FILE_LIMIT = 4 * 1024 * 1024;
 type Options = { companyId: string; categoryId: string; dueDays: number; ownerMap: Record<string, string>; defaultOwnerId: string };
 
 async function tableFrom(file: File): Promise<string[][]> {
@@ -77,7 +77,7 @@ async function parseRequest(request: Request) {
   const form = await new Response(await limitedBody(request, FILE_LIMIT + 64 * 1024) as BodyInit, { headers: { "Content-Type": contentType } }).formData();
   const file = form.get("file");
   if (!(file instanceof File) || !file.size) throw new MediaServerError("اختر ملف CSV أو Excel.");
-  if (file.size > FILE_LIMIT) throw new MediaServerError("حجم ملف الأفكار أكبر من ٥ ميجابايت.", 413, "FILE_TOO_LARGE");
+  if (file.size > FILE_LIMIT) throw new MediaServerError("حجم ملف الأفكار أكبر من ٤ ميجابايت.", 413, "FILE_TOO_LARGE");
   let options: Partial<Options> = {};
   try { options = JSON.parse(String(form.get("options") || "{}")); } catch { throw new MediaServerError("إعدادات الاستيراد غير صالحة."); }
   return { file, options, mode: form.get("mode") === "apply" ? "apply" as const : "preview" as const };

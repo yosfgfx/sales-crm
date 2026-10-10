@@ -131,7 +131,7 @@ export function removeMediaAttachment(data: MediaData, actor: TeamMember, ideaId
   if (!file) throw new WorkflowError("المرفق غير موجود.");
   if (file.kind === "final") assertDesign(data, actor, idea); else assertEditable(data, actor, idea);
   if (idea.quotations.some((quote) => quote.attachmentId === attachmentId)) throw new WorkflowError("احذف عرض السعر المرتبط أولاً قبل إزالة المرفق.");
-  return commitIdea(data, actor, idea, { ...idea, attachments: idea.attachments.filter((item) => item.id !== attachmentId) }, "attachment_removed", `تم حذف المرفق: ${file.name}`, ctx);
+  return commitIdea(data, actor, idea, { ...idea, attachments: idea.attachments.filter((item) => item.id !== attachmentId) }, "attachment_removed", file.kind === "quotation" ? "تم حذف ملف عرض سعر" : `تم حذف المرفق: ${file.name}`, ctx);
 }
 export function addMediaQuotation(data: MediaData, actor: TeamMember, ideaId: string, quote: Quotation, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);

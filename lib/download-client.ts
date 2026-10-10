@@ -17,15 +17,27 @@ async function fetchRange(url: string, start: number, end: number) {
   }
 }
 
-export async function downloadInChunks(url: string, name: string, size: number, onProgress?: (received: number, total: number) => void) {
+export const needsChunks = (url: string, size: number) => size > DIRECT_DOWNLOAD_LIMIT && url.startsWith("/api/files/");
+
+export async function fetchInChunks(url: string, size: number, type = "", onProgress?: (received: number, total: number) => void) {
   const parts: Blob[] = [];
   for (let start = 0; start < size; start += CHUNK) {
     const end = Math.min(start + CHUNK, size) - 1;
     parts.push(await fetchRange(url, start, end));
     onProgress?.(end + 1, size);
   }
+  return new Blob(parts, { type });
+}
+
+export async function fetchAttachment(file: { url: string; size: number; mime?: string }) {
+  if (needsChunks(file.url, file.size)) return new Response(await fetchInChunks(file.url.replace(/[?&]inline=1\b/, ""), file.size, file.mime), { headers: { "Content-Type": file.mime || "application/octet-stream" } });
+  return fetch(file.url);
+}
+
+export async function downloadInChunks(url: string, name: string, size: number, onProgress?: (received: number, total: number) => void) {
+  const blob = await fetchInChunks(url, size, "", onProgress);
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob(parts));
+  link.href = URL.createObjectURL(blob);
   link.download = name;
   link.rel = "noopener";
   document.body.append(link);

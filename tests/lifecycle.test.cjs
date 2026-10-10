@@ -119,6 +119,11 @@ test("email stays off unless enabled, and pending notices are marked so they nev
   assert.equal(result.sent, 0);
   const left = (await h.pg.query("select count(*)::int as n from wasl.notifications where emailed_at is null and created_at > now() - interval '2 days'")).rows[0].n;
   assert.equal(left, 0);
+  await h.pg.query("update wasl.notifications set emailed_at = null, email_claimed_at = now() - interval '1 minute' where id = (select id from wasl.notifications order by created_at desc limit 1)");
+  await h.pg.query("update wasl.notifications set created_at = now() where id = (select id from wasl.notifications order by created_at desc limit 1)");
+  assert.equal((await scheduler.sendPendingEmails(h.database, 500)).pending, 0);
+  await h.pg.query("update wasl.notifications set email_claimed_at = now() - interval '10 minutes' where emailed_at is null");
+  assert.equal((await scheduler.sendPendingEmails(h.database, 500)).pending, 1);
 });
 
 test("old closed ideas arrive trimmed in the overview and load in full when opened", async () => {

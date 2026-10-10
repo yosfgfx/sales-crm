@@ -106,25 +106,35 @@ export async function downloadFile(request: Request, id: string): Promise<Respon
   const headers = { ...responseHeaders, "Content-Type": inline ? String(row.inline_mime) : "application/octet-stream", "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="attachment"; filename*=UTF-8''${name}`, "Content-Security-Policy": "sandbox; default-src 'none'", "Cross-Origin-Resource-Policy": "same-origin" };
   const range = requestedRange(request.headers.get("range"));
   if (row.storage === "drive") {
-    const upstream = await streamFile(String(row.drive_file_id), db, range ? `bytes=${range.start}-${range.end ?? ""}` : undefined);
+    const upstreamRange = range ? ("suffix" in range ? `bytes=-${range.suffix}` : `bytes=${range.start}-${range.end}`) : undefined;
+    const upstream = await streamFile(String(row.drive_file_id), db, upstreamRange).catch((error) => {
+      if (error instanceof MediaServerError && error.status === 416) return null;
+      throw error;
+    });
+    if (!upstream) return new Response(null, { status: 416, headers });
     const length = upstream.headers.get("content-length");
     const contentRange = upstream.status === 206 ? upstream.headers.get("content-range") : null;
     return new Response(upstream.body, { status: contentRange ? 206 : 200, headers: { ...headers, "Accept-Ranges": "bytes", ...(length ? { "Content-Length": length } : {}), ...(contentRange ? { "Content-Range": contentRange } : {}) } });
   }
   const bytes = await readBlob(String(row.storage), String(row.local_path));
   if (range) {
-    if (range.start >= bytes.length) return new Response(null, { status: 416, headers: { ...headers, "Content-Range": `bytes */${bytes.length}` } });
-    const end = Math.min(range.end ?? bytes.length - 1, bytes.length - 1);
-    const part = bytes.subarray(range.start, end + 1);
-    return new Response(part as BodyInit, { status: 206, headers: { ...headers, "Accept-Ranges": "bytes", "Content-Length": String(part.length), "Content-Range": `bytes ${range.start}-${end}/${bytes.length}` } });
+    const start = "suffix" in range ? Math.max(bytes.length - range.suffix, 0) : range.start;
+    if (start >= bytes.length) return new Response(null, { status: 416, headers: { ...headers, "Content-Range": `bytes */${bytes.length}` } });
+    const end = "suffix" in range ? bytes.length - 1 : Math.min(range.end, bytes.length - 1);
+    const part = bytes.subarray(start, end + 1);
+    return new Response(part as BodyInit, { status: 206, headers: { ...headers, "Accept-Ranges": "bytes", "Content-Length": String(part.length), "Content-Range": `bytes ${start}-${end}/${bytes.length}` } });
   }
   return new Response(bytes as BodyInit, { headers: { ...headers, "Accept-Ranges": "bytes", "Content-Length": String(bytes.length) } });
 }
 
-function requestedRange(header: string | null) {
+const RANGE_LIMIT = 4 * 1024 * 1024;
+
+function requestedRange(header: string | null): { start: number; end: number } | { suffix: number } | null {
+  const suffix = header?.match(/^bytes=-(\d{1,15})$/);
+  if (suffix) return Number(suffix[1]) > 0 ? { suffix: Math.min(Number(suffix[1]), RANGE_LIMIT) } : null;
   const match = header?.match(/^bytes=(\d{1,15})-(\d{0,15})$/);
   if (!match) return null;
   const start = Number(match[1]);
-  const end = match[2] ? Number(match[2]) : undefined;
-  return end !== undefined && end < start ? null : { start, end };
+  const end = Math.min(match[2] ? Number(match[2]) : Infinity, start + RANGE_LIMIT - 1);
+  return end < start ? null : { start, end };
 }

@@ -9,7 +9,7 @@ interface Issue { ideaId: string; code: string; title: string; status: string; e
 interface Status {
   connected: boolean; folderSelected: boolean; canConnect?: boolean; accountEmail?: string | null; connectedAt?: string | null;
   rootFolder?: { id: string; name: string | null; url: string } | null; lastCheckAt?: string | null; lastCheckOk?: boolean | null;
-  pendingJobs?: number; issues?: Issue[]; pickerConfigured?: boolean;
+  pendingJobs?: number; lastBackup?: string | null; issues?: Issue[]; pickerConfigured?: boolean;
 }
 type PickerResult = { action: string; docs?: { id: string; name: string }[] };
 type PickerBuilder = { addView(view: unknown): PickerBuilder; setOAuthToken(token: string): PickerBuilder; setDeveloperKey(key: string): PickerBuilder; setAppId(id: string): PickerBuilder; setLocale(locale: string): PickerBuilder; setTitle(title: string): PickerBuilder; setCallback(callback: (result: PickerResult) => void): PickerBuilder; build(): { setVisible(visible: boolean): void } };
@@ -36,6 +36,8 @@ function loadPicker() {
 }
 
 const STATUS_TEXT: Record<string, string> = { failed: "ستُعاد المحاولة تلقائياً", needs_review: "تحتاج مراجعتك" };
+
+const backupLate = (date?: string | null) => !date || Date.now() - Date.parse(`${date}T00:00:00+03:00`) > 2 * 86_400_000;
 
 export default function DriveIntegration({ notice }: { notice?: string }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -128,6 +130,12 @@ export default function DriveIntegration({ notice }: { notice?: string }) {
       <div className="rounded-xl border border-[var(--border)] p-5 space-y-3">
         <h3 className="!text-base">حالة الأرشفة</h3>
         <p className="text-sm text-[var(--soft)]">أعمال بانتظار الأرشفة: {status.pendingJobs ?? 0}</p>
+        {status.folderSelected && (
+          <p className={`text-sm ${backupLate(status.lastBackup) ? "text-[var(--danger)]" : "text-[var(--soft)]"}`}>
+            آخر نسخة احتياطية: {status.lastBackup ? formatMediaDate(status.lastBackup) : "لم تُحفظ بعد"}
+            {backupLate(status.lastBackup) && " · متأخرة، راجع ربط Drive ومفتاح التشفير على الخادم"}
+          </p>
+        )}
         {status.issues?.length ? (
           <ul className="space-y-2">
             {status.issues.map((issue) => (

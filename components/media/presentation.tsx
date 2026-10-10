@@ -10,6 +10,7 @@ import {
 } from "@/lib/media-exports";
 import { ActionButton, Icon, errorText } from "@/components/media/ui";
 import { CompanyLogo } from "@/components/media/company-logo";
+import { useAttachmentSrc } from "@/components/media/use-attachment-src";
 
 export function PresentationPreview({
   idea,
@@ -24,6 +25,7 @@ export function PresentationPreview({
   const [error, setError] = useState("");
   const current = Math.min(index, slides.length - 1);
   const slide = slides[current];
+  const slideImage = useAttachmentSrc(slide?.attachment?.mime.startsWith("image/") ? slide.attachment : undefined);
 
   async function download(kind: "pptx" | "zip") {
     setBusy(kind);
@@ -103,14 +105,14 @@ export function PresentationPreview({
               </p>
             ))}
           </div>
-          {slide.attachment?.mime.startsWith("image/") && (
+          {slide.attachment?.mime.startsWith("image/") && slideImage && (
             <Asset
               type="image"
               width={5}
               height={2}
               fit="contain"
               sizes="(max-width: 640px) 90vw, 400px"
-              src={slide.attachment.url}
+              src={slideImage}
               alt={slide.attachment.name}
               className="rounded-lg bg-white"
             />

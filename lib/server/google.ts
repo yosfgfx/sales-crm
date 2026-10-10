@@ -72,6 +72,7 @@ async function driveError(response: Response) {
   let reason = "";
   try { reason = ((await response.json()) as { error?: { errors?: { reason?: string }[] } }).error?.errors?.[0]?.reason || ""; } catch { /* Third-party bodies are not shown. */ }
   if (reason === "storageQuotaExceeded") return new DriveError("مساحة Google Drive ممتلئة. يجب على مالك النظام توفير مساحة إضافية.", 507, "DRIVE_STORAGE_QUOTA");
+  if (response.status === 416) return new DriveError("النطاق المطلوب خارج حجم الملف.", 416, "RANGE_NOT_SATISFIABLE");
   if (response.status === 404) return new DriveError("لم يُعثر على الملف أو المجلد في Google Drive. ربما حُذف أو نُقل.", 404, "DRIVE_NOT_FOUND");
   if (response.status === 403) return new DriveError("لا يملك النظام صلاحية على هذا العنصر في Google Drive.", 403, "DRIVE_FORBIDDEN");
   if (response.status === 401) { forgetAccessToken(); return new DriveError("انتهت جلسة Google Drive. أعد المحاولة.", 502, "DRIVE_AUTH_FAILED"); }

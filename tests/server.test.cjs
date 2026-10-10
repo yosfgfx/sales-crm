@@ -159,6 +159,13 @@ test("a forged X-Forwarded-For header cannot dodge the throttle, and one account
   const forged = (n) => new Request(`${ORIGIN}/api/session`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, "x-nf-client-connection-ip": "192.0.2.50", "x-forwarded-for": `10.9.9.${n}` }, body: JSON.stringify({ username: "sara", password: "wrong-password" }) });
   for (let n = 0; n < 5; n++) await assert.rejects(auth.login(forged(n)), expectStatus(401));
   await assert.rejects(auth.login(forged(99)), expectStatus(429));
-  for (let n = 0; n < 20; n++) await signIn("manager", "wrong-password", `198.18.0.${n}`).catch(() => undefined);
+  for (let n = 0; n < 30; n++) await signIn("manager", "wrong-password", `198.18.0.${n}`).catch(() => undefined);
   await assert.rejects(signIn("manager", undefined, "198.18.1.1"), expectStatus(429));
+});
+
+test("a burst of parallel guesses gets no more tries than the limit", async () => {
+  const results = await Promise.allSettled(Array.from({ length: 15 }, () => signIn("omar", "wrong-password", "203.0.113.77")));
+  const statuses = results.map((result) => result.status === "rejected" ? result.reason.status : 200);
+  assert.equal(statuses.filter((status) => status === 401).length, 5);
+  assert.equal(statuses.filter((status) => status === 429).length, 10);
 });

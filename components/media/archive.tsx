@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Asset from "@/components/_ui/asset";
-import { WORK_TYPE_LABELS, type MediaData } from "@/data/media";
+import { WORK_TYPE_LABELS, type Attachment, type MediaData } from "@/data/media";
+import { useAttachmentSrc } from "./use-attachment-src";
 import { CompanyLogo } from "./company-logo";
 import {
   ActionButton,
@@ -119,14 +120,7 @@ export default function Archive({
                       className="relative !flex aspect-[16/9] h-auto w-full !rounded-none !bg-[#e8eaf3] !p-0 !shadow-none"
                     >
                       {file?.mime.startsWith("image/") ? (
-                        <Asset
-                          type="image"
-                          width={16}
-                          height={9}
-                          sizes="(max-width: 768px) 100vw, 33vw"
-                          alt={`معاينة ${idea.title}`}
-                          src={file.url}
-                        />
+                        <ArchivePreview file={file} alt={`معاينة ${idea.title}`} />
                       ) : (
                         <div className="flex flex-col items-center gap-3 text-[var(--soft)]">
                           <Icon
@@ -205,4 +199,9 @@ export default function Archive({
       )}
     </>
   );
+}
+
+function ArchivePreview({ file, alt }: { file: Attachment; alt: string }) {
+  const src = useAttachmentSrc(file);
+  return src ? <Asset type="image" width={16} height={9} sizes="(max-width: 768px) 100vw, 33vw" alt={alt} src={src} /> : null;
 }

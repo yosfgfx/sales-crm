@@ -9,6 +9,7 @@ import {
 } from "@/data/media";
 import type PptxGenJS from "pptxgenjs";
 import { companyBrand } from "@/lib/company-branding";
+import { fetchAttachment } from "@/lib/download-client";
 
 export const REPORT_COLORS = [
   "#5146d8",
@@ -1134,7 +1135,7 @@ export async function createApprovalBundle(
   for (const [index, attachment] of idea.attachments.entries()) {
     let response: Response;
     try {
-      response = await fetch(attachment.url);
+      response = await fetchAttachment(attachment);
     } catch {
       throw new Error(
         `تعذر تحميل المرفق «${attachment.name}». لم تُصدر حزمة ناقصة.`,

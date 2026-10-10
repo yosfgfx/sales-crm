@@ -2,7 +2,7 @@
 
 import { useState, type MouseEvent, type ReactNode } from "react";
 import type { Attachment } from "@/data/media";
-import { DIRECT_DOWNLOAD_LIMIT, downloadInChunks } from "@/lib/download-client";
+import { downloadInChunks, needsChunks } from "@/lib/download-client";
 import { useMediaStore } from "@/stores/media-store";
 import { errorText } from "./ui";
 
@@ -10,7 +10,7 @@ type Props = { file: Pick<Attachment, "name" | "size" | "url">; className?: stri
 
 export default function AttachmentLink({ file, className, download, label, children }: Props) {
   const [percent, setPercent] = useState<number | null>(null);
-  const large = file.size > DIRECT_DOWNLOAD_LIMIT;
+  const large = needsChunks(file.url, file.size);
   const href = large ? file.url.replace(/[?&]inline=1\b/, "") : file.url;
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!large) return;
