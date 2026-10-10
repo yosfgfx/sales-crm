@@ -11,9 +11,8 @@
     "to:avif": "node scripts/to-avif.mjs",
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
-    "test:server": "node scripts/test-media-server.cjs",
-    "test:accounts": "node scripts/test-media-accounts.cjs",
-    "verify": "tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:accounts && npm run test:db && next build",
+    "test:server": "node --test tests/server.test.cjs",
+    "verify": "tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:db && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs"
   },

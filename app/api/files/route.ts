@@ -1,4 +1,5 @@
-import { apiError, responseHeaders, uploadFiles } from "@/lib/media-server";
+import { uploadFiles } from "@/lib/server/files";
+import { apiError, responseHeaders } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 

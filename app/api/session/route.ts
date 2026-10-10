@@ -1,4 +1,5 @@
-import { apiError, currentSession, login, logout, responseHeaders } from "@/lib/media-server";
+import { currentSession, login, logout } from "@/lib/server/auth";
+import { apiError, responseHeaders } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 

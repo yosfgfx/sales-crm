@@ -1,4 +1,5 @@
-import { apiError, downloadFile } from "@/lib/media-server";
+import { downloadFile } from "@/lib/server/files";
+import { apiError } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 

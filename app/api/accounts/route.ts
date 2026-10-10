@@ -1,4 +1,5 @@
-import { apiError, mutateAccounts, readAccounts, responseHeaders } from "@/lib/media-server";
+import { mutateAccounts, readAccounts } from "@/lib/server/auth";
+import { apiError, responseHeaders } from "@/lib/server/http";
 
 export const runtime = "nodejs";
 

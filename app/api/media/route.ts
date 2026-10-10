@@ -1,11 +1,9 @@
-import { apiError, readMediaState, requireUser, responseHeaders, saveMediaState } from "@/lib/media-server";
+import { requireUser } from "@/lib/server/auth";
+import { apiError, responseHeaders } from "@/lib/server/http";
+import { loadStateFor } from "@/lib/server/state";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  try { const state = await readMediaState(); await requireUser(request, state); return Response.json(state, { headers: responseHeaders }); } catch (error) { return apiError(error); }
-}
-
-export async function POST(request: Request) {
-  try { return Response.json(await saveMediaState(request), { headers: responseHeaders }); } catch (error) { return apiError(error); }
+  try { return Response.json(await loadStateFor(await requireUser(request)), { headers: responseHeaders }); } catch (error) { return apiError(error); }
 }
