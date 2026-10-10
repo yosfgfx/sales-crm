@@ -15,6 +15,7 @@ import {
 } from "@/components/_ui/command";
 import { CommandCompanyRow, CommandTableHeader } from "./command-table";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import PlusIcon from "@/public/assets/images/_common/plus.svg";
 
 export default function CommandMenu() {
@@ -25,8 +26,12 @@ export default function CommandMenu() {
   const setNewCompanyOpen = useCompaniesStore(
     (state) => state.setNewCompanyOpen,
   );
+  const setNewCampaignOpen = useCompaniesStore(
+    (state) => state.setNewCampaignOpen,
+  );
   const [query, setQuery] = useState("");
   const actionRan = useRef(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -53,8 +58,8 @@ export default function CommandMenu() {
     <CommandDialog
       open={open}
       onOpenChange={setOpen}
-      title="Search"
-      description="Search companies by name, owner, segment or stage"
+      title={t.commandMenu.title}
+      description={t.commandMenu.description}
       className="max-w-[960px]"
       onCloseAutoFocus={(event) => {
         if (actionRan.current) event.preventDefault();
@@ -66,12 +71,14 @@ export default function CommandMenu() {
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search companies, owners, stages…"
+          placeholder={t.commandMenu.placeholder}
           trailing={<Kbd>Esc</Kbd>}
         />
         <CommandTableHeader />
         <CommandList>
-          <CommandEmpty>No results for “{query}”</CommandEmpty>
+          <CommandEmpty>
+            {t.commandMenu.noResults.replace("{query}", query)}
+          </CommandEmpty>
           <CommandGroup>
             {companies.map((company) => (
               <CommandCompanyRow
@@ -82,16 +89,45 @@ export default function CommandMenu() {
             ))}
           </CommandGroup>
           <CommandSeparator />
-          <CommandGroup heading="Actions">
+          <CommandGroup heading={t.commandMenu.actions}>
             <CommandItem
               value="new-company"
-              keywords={["New Company", "Add", "Create"]}
+              keywords={[
+                "New Company",
+                "New Department",
+                "Add",
+                "Create",
+                "شركة جديدة",
+                "إدارة جديدة",
+                "شركة أو إدارة",
+                "طلب جديد",
+                "إضافة",
+                "إنشاء",
+              ]}
               onSelect={() => run(() => setNewCompanyOpen(true))}
             >
               <span className="bg-muted flex size-6 shrink-0 items-center justify-center rounded-md shadow-[0px_0px_0px_1px_#232323]">
                 <PlusIcon aria-hidden className="text-soft size-3" />
               </span>
-              New Company
+              {t.commandMenu.newCompanyAction}
+            </CommandItem>
+            <CommandItem
+              value="new-campaign"
+              keywords={[
+                "New Campaign",
+                "New Creative",
+                "Media Coverage",
+                "حملة جديدة",
+                "فكرة إبداعية",
+                "تغطية إعلامية",
+                "مشروع تصميم",
+              ]}
+              onSelect={() => run(() => setNewCampaignOpen(true))}
+            >
+              <span className="bg-primary/20 text-primary flex size-6 shrink-0 items-center justify-center rounded-md">
+                <PlusIcon aria-hidden className="size-3" />
+              </span>
+              {t.campaigns.newCampaign}
             </CommandItem>
           </CommandGroup>
         </CommandList>
@@ -99,11 +135,11 @@ export default function CommandMenu() {
           <span className="flex items-center gap-1.5">
             <Kbd>↑</Kbd>
             <Kbd>↓</Kbd>
-            Navigate
+            {t.common.navigate}
           </span>
           <span className="flex items-center gap-1.5">
             <Kbd>↵</Kbd>
-            Open
+            {t.common.open}
           </span>
         </CommandFooter>
       </Command>

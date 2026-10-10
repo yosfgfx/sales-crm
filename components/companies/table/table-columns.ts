@@ -1,26 +1,26 @@
 export const TABLE_COLUMNS = [
-  { key: "name", label: "Companies", className: "justify-start" },
-  { key: "segment", label: "Segment & Stage", className: "justify-start" },
-  { key: "owner", label: "Account Owner", className: "justify-start" },
+  { key: "name", label: "Company / Dept", className: "justify-start" },
+  { key: "segment", label: "Classification & Stage", className: "justify-start" },
+  { key: "owner", label: "Creative Lead", className: "justify-start" },
   {
     key: "openDeals",
-    label: "Open Deals",
+    label: "Active Campaigns",
     className: "justify-end tabular-nums",
   },
   {
     key: "pipelineValue",
-    label: "Pipeline Value",
+    label: "Production Budget",
     className: "justify-end tabular-nums",
   },
   {
     key: "winProbability",
-    label: "Win Probability",
+    label: "Completion Progress",
     className: "justify-end tabular-nums",
   },
   { key: "trend", label: "Activity Trend", className: "justify-center" },
   {
     key: "lastInteraction",
-    label: "Last Interaction",
+    label: "Last Request",
     className: "justify-start",
   },
   { key: "action", label: "Action", className: "justify-center" },

@@ -64,14 +64,14 @@ export function filterCompanies(
 export function companiesCsvRows(companies: Company[]) {
   return [
     [
-      "Company",
-      "Segment & Stage",
-      "Account Owner",
-      "Open Deals",
-      "Pipeline Value",
-      "Win Probability (%)",
-      "Last Interaction Date",
-      "Last Interaction",
+      "Company / Department",
+      "Classification & Stage",
+      "Creative Lead",
+      "Active Campaigns",
+      "Production Budget",
+      "Completion Progress (%)",
+      "Last Request Date",
+      "Last Request",
     ],
     ...companies.map((company) => [
       company.name,

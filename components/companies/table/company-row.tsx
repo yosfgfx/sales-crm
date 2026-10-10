@@ -11,6 +11,7 @@ import Sparkline from "@/components/_common/sparkline";
 import { TAG_TONES, ownerByName, type Company } from "@/data/companies";
 import { formatDate, formatMoney, splitTags } from "@/lib/companies";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 import {
   TABLE_CELL_CLASS,
   TABLE_ROW_CLASS,
@@ -47,6 +48,8 @@ export default function CompanyRow({
 }: CompanyRowProps) {
   const owner = ownerByName(company.owner);
   const { visible, hidden } = splitTags(company.tags);
+  const { t, translateTag, translateInteraction, formatDateLocale } =
+    useTranslation();
 
   return (
     <TableRow
@@ -64,7 +67,7 @@ export default function CompanyRow({
             checked={selected}
             onCheckedChange={onToggle}
             onClick={stop}
-            aria-label={`Select ${company.name}`}
+            aria-label={t.table.selectCompany.replace("{name}", company.name)}
           />
           {company.name}
         </span>
@@ -73,7 +76,7 @@ export default function CompanyRow({
         <span className="flex items-center gap-[3px]">
           {visible.map((tag) => (
             <Tag key={tag} tone={TAG_TONES[tag]}>
-              {tag}
+              {translateTag(tag)}
             </Tag>
           ))}
           {hidden > 0 && (
@@ -88,7 +91,7 @@ export default function CompanyRow({
           variant="ghost"
           size="none"
           onClick={onOpenOwner}
-          aria-label={`Open ${owner.name} profile`}
+          aria-label={t.table.openOwnerProfile.replace("{name}", owner.name)}
           className="text-foreground -mx-1.5 gap-1.5 px-1.5 py-1 font-normal"
         >
           <Avatar src={owner.avatar} alt="" />
@@ -107,7 +110,7 @@ export default function CompanyRow({
       <TableCell role="cell" className={cellClass("winProbability")}>
         <span className="flex items-center gap-2">
           <SegmentBar percent={company.winProbability} className="w-[74px]" />
-          <span className="w-[4ch] text-right">{company.winProbability}%</span>
+          <span className="w-[4ch] text-end">{company.winProbability}%</span>
         </span>
       </TableCell>
       <TableCell role="cell" className={cellClass("trend")}>
@@ -120,10 +123,10 @@ export default function CompanyRow({
             className="text-foreground size-3.5 shrink-0"
           />
           <span className="tabular-nums">
-            {formatDate(company.lastInteraction.date)}
+            {formatDateLocale(company.lastInteraction.date)}
           </span>
           <span aria-hidden className="mx-[3px] h-2 w-px bg-white/15" />
-          {company.lastInteraction.label}
+          {translateInteraction(company.lastInteraction.label)}
         </span>
       </TableCell>
       <TableCell role="cell" className={cellClass("action")} onClick={stop}>
@@ -131,7 +134,7 @@ export default function CompanyRow({
           variant="ghost"
           size="icon-sm"
           className={cn("text-foreground", active && "bg-white/6")}
-          aria-label={`Open ${company.name} details`}
+          aria-label={t.table.openCompanyDetails.replace("{name}", company.name)}
           onClick={onOpen}
         >
           <DotsIcon aria-hidden className="size-3" />

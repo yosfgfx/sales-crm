@@ -36,6 +36,7 @@ import {
 } from "@/lib/companies";
 import { cn } from "@/lib/utils";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import FilterIcon from "@/public/assets/images/_common/filter.svg";
 import XIcon from "@/public/assets/images/companies/detail/x.svg";
 
@@ -57,6 +58,7 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
     (state) => state.setActivityWindow,
   );
   const resetFilters = useCompaniesStore((state) => state.resetFilters);
+  const { t, translateSort, translateTag } = useTranslation();
 
   const filters = { sortBy, owner, stage, activityWindow };
   const activeCount = activeFilterCount(filters);
@@ -67,6 +69,26 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
     [companies, sortBy, owner, stage, activityWindow],
   );
 
+  const sortOptions = SORT_MENU_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: translateSort(opt.value as SortKey),
+  }));
+
+  const ownerOptions = OWNER_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: opt.value === "all" ? t.toolbar.allOwners : opt.label,
+  }));
+
+  const stageOptions = STAGE_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: opt.value === "any" ? t.toolbar.anyStage : translateTag(opt.value),
+  }));
+
+  const activityOptions = ACTIVITY_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: t.toolbar.daysAgo.replace("{days}", opt.value),
+  }));
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <Button
@@ -74,28 +96,28 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
         size="sm"
         onClick={() => setOpen(true)}
         aria-label={
-          activeCount > 0 ? `Filters, ${activeCount} active` : "Filters"
+          activeCount > 0 ? `${t.toolbar.filters}, ${activeCount} ${t.toolbar.filtersActive}` : t.toolbar.filters
         }
         className={cn("data-[active=true]:bg-muted", className)}
         data-active={activeCount > 0}
       >
         <FilterIcon aria-hidden className="size-3" />
-        Filters
+        {t.toolbar.filters}
         {activeCount > 0 && <CountBadge>{activeCount}</CountBadge>}
       </Button>
 
       <SheetContent side="bottom">
         <SheetHeader className="px-4">
-          <SheetTitle>Filters</SheetTitle>
+          <SheetTitle>{t.toolbar.filters}</SheetTitle>
           <SheetDescription className="sr-only">
-            Sort and filter the companies table
+            {t.toolbar.filters}
           </SheetDescription>
           <SheetClose asChild>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="-mr-1"
-              aria-label="Close filters"
+              className="-me-1"
+              aria-label={t.common.close}
             >
               <XIcon aria-hidden className="text-foreground size-4" />
             </Button>
@@ -104,7 +126,7 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
 
         <ScrollArea viewportClassName="max-h-[calc(85dvh-118px)]">
           <div className="flex flex-col gap-4 p-4">
-            <Field label="Sort by" htmlFor="mobile-sort">
+            <Field label={t.toolbar.sortBy} htmlFor="mobile-sort">
               <Select
                 value={sortBy}
                 onValueChange={(value) => setSortBy(value as SortKey)}
@@ -113,7 +135,7 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SORT_MENU_OPTIONS.map((option) => (
+                  {sortOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -122,13 +144,13 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
               </Select>
             </Field>
 
-            <Field label="Account owner" htmlFor="mobile-owner">
+            <Field label={t.table.accountOwner} htmlFor="mobile-owner">
               <Select value={owner} onValueChange={setOwner}>
                 <SelectTrigger id="mobile-owner">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {OWNER_OPTIONS.map((option) => (
+                  {ownerOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.value === ALL_OWNERS ? (
                         option.label
@@ -147,13 +169,13 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
               </Select>
             </Field>
 
-            <Field label="Stage" htmlFor="mobile-stage">
+            <Field label={t.toolbar.stage} htmlFor="mobile-stage">
               <Select value={stage} onValueChange={setStage}>
                 <SelectTrigger id="mobile-stage">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STAGE_OPTIONS.map((option) => (
+                  {stageOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -162,7 +184,7 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
               </Select>
             </Field>
 
-            <Field label="Last activity" htmlFor="mobile-activity">
+            <Field label={t.toolbar.lastActivity} htmlFor="mobile-activity">
               <Select
                 value={String(activityWindow)}
                 onValueChange={(value) => setActivityWindow(Number(value))}
@@ -171,7 +193,7 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ACTIVITY_OPTIONS.map((option) => (
+                  {activityOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -188,13 +210,15 @@ export default function MobileFilters({ className }: MobileFiltersProps) {
             size="sm"
             onClick={resetFilters}
             disabled={activeCount === 0 && sortBy === "pipelineValue"}
-            className="-ml-1.5"
+            className="-ms-1.5"
           >
-            Reset
+            {t.common.reset}
           </Button>
           <SheetClose asChild>
             <Button variant="primary" size="sm">
-              Show {resultCount} {resultCount === 1 ? "company" : "companies"}
+              {resultCount === 1
+                ? t.toolbar.showCompany.replace("{count}", String(resultCount))
+                : t.toolbar.showCompanies.replace("{count}", String(resultCount))}
             </Button>
           </SheetClose>
         </SheetFooter>

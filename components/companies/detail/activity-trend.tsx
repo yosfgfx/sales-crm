@@ -1,7 +1,10 @@
+"use client";
+
 import type { ComponentType, SVGProps } from "react";
 import Sparkline from "@/components/_common/sparkline";
 import type { Company } from "@/data/companies";
 import { companyActivity } from "@/lib/companies";
+import { useTranslation } from "@/hooks/use-translation";
 import CursorClickIcon from "@/public/assets/images/companies/detail/cursor-click.svg";
 import MailIcon from "@/public/assets/images/companies/detail/mail-03.svg";
 import CalendarIcon from "@/public/assets/images/companies/detail/calendar.svg";
@@ -19,22 +22,26 @@ type Stat = {
 
 export default function ActivityTrend({ company }: ActivityTrendProps) {
   const activity = companyActivity(company);
+  const { t } = useTranslation();
+
   const stats: Stat[] = [
-    { icon: CursorClickIcon, label: "Total touches", value: activity.touches },
-    { icon: MailIcon, label: "Emails", value: activity.emails },
-    { icon: CalendarIcon, label: "Meetings", value: activity.meetings },
-    { icon: PhoneCallIcon, label: "Calls & notes", value: activity.calls },
+    { icon: CursorClickIcon, label: t.companyDetail.totalTouches, value: activity.touches },
+    { icon: MailIcon, label: t.companyDetail.emails, value: activity.emails },
+    { icon: CalendarIcon, label: t.companyDetail.meetings, value: activity.meetings },
+    { icon: PhoneCallIcon, label: t.companyDetail.callsAndNotes, value: activity.calls },
   ];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-[3px]">
-          <span className="block text-[24px] leading-none">{activity.total}</span>
+          <span className="font-display block text-[24px] leading-none font-medium">
+            {activity.total}
+          </span>
           <Sparkline values={company.trend} className="h-[22px]" />
         </div>
         <span className="caption-style block text-soft">
-          Spikes around QBR prep and renewal review
+          {t.companyDetail.trendNote}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

@@ -9,6 +9,7 @@ import {
 } from "react";
 import Asset from "@/components/_ui/asset";
 import Button from "@/components/_ui/button";
+import { useTranslation } from "@/hooks/use-translation";
 import { cn } from "@/lib/utils";
 import BuildingIcon from "@/public/assets/images/companies/sidebar/building.svg";
 
@@ -30,15 +31,16 @@ export default function LogoUpload({
   const hintId = useId();
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const { t } = useTranslation();
 
   function readFile(file: File | undefined) {
     if (!file) return;
     if (!ACCEPTED.includes(file.type)) {
-      setError("Use a PNG, JPG, WebP or SVG image.");
+      setError(t.newCompany.logoErrorFormat);
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("Keep the image under 2 MB.");
+      setError(t.newCompany.logoErrorSize);
       return;
     }
     const reader = new FileReader();
@@ -99,7 +101,7 @@ export default function LogoUpload({
             onClick={() => inputRef.current?.click()}
             aria-describedby={hintId}
           >
-            {value ? "Replace logo" : "Upload logo"}
+            {value ? t.newCompany.replaceLogo : t.newCompany.uploadLogo}
           </Button>
           {value && (
             <Button
@@ -110,7 +112,7 @@ export default function LogoUpload({
                 onChange(null);
               }}
             >
-              Remove
+              {t.newCompany.removeLogo}
             </Button>
           )}
         </div>
@@ -122,8 +124,7 @@ export default function LogoUpload({
             error ? "text-danger" : "text-subtle",
           )}
         >
-          {error ??
-            "PNG, JPG, WebP or SVG up to 2 MB. You can also drop a file here."}
+          {error ?? t.newCompany.logoHelp}
         </span>
       </div>
 

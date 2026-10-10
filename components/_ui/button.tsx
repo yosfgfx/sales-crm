@@ -18,7 +18,7 @@ export const buttonVariants = cva(
           "bg-[#232323] text-foreground shadow-[0px_0px_0px_1px_#333333] hover:bg-muted",
         ghost: "text-subtle hover:bg-white/6 hover:text-foreground",
         nav: "w-full justify-start rounded-lg text-sidebar-foreground hover:text-foreground data-[active=true]:bg-sidebar-primary data-[active=true]:text-foreground data-[active=true]:shadow-[0px_0px_0px_1px_rgba(0,0,0,0.4),inset_0px_1px_0px_0px_rgba(255,255,255,0.1),inset_0px_0px_0px_1px_rgba(255,255,255,0.06)]",
-        item: "w-full items-start justify-start gap-3 rounded-lg text-left font-normal whitespace-normal text-foreground hover:bg-white/4",
+        item: "w-full items-start justify-start gap-3 rounded-lg text-start font-normal whitespace-normal text-foreground hover:bg-white/4",
         link: "rounded-none text-foreground underline decoration-from-font underline-offset-2 hover:text-soft",
       },
       size: {

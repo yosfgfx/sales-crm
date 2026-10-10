@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
-export const SITE_NAME = "Sales CRM";
+export const SITE_NAME = "وصْل | مساحة التواصل الداخلي";
 export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://example.com";
-export const SITE_DESCRIPTION = "Company pipeline for the sales team.";
+  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+export const SITE_DESCRIPTION =
+  "مساحة عمل فريق التواصل الداخلي لإدارة الأفكار والاعتمادات والتصميم والأرشفة والتقارير الشهرية.";
 export const DEFAULT_OG_IMAGE = "/opengraph-image.jpg";
 
 export function absoluteUrl(path: string) {
@@ -28,7 +29,7 @@ export type SiteRoute = {
 export const SITE_ROUTES: SiteRoute[] = [
   {
     path: "/",
-    title: "Companies",
+    title: "مساحة التواصل الداخلي",
     description: SITE_DESCRIPTION,
     changeFrequency: "weekly",
     priority: 1,
@@ -53,9 +54,10 @@ export function pageMetadata({
   return {
     title,
     description,
+    robots: { index: false, follow: false },
     alternates: { canonical: url },
     openGraph: {
-      locale: "en",
+      locale: "ar_SA",
       type: "website",
       url,
       siteName: SITE_NAME,

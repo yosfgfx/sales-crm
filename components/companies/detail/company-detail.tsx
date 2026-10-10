@@ -27,21 +27,31 @@ import {
   ownerByName,
 } from "@/data/companies";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import BuildingIcon from "@/public/assets/images/companies/detail/building.svg";
 import XIcon from "@/public/assets/images/companies/detail/x.svg";
 import MailIcon from "@/public/assets/images/companies/detail/mail-04.svg";
 import PhoneIcon from "@/public/assets/images/companies/detail/phone.svg";
 
-const WINDOW_OPTIONS = TREND_WINDOWS.map((label) => ({ value: label, label }));
-
 export default function CompanyDetail() {
   const detailId = useCompaniesStore((state) => state.detailId);
   const detailOpen = useCompaniesStore((state) => state.detailOpen);
   const companies = useCompaniesStore((state) => state.companies);
+  const campaigns = useCompaniesStore((state) => state.campaigns);
+  const openCampaignDetail = useCompaniesStore(
+    (state) => state.openCampaignDetail,
+  );
   const closeDetail = useCompaniesStore((state) => state.closeDetail);
   const openProfile = useCompaniesStore((state) => state.openProfile);
   const [trendWindow, setTrendWindow] = useState(TREND_WINDOWS[1]);
   const [scoreWindow, setScoreWindow] = useState(TREND_WINDOWS[1]);
+  const { t, isRtl, translateTag, translateTrendWindow, formatMoneyLocale } =
+    useTranslation();
+
+  const windowOptions = TREND_WINDOWS.map((label) => ({
+    value: label,
+    label: translateTrendWindow(label),
+  }));
 
   const company = companies.find((item) => item.id === detailId);
   const owner = company ? ownerByName(company.owner) : null;
@@ -51,21 +61,24 @@ export default function CompanyDetail() {
       open={detailOpen && company !== undefined}
       onOpenChange={(open) => !open && closeDetail()}
     >
-      <SheetContent side="right" className="sm:w-[560px] sm:max-w-[560px]">
+      <SheetContent
+        side={isRtl ? "left" : "right"}
+        className="sm:w-[560px] sm:max-w-[560px]"
+      >
         <SheetHeader>
           <div className="flex items-center gap-2">
             <BuildingIcon aria-hidden className="text-icon size-3.5" />
-            <SheetTitle>Companies Detail</SheetTitle>
+            <SheetTitle>{t.companyDetail.title}</SheetTitle>
           </div>
           <SheetDescription className="sr-only">
-            Account summary, pipeline health, activity and score cards
+            {t.companyDetail.description}
           </SheetDescription>
           <SheetClose asChild>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="-mr-1"
-              aria-label="Close details"
+              className="-me-1"
+              aria-label={t.common.close}
             >
               <XIcon aria-hidden className="text-foreground size-4" />
             </Button>
@@ -97,14 +110,14 @@ export default function CompanyDetail() {
                 <div className="flex flex-wrap items-center gap-[3px]">
                   {company.tags.map((tag) => (
                     <Tag key={tag} tone={TAG_TONES[tag]} size="sm">
-                      {tag}
+                      {translateTag(tag)}
                     </Tag>
                   ))}
                 </div>
               </div>
             </div>
 
-            <DetailSection title="Account summary">
+            <DetailSection title={t.companyDetail.accountSummary}>
               <div className="lead-style flex flex-wrap items-center gap-x-4 gap-y-3">
                 <Button
                   variant="ghost"
@@ -127,16 +140,52 @@ export default function CompanyDetail() {
               </div>
             </DetailSection>
 
-            <DetailSection title="Pipeline health">
+            <DetailSection title={t.companyDetail.pipelineHealth}>
               <PipelineHealth company={company} />
             </DetailSection>
 
+            {(() => {
+              const entityCampaigns = campaigns.filter(
+                (c) =>
+                  c.entityId === company.id ||
+                  company.name.includes(c.entityName) ||
+                  c.entityName.includes(company.name.slice(0, 10)),
+              );
+              if (entityCampaigns.length === 0) return null;
+              return (
+                <DetailSection title="الحملات والمشاريع الإبداعية المعتمدة">
+                  <div className="flex flex-col gap-2">
+                    {entityCampaigns.map((camp) => (
+                      <div
+                        key={camp.id}
+                        onClick={() => openCampaignDetail(camp.id)}
+                        className="flex cursor-pointer flex-col gap-1.5 rounded-lg border border-[#2e2e2e] bg-[#202020] p-3 hover:border-primary/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground">
+                            {camp.title}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-400">
+                            {formatMoneyLocale(camp.totalBudget)} ر.س
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-subtle">
+                          <span>المسؤول: {camp.creativeLead}</span>
+                          <span>{camp.progress}% إنجاز</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </DetailSection>
+              );
+            })()}
+
             <DetailSection
-              title="Activity trend"
+              title={t.companyDetail.activityTrend}
               action={
                 <FilterMenu
                   value={trendWindow}
-                  options={WINDOW_OPTIONS}
+                  options={windowOptions}
                   onChange={setTrendWindow}
                   align="end"
                 />
@@ -146,12 +195,12 @@ export default function CompanyDetail() {
             </DetailSection>
 
             <DetailSection
-              title="Score card"
+              title={t.companyDetail.scoreCard}
               className="gap-3 shadow-none"
               action={
                 <FilterMenu
                   value={scoreWindow}
-                  options={WINDOW_OPTIONS}
+                  options={windowOptions}
                   onChange={setScoreWindow}
                   align="end"
                   className="shadow-[0px_4px_4px_0px_rgba(15,15,15,0.24),0px_0px_0px_1px_#393939]"
@@ -169,16 +218,16 @@ export default function CompanyDetail() {
 
         <SheetFooter>
           <Button variant="link" size="none" href="#" className="lead-style">
-            Need help? Ask us.
+            {t.companyDetail.needHelp}
           </Button>
           <div className="flex items-center gap-2">
             <SheetClose asChild>
               <Button variant="subtle" size="sm">
-                Cancel
+                {t.common.cancel}
               </Button>
             </SheetClose>
             <Button variant="primary" size="sm" onClick={closeDetail}>
-              Save Update
+              {t.common.saveUpdate}
             </Button>
           </div>
         </SheetFooter>

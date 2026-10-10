@@ -1,37 +1,62 @@
-# Kargul Starter
+# وصْل — مساحة فريق التواصل الداخلي
 
-Next.js 16 + React 19 + Tailwind CSS 4 boilerplate. Read `CONVENTIONS.md` before writing any component, section, or page — it is the whole spec for how this repo is built.
+نظام عربي لإدارة العمل بين فريق المحتوى والتنسيق، مدير الإدارة، وفريق التصميم. يجمع الفكرة والنص وخطة التنفيذ وعروض الأسعار والاعتماد والجدولة والمخرجات النهائية في سجل واحد قابل للبحث.
 
-## Getting started
+## ما يتضمنه النظام
 
-```bash
-npm install
+- أفكار مرتبطة بالشركة وإدارة الطلب والتصنيف وقنوات النشر، مع إرفاق ملفات متعددة.
+- مراجعة المدير، ملاحظات واضحة، تعديل الفكرة وإعادة إرسالها، ثم ترحيل الأفكار المعتمدة إلى التصميم.
+- جدولة التصميم ومتابعة حالاته، مع نسخة نهائية لكل قناة مطلوبة: الشاشات 16:9، واتساب 9:16، والبريد الداخلي.
+- عرض اعتماد PowerPoint يُجهّز من أحدث بيانات الفكرة، وحزمة ZIP تحفظ العرض وجميع المرفقات الأصلية.
+- تقرير شهري عمودي A4، وملفات Excel وCSV، محسوبة من تاريخ التسليم الفعلي بتوقيت الرياض.
+- أرشيف قابل للبحث وإدارة الشركات والتصنيفات والفريق والشعار بواسطة مسؤول النظام.
+- حساب مالك النظام `root` بصلاحية المدير الأعلى، وإنشاء عدة مديري نظام، وتعديل الأسماء وأسماء الدخول والأدوار وكلمات المرور من لوحة الفريق والصلاحيات.
+- مقترحات مستوردة من ملف الأفكار مع حفظ مقدم الفكرة والنص الأصلي، وإمكانية تصفيتها بحسب صاحبها.
+- ربط اختياري مع Google Drive لعرض المجلد وأرشفة النسخ النهائية الفعلية، بعد إعداد حساب الخدمة ومجلد بصلاحيات مناسبة. لا يحتاج التشغيل المحلي إلى هذا الربط.
+
+## التشغيل المحلي
+
+استخدم إصدار Node يدعمه Next.js المثبّت، ثم نفّذ:
+
+```sh
+npm ci
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+افتح [التطبيق المحلي](http://localhost:3000). في بيئة التطوير، عندما لا تُضبط حسابات الفريق، يعرض النظام وضعاً تجريبياً واضحاً مع بيانات عينة وإمكانية تبديل الأدوار.
 
-| Script                 | What it does                                                       |
-| ---------------------- | ------------------------------------------------------------------ |
-| `npm run dev`          | Start the dev server                                               |
-| `npm run build`        | Production build                                                   |
-| `npm run start`        | Serve the production build                                         |
-| `npm run lint`         | ESLint                                                             |
-| `npm run to:avif`      | Convert an image to AVIF and report its inline cost — rule 11      |
-| `npm run extract:avif` | Pull the first frame of every `.webm` under `public/` as a poster  |
-| `npm run frame:rive`   | Render a still from a `.riv` file for use as its poster            |
+## تشغيل نسخة العمل
 
-## First things to set on a new project
+يحفظ الخادم البيانات والمرفقات والحسابات المحمية في `.media-data` افتراضياً؛ يمكن تغيير الموقع عبر `MEDIA_DATA_DIR` إلى مجلد دائم على خادم Node واحد. يُهيّأ حساب `root` مرة واحدة بأداة الإعداد الموثقة في دليل الخادم، ثم تُدار بقية الحسابات وكلمات المرور من لوحة «الفريق والصلاحيات». تُحفظ تجزئات كلمات المرور ومفتاح الجلسات في تخزين خاص ولا تعيدها واجهات التطبيق. خذ نسخاً احتياطية من المجلد كاملاً، واستخدم مجلد بيانات جديداً لنسخة العمل الجديدة حتى لا تنتقل بيانات التجربة إليها.
 
-1. **`lib/seo.ts`** — `SITE_NAME`, `SITE_URL`, `SITE_DESCRIPTION`, `SITE_ROUTES`. Everything in `app/robots.ts`, `app/sitemap.ts`, `app/llms.txt/route.ts` and every page's metadata derives from these (rule 18). Set `NEXT_PUBLIC_SITE_URL` in the environment to override the URL per deploy.
-2. **`app/globals.css`** — match the `@layer base` type scale and the `--padding-section-*` tokens to the design before building anything (rules 1 and 3).
-3. **`app/opengraph-image.jpg`** — 1200×630, with an `opengraph-image.alt.txt` beside it.
-4. **Fonts** — `app/layout.tsx` ships Inter + a local Inter Display; swap them for the design's typeface.
+بعد تفعيل `root` يصبح الدخول بكلمة مرور إلزامياً، حتى عند وجود إعداد عرض تجريبي. تظل إعدادات `MEDIA_AUTH_USERS` و`MEDIA_SESSION_SECRET` مدعومة للحسابات القديمة قبل الانتقال إلى إدارة الحسابات. يحتوي [دليل إعداد الخادم](docs/internal-comms-server.md) على الإعداد الأول، وحدود الملفات والتخزين، وربط Google Drive. يحتاج رفع الملفات إلى Drive إلى صلاحية الكتابة في المجلد؛ لا يعرض النظام اتصالاً ناجحاً أو أرشفة مكتملة دون استجابة ناجحة من Google.
 
-## Docs
+```sh
+npm run build
+npm run start
+```
 
-| File               | What's in it                                                        |
-| ------------------ | ------------------------------------------------------------------- |
-| `CONVENTIONS.md`   | The build rules. Read first.                                        |
-| `AGENTS.md`        | Next.js version notes for agents                                    |
-| `OPTIMIZATION.md`  | Why `Asset`'s Rive loading is gated behind LCP, with the measurements |
+## التحقق
+
+```sh
+npm run lint
+npx tsc --noEmit
+npm run test:workflow
+npm run test:server
+npm run test:accounts
+```
+
+تتحقق اختبارات سير العمل من الاعتماد والتعديلات والصلاحيات والجدولة والتسليم. تتحقق اختبارات الخادم من الحفظ الدائم، تعارض التعديلات، الجلسات، وحماية المرفقات. تعمل على بيانات أو مجلدات معزولة. اختبار الاتصال الفعلي مع Google Drive يحتاج إعداد حساب الخدمة ومجلد اختبار مناسب.
+
+## البنية
+
+يستخدم التطبيق Next.js App Router وReact وTailwind CSS، مع واجهة عربية من اليمين إلى اليسار. توجد واجهات العمل في `components/media/`، وتعريفات البيانات في `data/media.ts`، وقواعد الحالات والصلاحيات في `lib/media-workflow.ts`. تحفظ `lib/media-server.ts` البيانات والمرفقات على الخادم وتتحقق من الجلسة والدور قبل كل تغيير، مع كتابة ذرية ورقم نسخة لمنع فقدان تعديل متزامن.
+
+توجد واجهات الخادم في `app/api/`. تنشئ `lib/media-exports.ts` التقارير والعروض وملفات التصدير، وتُحمّل مكتبات التصدير عند الحاجة. تحفظ النسخة الأصلية من مكتبة PowerPoint الخاصة بالمتصفح وترخيصها داخل `public/vendor/`.
+
+## المراجع
+
+- [إعداد الخادم وحسابات الفريق وGoogle Drive](docs/internal-comms-server.md).
+- [مرجع تصميم التقرير وتعريف الإحصاءات](docs/report-reference.md).
+- [استيراد المقترحات وحفظ الإسناد والمصدر](docs/proposal-import.md).
+- [تعليمات المستودع ونسخة Next.js](AGENTS.md). اقرأ الأدلة الملائمة في `node_modules/next/dist/docs/` قبل تعديل الواجهات أو استخدام واجهات Next.js.

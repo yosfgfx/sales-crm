@@ -17,10 +17,13 @@ import ProfileAccount from "./profile-account";
 import { CURRENT_USER, profileByName } from "@/data/companies";
 import { ALL_OWNERS, formatMoney } from "@/lib/companies";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import UsersIcon from "@/public/assets/images/companies/sidebar/users.svg";
 import XIcon from "@/public/assets/images/companies/detail/x.svg";
 import MailIcon from "@/public/assets/images/companies/detail/mail-04.svg";
 import PhoneIcon from "@/public/assets/images/companies/detail/phone.svg";
+import GlobeIcon from "@/public/assets/images/_common/globe.svg";
+import WhatsAppIcon from "@/public/assets/images/_common/whatsapp.svg";
 
 export default function Profile() {
   const profileName = useCompaniesStore((state) => state.profileName);
@@ -29,6 +32,7 @@ export default function Profile() {
   const closeProfile = useCompaniesStore((state) => state.closeProfile);
   const openDetail = useCompaniesStore((state) => state.openDetail);
   const setOwner = useCompaniesStore((state) => state.setOwner);
+  const { t, isRtl } = useTranslation();
 
   const person = profileName ? profileByName(profileName) : null;
   const isCurrentUser = person?.name === CURRENT_USER.name;
@@ -51,10 +55,10 @@ export default function Profile() {
     : 0;
 
   const stats = [
-    { label: "Accounts", value: String(accounts.length) },
-    { label: "Open deals", value: String(openDeals) },
-    { label: "Pipeline", value: `$${formatMoney(pipeline)}` },
-    { label: "Avg. win", value: `${avgWin}%` },
+    { label: t.profile.statsAccounts, value: String(accounts.length) },
+    { label: t.profile.statsOpenDeals, value: String(openDeals) },
+    { label: t.profile.statsPipeline, value: `$${formatMoney(pipeline)}` },
+    { label: t.profile.statsAvgWin, value: `${avgWin}%` },
   ];
 
   function showAccounts() {
@@ -67,21 +71,26 @@ export default function Profile() {
       open={profileOpen && person !== null}
       onOpenChange={(open) => !open && closeProfile()}
     >
-      <SheetContent side="right" className="sm:w-[480px] sm:max-w-[480px]">
+      <SheetContent
+        side={isRtl ? "left" : "right"}
+        className="sm:w-[480px] sm:max-w-[480px]"
+      >
         <SheetHeader>
           <div className="flex items-center gap-2">
             <UsersIcon aria-hidden className="text-icon size-3.5" />
-            <SheetTitle>{isCurrentUser ? "My Profile" : "Owner Profile"}</SheetTitle>
+            <SheetTitle>
+              {isCurrentUser ? t.profile.myProfile : t.profile.ownerProfile}
+            </SheetTitle>
           </div>
           <SheetDescription className="sr-only">
-            Contact details, pipeline summary and assigned accounts
+            {t.profile.description}
           </SheetDescription>
           <SheetClose asChild>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="-mr-1"
-              aria-label="Close profile"
+              className="-me-1"
+              aria-label={t.common.close}
             >
               <XIcon aria-hidden className="text-foreground size-4" />
             </Button>
@@ -104,15 +113,33 @@ export default function Profile() {
               </div>
             </div>
 
-            <DetailSection title="Contact">
+            <DetailSection title={t.profile.contact}>
               <div className="lead-style flex flex-wrap items-center gap-x-4 gap-y-3">
-                <a
-                  href={`mailto:${person.email}`}
-                  className="hover:text-soft ease-power3-in-out flex items-center gap-1 transition-colors duration-150"
-                >
-                  <MailIcon aria-hidden className="text-soft size-3" />
-                  {person.email}
-                </a>
+                {person.website && (
+                  <a
+                    href={`https://${person.website.replace(/^https?:\/\//, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-soft ease-power3-in-out flex items-center gap-1.5 font-medium text-blue-400 transition-colors duration-150 hover:underline"
+                  >
+                    <GlobeIcon aria-hidden className="size-3.5 text-blue-400" />
+                    {person.website}
+                  </a>
+                )}
+                {person.whatsapp && (
+                  <a
+                    href={`https://wa.me/966${person.whatsapp.replace(/^0+/, "").replace(/[^\d]/g, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-soft ease-power3-in-out flex items-center gap-1.5 font-medium text-emerald-400 transition-colors duration-150 hover:underline"
+                  >
+                    <WhatsAppIcon aria-hidden className="size-3.5 text-emerald-400" />
+                    <span>{person.whatsapp}</span>
+                    <span className="caption-style bg-emerald-500/10 text-emerald-400 rounded px-1.5 py-0.2 text-[10px]">
+                      WhatsApp
+                    </span>
+                  </a>
+                )}
                 <a
                   href={`tel:${person.phone.replace(/[^\d+]/g, "")}`}
                   className="hover:text-soft ease-power3-in-out flex items-center gap-1 transition-colors duration-150"
@@ -120,10 +147,17 @@ export default function Profile() {
                   <PhoneIcon aria-hidden className="text-soft size-3" />
                   {person.phone}
                 </a>
+                <a
+                  href={`mailto:${person.email}`}
+                  className="hover:text-soft ease-power3-in-out flex items-center gap-1 transition-colors duration-150"
+                >
+                  <MailIcon aria-hidden className="text-soft size-3" />
+                  {person.email}
+                </a>
               </div>
             </DetailSection>
 
-            <DetailSection title={isCurrentUser ? "Team pipeline" : "Pipeline"}>
+            <DetailSection title={isCurrentUser ? t.profile.teamPipeline : t.profile.pipeline}>
               <div className="grid grid-cols-2 gap-2">
                 {stats.map((stat) => (
                   <div
@@ -142,7 +176,7 @@ export default function Profile() {
             </DetailSection>
 
             <DetailSection
-              title={isCurrentUser ? "Team accounts" : "Accounts"}
+              title={isCurrentUser ? t.profile.teamAccounts : t.profile.accounts}
               className="shadow-none"
             >
               {accounts.length > 0 ? (
@@ -157,7 +191,7 @@ export default function Profile() {
                 </ul>
               ) : (
                 <span className="caption-style text-subtle block">
-                  No accounts assigned yet.
+                  {t.profile.noAccounts}
                 </span>
               )}
             </DetailSection>
@@ -167,7 +201,7 @@ export default function Profile() {
         <SheetFooter>
           <SheetClose asChild>
             <Button variant="subtle" size="sm">
-              Close
+              {t.common.close}
             </Button>
           </SheetClose>
           <Button
@@ -176,7 +210,7 @@ export default function Profile() {
             onClick={showAccounts}
             disabled={accounts.length === 0}
           >
-            {isCurrentUser ? "Show all accounts" : "Filter table by owner"}
+            {isCurrentUser ? t.profile.showAllAccounts : t.profile.filterTableByOwner}
           </Button>
         </SheetFooter>
       </SheetContent>

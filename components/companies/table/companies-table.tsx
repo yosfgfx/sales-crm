@@ -21,6 +21,7 @@ import {
 import { filterCompanies } from "@/lib/companies";
 import { cn } from "@/lib/utils";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 
 export default function CompaniesTable() {
   const companies = useCompaniesStore((state) => state.companies);
@@ -35,6 +36,19 @@ export default function CompaniesTable() {
   const setSelected = useCompaniesStore((state) => state.setSelected);
   const openDetail = useCompaniesStore((state) => state.openDetail);
   const openProfile = useCompaniesStore((state) => state.openProfile);
+  const { t } = useTranslation();
+
+  const columnLabels: Record<string, string> = {
+    name: t.table.company,
+    segment: t.table.segmentAndStage,
+    owner: t.table.accountOwner,
+    openDeals: t.table.openDeals,
+    pipelineValue: t.table.pipelineValue,
+    winProbability: t.table.winProbability,
+    trend: t.table.activityTrend,
+    lastInteraction: t.table.lastInteraction,
+    action: t.table.action,
+  };
 
   const visible = useMemo(
     () => filterCompanies(companies, { sortBy, owner, stage, activityWindow }),
@@ -75,12 +89,12 @@ export default function CompaniesTable() {
                               : false
                         }
                         onCheckedChange={toggleAll}
-                        aria-label="Select all companies"
+                        aria-label={t.table.selectAll}
                       />
-                      {column.label}
+                      {columnLabels[column.key] ?? column.label}
                     </span>
                   ) : (
-                    column.label
+                    columnLabels[column.key] ?? column.label
                   )}
                 </TableHead>
               ))}
@@ -104,7 +118,7 @@ export default function CompaniesTable() {
                   role="cell"
                   className="caption-style text-muted-foreground col-span-full flex h-[120px] items-center justify-center"
                 >
-                  No companies match the current filters.
+                  {t.table.noCompaniesMatch}
                 </td>
               </TableRow>
             )}

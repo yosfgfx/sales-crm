@@ -3,6 +3,7 @@ import Button from "@/components/_ui/button";
 import SegmentBar from "@/components/_common/segment-bar";
 import type { Company } from "@/data/companies";
 import { formatMoney } from "@/lib/companies";
+import { useTranslation } from "@/hooks/use-translation";
 
 type ProfileAccountProps = {
   company: Company;
@@ -10,13 +11,15 @@ type ProfileAccountProps = {
 };
 
 export default function ProfileAccount({ company, onOpen }: ProfileAccountProps) {
+  const { t, translateTag } = useTranslation();
+
   return (
     <li>
       <Button
         variant="item"
         size="md"
         onClick={onOpen}
-        aria-label={`Open ${company.name} details`}
+        aria-label={t.table.openCompanyDetails.replace("{name}", company.name)}
         className="items-center px-2 py-2"
       >
         <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-lg shadow-[0px_0px_0px_1px_#232323]">
@@ -39,7 +42,7 @@ export default function ProfileAccount({ company, onOpen }: ProfileAccountProps)
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate">{company.name}</span>
           <span className="caption-style text-subtle truncate">
-            {company.openDeals} open deals · {company.tags.join(", ")}
+            {company.openDeals} {t.table.openDeals} · {company.tags.map(translateTag).join(", ")}
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1.5 tabular-nums">

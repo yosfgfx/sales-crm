@@ -9,7 +9,10 @@
     "lint": "eslint",
     "extract:avif": "bash scripts/extract_webm_frames.sh",
     "to:avif": "node scripts/to-avif.mjs",
-    "frame:rive": "node scripts/rive-frame.mjs"
+    "frame:rive": "node scripts/rive-frame.mjs",
+    "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
+    "test:server": "node scripts/test-media-server.cjs",
+    "test:accounts": "node scripts/test-media-accounts.cjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.31.0",
@@ -18,10 +21,13 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "cn": "^0.3.0",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.2",
     "lottie-react": "^2.4.1",
     "motion": "^12.23.22",
     "next": "^16.3.0",
     "photoswipe": "^5.4.4",
+    "pptxgenjs": "^4.0.1",
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -44,5 +50,13 @@
     "tailwindcss": "^4",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5"
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "^2.0.4"
+    },
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

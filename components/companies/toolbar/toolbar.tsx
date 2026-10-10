@@ -13,6 +13,7 @@ import type { SortKey } from "@/data/companies";
 import { TODAY, companiesCsvRows, filterCompanies } from "@/lib/companies";
 import { downloadCsv } from "@/lib/csv";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import ShareIcon from "@/public/assets/images/companies/toolbar/share.svg";
 import PlusIcon from "@/public/assets/images/_common/plus.svg";
 
@@ -30,6 +31,27 @@ export default function CompaniesToolbar() {
   const setNewCompanyOpen = useCompaniesStore(
     (state) => state.setNewCompanyOpen,
   );
+  const { t, translateSort, translateTag } = useTranslation();
+
+  const sortOptions = SORT_MENU_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: translateSort(opt.value as SortKey),
+  }));
+
+  const ownerOptions = OWNER_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: opt.value === "all" ? t.toolbar.allOwners : opt.label,
+  }));
+
+  const stageOptions = STAGE_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: opt.value === "any" ? t.toolbar.anyStage : translateTag(opt.value),
+  }));
+
+  const activityOptions = ACTIVITY_OPTIONS.map((opt) => ({
+    value: opt.value,
+    label: t.toolbar.daysAgo.replace("{days}", opt.value),
+  }));
 
   function exportCsv() {
     const { companies } = useCompaniesStore.getState();
@@ -48,27 +70,27 @@ export default function CompaniesToolbar() {
 
       <div className="hidden min-w-0 flex-wrap gap-2 sm:flex">
         <FilterMenu
-          label="Sort by"
+          label={t.toolbar.sortBy}
           value={sortBy}
-          options={SORT_MENU_OPTIONS}
+          options={sortOptions}
           onChange={(value) => setSortBy(value as SortKey)}
         />
         <FilterMenu
-          label="Filter"
+          label={t.toolbar.filter}
           value={owner}
-          options={OWNER_OPTIONS}
+          options={ownerOptions}
           onChange={setOwner}
         />
         <FilterMenu
-          label="Stage"
+          label={t.toolbar.stage}
           value={stage}
-          options={STAGE_OPTIONS}
+          options={stageOptions}
           onChange={setStage}
         />
         <FilterMenu
-          label="Last Activity"
+          label={t.toolbar.lastActivity}
           value={String(activityWindow)}
-          options={ACTIVITY_OPTIONS}
+          options={activityOptions}
           onChange={(value) => setActivityWindow(Number(value))}
         />
       </div>
@@ -76,7 +98,7 @@ export default function CompaniesToolbar() {
       <div className="flex shrink-0 items-center gap-1">
         <Button variant="secondary" size="sm" onClick={exportCsv}>
           <ShareIcon aria-hidden className="size-3" />
-          Export
+          {t.common.export}
         </Button>
         <Button
           variant="primary"
@@ -84,7 +106,7 @@ export default function CompaniesToolbar() {
           onClick={() => setNewCompanyOpen(true)}
         >
           <PlusIcon aria-hidden className="size-3" />
-          New Company
+          {t.common.newCompany}
         </Button>
       </div>
     </div>

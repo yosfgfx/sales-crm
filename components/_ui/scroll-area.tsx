@@ -3,6 +3,7 @@
 import type { ComponentProps } from "react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
+import { useLocaleStore } from "@/stores/locale-store";
 
 type ScrollAreaProps = ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   orientation?: "vertical" | "horizontal" | "both";
@@ -15,14 +16,19 @@ function ScrollArea({
   orientation = "vertical",
   type = "hover",
   scrollHideDelay = 600,
+  dir,
   children,
   ...props
 }: ScrollAreaProps) {
+  const storeDir = useLocaleStore((state) => state.dir);
+  const resolvedDir = dir ?? storeDir;
+
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
       type={type}
       scrollHideDelay={scrollHideDelay}
+      dir={resolvedDir}
       className={cn("relative overflow-hidden", className)}
       {...props}
     >

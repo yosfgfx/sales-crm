@@ -3,11 +3,20 @@
 import type { ComponentProps } from "react";
 import { Tabs as TabsPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
+import { useLocaleStore } from "@/stores/locale-store";
 
-function Tabs({ className, ...props }: ComponentProps<typeof TabsPrimitive.Root>) {
+function Tabs({
+  className,
+  dir,
+  ...props
+}: ComponentProps<typeof TabsPrimitive.Root>) {
+  const storeDir = useLocaleStore((state) => state.dir);
+  const resolvedDir = dir ?? storeDir;
+
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
+      dir={resolvedDir}
       className={cn("flex flex-col", className)}
       {...props}
     />

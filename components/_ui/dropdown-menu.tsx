@@ -4,11 +4,22 @@ import type { ComponentProps } from "react";
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/_ui/scroll-area";
+import { useLocaleStore } from "@/stores/locale-store";
 
-function DropdownMenu(
-  props: ComponentProps<typeof DropdownMenuPrimitive.Root>,
-) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+function DropdownMenu({
+  dir,
+  ...props
+}: ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  const storeDir = useLocaleStore((state) => state.dir);
+  const resolvedDir = dir ?? storeDir;
+
+  return (
+    <DropdownMenuPrimitive.Root
+      data-slot="dropdown-menu"
+      dir={resolvedDir}
+      {...props}
+    />
+  );
 }
 
 function DropdownMenuTrigger(
@@ -85,12 +96,12 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "caption-style text-soft ease-power3-out data-[highlighted]:text-foreground data-[state=checked]:text-foreground relative flex cursor-pointer items-center gap-2 rounded-md py-2 pr-2 pl-6 transition-colors duration-150 outline-none select-none data-[highlighted]:bg-white/6",
+        "caption-style text-soft ease-power3-out data-[highlighted]:text-foreground data-[state=checked]:text-foreground relative flex cursor-pointer items-center gap-2 rounded-md py-2 pe-2 ps-6 transition-colors duration-150 outline-none select-none data-[highlighted]:bg-white/6",
         className,
       )}
       {...props}
     >
-      <span className="absolute left-2 flex size-2 items-center justify-center">
+      <span className="absolute start-2 flex size-2 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
           <span className="bg-status block size-1.5 rounded-full" />
         </DropdownMenuPrimitive.ItemIndicator>

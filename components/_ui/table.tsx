@@ -37,7 +37,7 @@ function TableHead({ className, ...props }: ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "caption-style h-[38px] px-3 text-left align-middle font-normal whitespace-nowrap text-subtle",
+        "caption-style h-[38px] px-3 text-start align-middle font-normal whitespace-nowrap text-subtle",
         className,
       )}
       {...props}

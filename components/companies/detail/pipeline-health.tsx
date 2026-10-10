@@ -1,6 +1,9 @@
+"use client";
+
 import SegmentBar from "@/components/_common/segment-bar";
 import type { Company } from "@/data/companies";
 import { companyHealth } from "@/lib/companies";
+import { useTranslation } from "@/hooks/use-translation";
 
 type PipelineHealthProps = {
   company: Company;
@@ -8,20 +11,22 @@ type PipelineHealthProps = {
 
 export default function PipelineHealth({ company }: PipelineHealthProps) {
   const health = companyHealth(company);
+  const { t } = useTranslation();
+
   const stages = [
-    { label: "Discovery", value: health.discovery, tone: "danger" as const },
-    { label: "Evaluation", value: health.evaluation, tone: "warning" as const },
-    { label: "Procurement", value: health.procurement, tone: "success" as const },
+    { label: t.companyDetail.discovery, value: health.discovery, tone: "danger" as const },
+    { label: t.companyDetail.evaluation, value: health.evaluation, tone: "warning" as const },
+    { label: t.companyDetail.procurement, value: health.procurement, tone: "success" as const },
   ];
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <span className="block text-[28px] leading-none font-semibold">
+        <span className="font-display block text-[28px] leading-none font-semibold">
           {company.winProbability}%
         </span>
         <span className="caption-style block text-soft">
-          Win probability across all open deals
+          {t.companyDetail.winProbabilityNote}
         </span>
       </div>
       <div className="flex flex-col gap-3">

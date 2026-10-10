@@ -3,10 +3,13 @@
 import type { ComponentProps } from "react";
 import { Select as SelectPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
+import { useLocaleStore } from "@/stores/locale-store";
 import ChevronDownIcon from "@/public/assets/images/_common/chevron-down.svg";
 
-function Select(props: ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+function Select({ dir, ...props }: ComponentProps<typeof SelectPrimitive.Root>) {
+  const storeDir = useLocaleStore((state) => state.dir);
+  const resolvedDir = dir ?? storeDir;
+  return <SelectPrimitive.Root data-slot="select" dir={resolvedDir} {...props} />;
 }
 
 function SelectValue(props: ComponentProps<typeof SelectPrimitive.Value>) {
@@ -73,12 +76,12 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex cursor-pointer items-center gap-2 rounded-md py-2 pr-2 pl-6 text-[14px] leading-none text-soft outline-none select-none transition-colors duration-150 ease-power3-out data-[highlighted]:bg-white/6 data-[highlighted]:text-foreground data-[state=checked]:text-foreground",
+        "relative flex cursor-pointer items-center gap-2 rounded-md py-2 pe-2 ps-6 text-[14px] leading-none text-soft outline-none select-none transition-colors duration-150 ease-power3-out data-[highlighted]:bg-white/6 data-[highlighted]:text-foreground data-[state=checked]:text-foreground",
         className,
       )}
       {...props}
     >
-      <span className="absolute left-2 flex size-2 items-center justify-center">
+      <span className="absolute start-2 flex size-2 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
           <span className="block size-1.5 rounded-full bg-status" />
         </SelectPrimitive.ItemIndicator>

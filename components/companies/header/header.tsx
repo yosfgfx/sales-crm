@@ -4,17 +4,13 @@ import Avatar from "@/components/_ui/avatar";
 import Button from "@/components/_ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/_ui/tabs";
 import Notifications from "./notifications/notifications";
+import LanguageSwitcher from "@/components/_common/language-switcher";
 import { CURRENT_USER } from "@/data/companies";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import MenuIcon from "@/public/assets/images/_common/menu.svg";
 import ActiveDot from "@/public/assets/images/companies/header/active-dot.svg";
 import SearchIcon from "@/public/assets/images/_common/search.svg";
-
-const TABS = [
-  { value: "companies", label: "Companies" },
-  { value: "deals", label: "Deals" },
-  { value: "forecast", label: "Forecast" },
-];
 
 export default function CompaniesHeader() {
   const activeTab = useCompaniesStore((state) => state.activeTab);
@@ -22,6 +18,17 @@ export default function CompaniesHeader() {
   const setSidebarOpen = useCompaniesStore((state) => state.setSidebarOpen);
   const setSearchOpen = useCompaniesStore((state) => state.setSearchOpen);
   const openProfile = useCompaniesStore((state) => state.openProfile);
+  const { t } = useTranslation();
+
+  const tabs = [
+    { value: "deals", label: t.tabs.deals },
+    { value: "approvals", label: t.tabs.approvals },
+    { value: "companies", label: t.tabs.companies },
+    { value: "forecast", label: t.tabs.forecast },
+  ];
+
+  const currentTabLabel =
+    tabs.find((tab) => tab.value === activeTab)?.label ?? t.tabs.deals;
 
   return (
     <header className="shrink-0">
@@ -36,18 +43,19 @@ export default function CompaniesHeader() {
           >
             <MenuIcon aria-hidden className="size-3.5" />
           </Button>
-          <h1 className="truncate">Companies</h1>
-          <span className="caption-style bg-muted inline-flex shrink-0 items-center gap-0.5 rounded-full border border-[#363636] py-[3px] pr-[5px] pl-[3px]">
-            <ActiveDot aria-hidden className="size-3" />
-            Active
+          <h1 className="truncate">{currentTabLabel}</h1>
+          <span className="caption-style bg-muted inline-flex shrink-0 items-center gap-1 rounded-full border border-[#363636] py-[3px] pe-[7px] ps-[5px]">
+            <ActiveDot aria-hidden className="size-3 shrink-0" />
+            <span>{t.common.active}</span>
           </span>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <LanguageSwitcher />
           <Button
             variant="secondary"
             size="icon"
-            aria-label="Search"
+            aria-label={t.common.search}
             aria-keyshortcuts="Meta+K Control+K"
             onClick={() => setSearchOpen(true)}
           >
@@ -57,7 +65,7 @@ export default function CompaniesHeader() {
           <Button
             variant="secondary"
             size="none"
-            className="caption-style h-[30px] gap-1.5 py-[5px] pr-[7px] pl-[5px] font-normal"
+            className="caption-style h-[30px] gap-1.5 py-[5px] pe-[7px] ps-[5px] font-normal"
             aria-label={`Open profile for ${CURRENT_USER.name}`}
             onClick={() => openProfile(CURRENT_USER.name)}
           >
@@ -69,7 +77,7 @@ export default function CompaniesHeader() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="border-border border-b px-4">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}
             </TabsTrigger>

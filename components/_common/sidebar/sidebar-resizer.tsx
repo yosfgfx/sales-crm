@@ -73,7 +73,11 @@ export default function SidebarResizer() {
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!drag.current) return;
-    applyWidth(drag.current.startWidth + event.clientX - drag.current.startX);
+    const isRtl = document.documentElement.dir === "rtl";
+    const delta = isRtl
+      ? drag.current.startX - event.clientX
+      : event.clientX - drag.current.startX;
+    applyWidth(drag.current.startWidth + delta);
   }
 
   function handlePointerEnd(event: PointerEvent<HTMLDivElement>) {
@@ -87,9 +91,10 @@ export default function SidebarResizer() {
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const isRtl = document.documentElement.dir === "rtl";
     const next: Record<string, number> = {
-      ArrowLeft: width - KEYBOARD_STEP,
-      ArrowRight: width + KEYBOARD_STEP,
+      ArrowLeft: isRtl ? width + KEYBOARD_STEP : width - KEYBOARD_STEP,
+      ArrowRight: isRtl ? width - KEYBOARD_STEP : width + KEYBOARD_STEP,
       Home: SIDEBAR_MIN_WIDTH,
       End: SIDEBAR_MAX_WIDTH,
     };
@@ -119,7 +124,7 @@ export default function SidebarResizer() {
       onPointerCancel={handlePointerEnd}
       onDoubleClick={handleReset}
       onKeyDown={handleKeyDown}
-      className="group absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none outline-none select-none"
+      className="group absolute inset-y-0 ltr:-right-1 rtl:-left-1 z-10 w-2 cursor-col-resize touch-none outline-none select-none"
     >
       <span
         aria-hidden

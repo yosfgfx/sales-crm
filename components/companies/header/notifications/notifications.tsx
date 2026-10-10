@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/_ui/tabs";
 import NotificationItem from "./notification-item";
 import { NOTIFICATIONS } from "@/data/notifications";
 import { useCompaniesStore } from "@/stores/companies-store";
+import { useTranslation } from "@/hooks/use-translation";
 import BellIcon from "@/public/assets/images/companies/header/bell.svg";
 
 type Filter = "all" | "unread";
@@ -28,6 +29,7 @@ export default function Notifications() {
     (state) => state.markAllNotificationsRead,
   );
   const openDetail = useCompaniesStore((state) => state.openDetail);
+  const { t } = useTranslation();
 
   const unreadCount = unreadIds.length;
   const visible = NOTIFICATIONS.filter(
@@ -50,8 +52,8 @@ export default function Notifications() {
           size="icon"
           aria-label={
             unreadCount > 0
-              ? `Notifications, ${unreadCount} unread`
-              : "Notifications"
+              ? `${t.notifications.title}, ${unreadCount} ${t.common.unread}`
+              : t.notifications.title
           }
           className="data-[state=open]:bg-muted relative"
         >
@@ -59,7 +61,7 @@ export default function Notifications() {
           {unreadCount > 0 && (
             <span
               aria-hidden
-              className="bg-danger ring-secondary absolute top-[7px] right-[7px] size-1.5 rounded-full ring-2"
+              className="bg-danger ring-secondary absolute top-[7px] end-[7px] size-1.5 rounded-full ring-2"
             />
           )}
         </Button>
@@ -73,7 +75,7 @@ export default function Notifications() {
       >
         <div className="flex h-14 items-center justify-between gap-2 px-4">
           <div className="flex items-center gap-2">
-            <h2>Notifications</h2>
+            <h2>{t.notifications.title}</h2>
             {unreadCount > 0 && <CountBadge>{unreadCount}</CountBadge>}
           </div>
           <Button
@@ -81,9 +83,9 @@ export default function Notifications() {
             size="sm"
             disabled={unreadCount === 0}
             onClick={markAllRead}
-            className="-mr-1.5"
+            className="-me-1.5"
           >
-            Mark all as read
+            {t.notifications.markAllRead}
           </Button>
         </div>
 
@@ -93,10 +95,10 @@ export default function Notifications() {
         >
           <TabsList className="border-line-strong border-b px-4">
             <TabsTrigger value="all" className="py-3">
-              All
+              {t.common.all}
             </TabsTrigger>
             <TabsTrigger value="unread" className="py-3">
-              Unread
+              {t.common.unread}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -125,10 +127,10 @@ export default function Notifications() {
               <BellIcon aria-hidden className="text-soft size-4" />
             </span>
             <span className="lead-style mt-1 block font-medium">
-              You’re all caught up
+              {t.notifications.allCaughtUp}
             </span>
             <span className="caption-style text-subtle block">
-              New mentions and deal updates will show up here.
+              {t.notifications.emptyDesc}
             </span>
           </div>
         )}
