@@ -24,7 +24,7 @@
 | المرحلة | الحالة | الدليل |
 |---|---|---|
 | P0 تأمين العمل | مكتملة | فرع `wasl/remediation`، commit `c1b8127`، وسم `wasl-baseline-2026-10-10`، نسخة احتياطية في `~/WaslBackups/2026-10-10-baseline` مع `SHA256SUMS`، أمر `npm run verify` ينجح |
-| P1 الأساس والبيانات | جارية | مخطط `supabase/migrations/20261010190000_wasl_core.sql` (15 جدولاً بـ RLS مفروض). أداة `npm run db -- check|migrate|import-state|verify-state`. اختبارات `npm run test:db` (4 ناجحة على PGlite). تجربة ترحيل البيانات الحقيقية محلياً: 45 فكرة و74 حدثاً و20 مرفقاً بلا فروقات، و18 فكرة موسومة تجريبية. لم يُطبَّق على Supabase بعد: كلمة مرور قاعدة البيانات مرفوضة |
+| P1 الأساس والبيانات | جارية | مخطط `supabase/migrations/20261010190000_wasl_core.sql` (15 جدولاً بـ RLS مفروض). أداة `npm run db -- check|migrate|import-state|verify-state`. اختبارات `npm run test:db` (4 ناجحة على PGlite). تجربة ترحيل البيانات الحقيقية محلياً: 45 فكرة و74 حدثاً و20 مرفقاً بلا فروقات، و18 فكرة موسومة تجريبية. طُبِّق على Supabase في 10 أكتوبر: 15 جدولاً، RLS مفروض على الكل، صفر صلاحيات لـ anon وauthenticated، والمخطط غير مكشوف في واجهة Supabase العامة. نقل البيانات الفعلي مؤجل إلى لحظة التحويل |
 | P2 Google Drive | جارية | مشروع Google Cloud `wasl-platform-511215`: Drive API وPicker API مفعّلان، شاشة الموافقة، عميل OAuth «Wasl Web»، مستخدم تجريبي، مفتاح Picker مقيّد |
 | P3 سير العمل | لم تبدأ | |
 | P4 الأمان والتشغيل | لم تبدأ | |
