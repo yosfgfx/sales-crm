@@ -12,11 +12,12 @@
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node --test tests/server.test.cjs",
-    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:db && next build",
+    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:db && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs",
     "test:drive": "node --test tests/drive.test.cjs",
-    "test:import": "node --test tests/import.test.cjs"
+    "test:import": "node --test tests/import.test.cjs",
+    "test:lifecycle": "node --test tests/lifecycle.test.cjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.31.0",
@@ -30,6 +31,7 @@
     "lottie-react": "^2.4.1",
     "motion": "^12.23.22",
     "next": "^16.3.0",
+    "nodemailer": "^6.9.16",
     "pg": "^8.13.1",
     "photoswipe": "^5.4.4",
     "pptxgenjs": "^4.0.1",
@@ -46,6 +48,7 @@
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.11.10",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

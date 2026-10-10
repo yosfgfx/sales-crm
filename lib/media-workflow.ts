@@ -73,17 +73,23 @@ export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: strin
     const owner = data.members.find((member) => member.id === patch.ownerId && member.active);
     if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى والتنسيق.");
   }
-  const result = commitIdea(data, actor, idea, { ...idea, ...patch }, "edited", "تم تحديث تفاصيل الفكرة", ctx); validateMediaData(result); return result;
+  const changed = (Object.keys(patch) as (keyof IdeaPatch)[]).filter((key) => JSON.stringify(patch[key]) !== JSON.stringify(idea[key]));
+  if (!changed.length) return data;
+  const next: Idea = { ...idea, ...patch };
+  if (next.status === "quotations" && !next.needsQuotes && !next.quotations.length) next.status = "draft";
+  const result = commitIdea(data, actor, idea, next, "edited", "تم تحديث تفاصيل الفكرة", ctx); validateMediaData(result); return result;
 }
 export function submitMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea); approvalReady(idea);
-  return commitIdea(data, actor, idea, { ...idea, status: "review" }, "submitted", "تم إرسال الفكرة للمراجعة والاعتماد", ctx, { recipients: data.members.filter((member) => member.role === "manager").map((member) => member.id), type: "approval", title: "فكرة بانتظار اعتمادك", body: idea.title });
+  return commitIdea(data, actor, idea, { ...idea, status: "review" }, "submitted", "تم إرسال الفكرة للمراجعة والاعتماد", ctx, { recipients: data.members.filter((member) => (member.role === "manager" || isAdministrator(member)) && member.id !== actor.id).map((member) => member.id), type: "approval", title: "فكرة بانتظار اعتمادك", body: idea.title });
 }
-export function reviewMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, decision: "approved" | "changes", feedback = "", ctx?: WorkflowContext): MediaData {
+export function reviewMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, decision: "approved" | "changes" | "rejected", feedback = "", ctx?: WorkflowContext): MediaData {
   ctx = { ...ctx, now: now(ctx) };
   requireRole(data, actor, ["admin", "manager"]); const idea = findIdea(data, ideaId);
   if (idea.status !== "review") throw new WorkflowError("يمكن اعتماد الأفكار الموجودة في انتظار المراجعة فقط.", "INVALID_TRANSITION");
-  if (decision === "changes" && !feedback.trim()) throw new WorkflowError("أضف ملاحظات واضحة للفريق قبل إعادة الفكرة للتعديل.", "FEEDBACK_REQUIRED");
+  if (idea.ownerId === actor.id) throw new WorkflowError("لا يعتمد صاحب الفكرة فكرته. يعتمدها مدير آخر.", "SELF_APPROVAL", 403);
+  if (decision !== "approved" && !feedback.trim()) throw new WorkflowError(decision === "rejected" ? "اكتب سبب رفض الفكرة ليصل إلى صاحبها." : "أضف ملاحظات واضحة للفريق قبل إعادة الفكرة للتعديل.", "FEEDBACK_REQUIRED");
+  if (decision === "rejected") return commitIdea(data, actor, idea, { ...idea, status: "rejected", managerFeedback: feedback.trim() }, "rejected", feedback.trim(), ctx, { recipients: [idea.ownerId], type: "feedback", title: "رُفضت الفكرة", body: feedback.trim() });
   if (decision === "approved") approvalReady(idea);
   const next: Idea = { ...idea, status: decision, managerFeedback: feedback.trim(), ...(decision === "approved" ? { approvedAt: now(ctx) } : {}) };
   return commitIdea(data, actor, idea, next, decision === "approved" ? "approved" : "changes_requested", decision === "approved" ? "تم اعتماد الفكرة وإحالتها تلقائياً إلى فريق التصميم" : feedback.trim(), ctx, { recipients: decision === "approved" ? [idea.ownerId, ...data.members.filter((member) => member.role === "designer").map((member) => member.id)] : [idea.ownerId], type: decision === "approved" ? "assignment" : "feedback", title: decision === "approved" ? "فكرة معتمدة جاهزة للجدولة" : "الفكرة تحتاج تعديلاً", body: decision === "approved" ? idea.title : feedback.trim() });
@@ -107,7 +113,7 @@ export function changeMediaDesignStatus(data: MediaData, actor: TeamMember, idea
   if (status === "delivered" && missingDeliveryChannels(idea).length) throw new WorkflowError(`أرفق النسخة النهائية لكل قناة: ${missingDeliveryChannels(idea).map((channel) => CHANNEL_LABELS[channel]).join("، ")}.`, "MISSING_DELIVERABLES");
   const action: HistoryAction = status === "designing" ? "design_started" : status === "design_review" ? "design_review" : "delivered";
   const next = { ...idea, status, ...(status === "delivered" ? { deliveredAt: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now(ctx))) } : {}) };
-  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
+  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: status === "delivered" ? [idea.ownerId, ...data.members.filter((member) => member.role === "manager").map((member) => member.id)] : [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
 }
 export function addMediaAttachments(data: MediaData, actor: TeamMember, ideaId: string, attachments: Attachment[], ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId);
@@ -138,6 +144,52 @@ export function removeMediaQuotation(data: MediaData, actor: TeamMember, ideaId:
   const quote = idea.quotations.find((item) => item.id === quotationId); if (!quote) throw new WorkflowError("عرض السعر غير موجود.");
   return commitIdea(data, actor, idea, { ...idea, quotations: idea.quotations.filter((item) => item.id !== quotationId) }, "quotation_removed", `تم حذف عرض السعر من ${quote.vendor}`, ctx);
 }
+const ownerStages: IdeaStatus[] = ["draft", "quotations", "review", "changes"];
+const finalStatuses: IdeaStatus[] = ["delivered", "cancelled", "rejected"];
+export function canWithdrawIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && idea.status === "review" && (isAdministrator(actor) || idea.ownerId === actor.id); }
+export function canCancelIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !finalStatuses.includes(idea.status) && (isAdministrator(actor) || (idea.ownerId === actor.id && ownerStages.includes(idea.status))); }
+export function canDeleteIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && (isAdministrator(actor) || (idea.ownerId === actor.id && !idea.approvedAt && [...ownerStages, "cancelled", "rejected"].includes(idea.status))); }
+export function canReopenIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && ["delivered", "cancelled", "rejected"].includes(idea.status); }
+export function withdrawMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext): MediaData {
+  requireActor(data, actor); const idea = findIdea(data, ideaId);
+  if (!canWithdrawIdea(idea, actor)) throw new WorkflowError("يسحب صاحب الفكرة طلب الاعتماد فقط وهي بانتظار الاعتماد.", "FORBIDDEN", 403);
+  return commitIdea(data, actor, idea, { ...idea, status: idea.needsQuotes ? "quotations" : "draft" }, "withdrawn", "سُحبت الفكرة من الاعتماد لتعديلها", ctx);
+}
+export function cancelMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, reason: string, ctx?: WorkflowContext): MediaData {
+  requireActor(data, actor); const idea = findIdea(data, ideaId);
+  if (!canCancelIdea(idea, actor)) throw new WorkflowError("إلغاء الفكرة متاح لصاحبها قبل اعتمادها، ولمدير النظام قبل التسليم.", "FORBIDDEN", 403);
+  if (!reason.trim() || reason.length > 4000) throw new WorkflowError("اكتب سبب الإلغاء.", "REASON_REQUIRED");
+  return commitIdea(data, actor, idea, { ...idea, status: "cancelled" }, "cancelled", reason.trim(), ctx, { recipients: [idea.ownerId, idea.designerId].filter((memberId) => memberId && memberId !== actor.id), type: "feedback", title: "أُلغيت الفكرة", body: `${idea.title}: ${reason.trim()}` });
+}
+export function reopenMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, reason: string, ctx?: WorkflowContext): MediaData {
+  requireActor(data, actor); const idea = findIdea(data, ideaId);
+  if (!canReopenIdea(idea, actor)) throw new WorkflowError("إعادة فتح الأعمال متاحة لمدير النظام فقط.", "FORBIDDEN", 403);
+  if (!reason.trim() || reason.length > 4000) throw new WorkflowError("اكتب سبب إعادة الفتح.", "REASON_REQUIRED");
+  const target: IdeaStatus = idea.status === "delivered" ? "designing" : "draft";
+  const next: Idea = { ...idea, status: target, ...(target === "designing" ? {} : { approvedAt: undefined }) };
+  if (target === "designing") delete next.deliveredAt;
+  if (next.approvedAt === undefined) delete next.approvedAt;
+  return commitIdea(data, actor, idea, next, "reopened", reason.trim(), ctx, { recipients: [idea.ownerId, idea.designerId].filter((memberId) => memberId && memberId !== actor.id), type: "assignment", title: "أُعيد فتح العمل", body: `${idea.title}: ${reason.trim()}` });
+}
+export function reassignMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, input: { ownerId?: string; designerId?: string }, ctx?: WorkflowContext): MediaData {
+  requireRole(data, actor, ["admin"]); const idea = findIdea(data, ideaId);
+  if (finalStatuses.includes(idea.status)) throw new WorkflowError("لا تُعاد إسناد الأعمال المسلّمة أو الملغاة أو المرفوضة.", "INVALID_TRANSITION");
+  const next: Idea = { ...idea };
+  const notes: string[] = [];
+  if (input.ownerId !== undefined && input.ownerId !== idea.ownerId) {
+    const owner = data.members.find((member) => member.id === input.ownerId && member.active);
+    if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى والتنسيق.");
+    next.ownerId = owner.id; notes.push(`المسؤول: ${owner.name}`);
+  }
+  if (input.designerId !== undefined && input.designerId !== idea.designerId) {
+    if (!designStatuses.includes(idea.status)) throw new WorkflowError("يُسند المصمم بعد اعتماد الفكرة.", "INVALID_TRANSITION");
+    const designer = data.members.find((member) => member.id === input.designerId && member.active && member.role === "designer");
+    if (!designer) throw new WorkflowError("اختر مصمماً فعالاً.");
+    next.designerId = designer.id; notes.push(`المصمم: ${designer.name}`);
+  }
+  if (!notes.length) return data;
+  return commitIdea(data, actor, idea, next, "reassigned", `أُعيد الإسناد · ${notes.join(" · ")}`, ctx, { recipients: [next.ownerId, next.designerId].filter((memberId) => memberId && memberId !== actor.id), type: "assignment", title: "أُسند إليك عمل", body: idea.title });
+}
 export function addMediaComment(data: MediaData, actor: TeamMember, ideaId: string, text: string, ctx?: WorkflowContext): MediaData {
   requireActor(data, actor); const idea = findIdea(data, ideaId);
   if (!isAdministrator(actor) && actor.role !== "manager" && actor.id !== idea.ownerId && actor.id !== idea.designerId) throw new WorkflowError("التعليق متاح للأعضاء المعنيين بهذه الفكرة.", "FORBIDDEN", 403);
@@ -159,6 +211,31 @@ export function addMediaCategory(data: MediaData, actor: TeamMember, name: strin
   const item: ContentCategory = { id: id(ctx), name: name.trim(), color: "#9A81B9", targetPerMonth: 4 }; return { ...data, categories: [...data.categories, item] };
 }
 
+export function updateMediaCompany(data: MediaData, actor: TeamMember, companyId: string, patch: { name?: string; shortName?: string; active?: boolean }): MediaData {
+  requireRole(data, actor, ["admin"]);
+  const company = data.companies.find((item) => item.id === companyId);
+  if (!company) throw new WorkflowError("الشركة غير موجودة.", "NOT_FOUND", 404);
+  const name = patch.name !== undefined ? patch.name.trim() : company.name;
+  const shortName = patch.shortName !== undefined ? patch.shortName.trim() : company.shortName;
+  if (!name || !shortName || name.length > 150 || shortName.length > 60) throw new WorkflowError("أدخل اسم الشركة واسمها المختصر.");
+  if (data.companies.some((item) => item.id !== companyId && item.name === name)) throw new WorkflowError("يوجد شركة بالاسم نفسه.");
+  if (patch.active === false && data.companies.filter((item) => item.active !== false && item.id !== companyId).length === 0) throw new WorkflowError("يجب إبقاء شركة واحدة متاحة على الأقل.");
+  const updated: Company = { ...company, name, shortName, initials: shortName.slice(0, 1), ...(patch.active !== undefined ? { active: patch.active } : {}) };
+  return { ...data, companies: data.companies.map((item) => (item.id === companyId ? updated : item)) };
+}
+export function updateMediaCategory(data: MediaData, actor: TeamMember, categoryId: string, patch: { name?: string; active?: boolean; targetPerMonth?: number }): MediaData {
+  requireRole(data, actor, ["admin"]);
+  const category = data.categories.find((item) => item.id === categoryId);
+  if (!category) throw new WorkflowError("التصنيف غير موجود.", "NOT_FOUND", 404);
+  const name = patch.name !== undefined ? patch.name.trim() : category.name;
+  if (!name || name.length > 100) throw new WorkflowError("أدخل اسم التصنيف.");
+  if (data.categories.some((item) => item.id !== categoryId && item.name === name)) throw new WorkflowError("يوجد تصنيف بالاسم نفسه.");
+  if (patch.targetPerMonth !== undefined && (!Number.isInteger(patch.targetPerMonth) || patch.targetPerMonth < 0 || patch.targetPerMonth > 1000)) throw new WorkflowError("الهدف الشهري رقم صحيح بين 0 و1000.");
+  if (patch.active === false && data.categories.filter((item) => item.active !== false && item.id !== categoryId).length === 0) throw new WorkflowError("يجب إبقاء تصنيف واحد متاح على الأقل.");
+  const updated: ContentCategory = { ...category, name, ...(patch.targetPerMonth !== undefined ? { targetPerMonth: patch.targetPerMonth } : {}), ...(patch.active !== undefined ? { active: patch.active } : {}) };
+  return { ...data, categories: data.categories.map((item) => (item.id === categoryId ? updated : item)) };
+}
+
 export function addMediaMember(data: MediaData, actor: TeamMember, input: NewMemberInput, ctx?: WorkflowContext): MediaData {
   requireRole(data, actor, ["admin"]);
   if (!["admin", "content", "manager", "designer"].includes(input.role) || !input.name.trim() || !input.title.trim()) throw new WorkflowError("أكمل اسم عضو الفريق ودوره ومسماه.");
@@ -175,7 +252,7 @@ export function updateMediaMember(data: MediaData, actor: TeamMember, memberId: 
   if (member.id === "root" && (patch.role !== undefined || patch.active === false)) throw new WorkflowError("لا يمكن تغيير صلاحية حساب root أو تعطيله.", "ROOT_PROTECTED", 403);
   if ((patch.name !== undefined && !patch.name.trim()) || (patch.title !== undefined && !patch.title.trim())) throw new WorkflowError("اسم العضو ومسماه مطلوبان.");
   const updated = { ...member, ...patch, ...(patch.name ? { name: patch.name.trim(), initials: patch.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join(" ") } : {}), ...(patch.title ? { title: patch.title.trim() } : {}) };
-  if (data.ideas.some((idea) => idea.status !== "delivered" && ((idea.ownerId === memberId && (!updated.active || !(isAdministrator(updated) || updated.role === "content"))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
+  if (data.ideas.some((idea) => !["delivered", "cancelled", "rejected"].includes(idea.status) && ((idea.ownerId === memberId && (!updated.active || !(isAdministrator(updated) || updated.role === "content"))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
     throw new WorkflowError("أعد إسناد أفكار العضو ومهام التصميم المفتوحة قبل تعطيله أو تغيير صلاحيته. ستبقى أعماله المسلّمة منسوبة إليه.", "MEMBER_IN_USE", 409);
   }
   const result = { ...data, members: data.members.map((item) => item.id === memberId ? updated : item) }; validateMediaData(result); return result;
@@ -197,8 +274,8 @@ function urlAllowed(value: unknown) { return str(value, 200000) && (!value || va
 export function validateMediaData(value: unknown): asserts value is MediaData {
   keys(value, ["companies", "categories", "members", "ideas", "notifications", "settings"]);
   array(value.companies, 200); array(value.categories, 200); array(value.members, 100); array(value.ideas, 10000); array(value.notifications, 30000);
-  for (const company of value.companies) { keys(company, ["id", "name", "shortName", "initials", "color"]); textFields(company, ["id", "name", "shortName", "initials", "color"], 200); if (!company.name) fail(); }
-  for (const category of value.categories) { keys(category, ["id", "name", "color", "targetPerMonth"]); textFields(category, ["id", "name", "color"], 200); if (!category.name || !Number.isInteger(category.targetPerMonth) || (category.targetPerMonth as number) < 0 || (category.targetPerMonth as number) > 1000) fail(); }
+  for (const company of value.companies) { keys(company, ["id", "name", "shortName", "initials", "color", "active"], ["id", "name", "shortName", "initials", "color"]); if (company.active !== undefined && typeof company.active !== "boolean") fail(); textFields(company, ["id", "name", "shortName", "initials", "color"], 200); if (!company.name) fail(); }
+  for (const category of value.categories) { keys(category, ["id", "name", "color", "targetPerMonth", "active"], ["id", "name", "color", "targetPerMonth"]); if (category.active !== undefined && typeof category.active !== "boolean") fail(); textFields(category, ["id", "name", "color"], 200); if (!category.name || !Number.isInteger(category.targetPerMonth) || (category.targetPerMonth as number) < 0 || (category.targetPerMonth as number) > 1000) fail(); }
   for (const member of value.members) { keys(member, ["id", "name", "role", "title", "initials", "color", "active"]); textFields(member, ["id", "name", "role", "title", "initials", "color"], 200); if (!hasEnumKey(member.role, ROLE_LABELS) || typeof member.active !== "boolean") fail(); }
   const members = value.members as unknown as TeamMember[];
   const root = members.find((member) => member.id === "root");
@@ -219,7 +296,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     }
     if (!item.title || codes.has(item.code as string)) fail(); codes.add(item.code as string);
     if (!companyIds.has(item.companyId as string) || !categoryIds.has(item.categoryId as string) || !memberIds.has(item.ownerId as string) || (item.designerId && !memberIds.has(item.designerId as string))) fail();
-    if (item.status !== "delivered" && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
+    if (!["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
     if (!hasEnumKey(item.workType, WORK_TYPE_LABELS) || !hasEnumKey(item.priority, PRIORITY_LABELS) || !hasEnumKey(item.status, STATUS_LABELS) || typeof item.needsQuotes !== "boolean") fail();
     if (!Array.isArray(item.channels) || !item.channels.length || item.channels.length > 3 || new Set(item.channels).size !== item.channels.length || item.channels.some((channel) => !hasEnumKey(channel, CHANNEL_LABELS))) fail();
     if (!validDate(item.requestedAt) || !validDate(item.dueDate) || item.dueDate < item.requestedAt || (!str(item.scheduledAt, 10) || (item.scheduledAt !== "" && !validDate(item.scheduledAt))) || (item.deliveredAt !== undefined && !validDate(item.deliveredAt)) || (item.approvedAt !== undefined && !dateTime(item.approvedAt)) || !dateTime(item.createdAt) || !dateTime(item.updatedAt)) fail();
@@ -227,7 +304,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     for (const file of item.attachments) { keys(file, ["id", "name", "size", "mime", "url", "kind", "channel", "createdAt"], ["id", "name", "size", "mime", "url", "kind"]); textFields(file, ["id", "name", "mime", "kind"], 500); if (!file.name || !["brief", "quotation", "final"].includes(file.kind as string) || !Number.isFinite(file.size) || (file.size as number) < 0 || (file.size as number) > 100 * 1024 * 1024 || !urlAllowed(file.url) || (file.channel !== undefined && !hasEnumKey(file.channel, CHANNEL_LABELS)) || (file.createdAt !== undefined && !dateTime(file.createdAt))) fail(); }
     for (const quote of item.quotations) { keys(quote, ["id", "vendor", "amount", "scope", "days", "attachmentId", "recommended"], ["id", "vendor", "amount", "scope", "days", "recommended"]); textFields(quote, ["id", "vendor", "scope"]); if (!quote.vendor || !quote.scope || !Number.isFinite(quote.amount) || (quote.amount as number) <= 0 || !Number.isInteger(quote.days) || (quote.days as number) < 1 || (quote.days as number) > 3650 || typeof quote.recommended !== "boolean" || (quote.attachmentId !== undefined && (!(typeof quote.attachmentId === "string") || !item.attachments.some((file) => (file as Attachment).id === quote.attachmentId && (file as Attachment).kind === "quotation")))) fail(); }
     if (item.quotations.filter((quote) => (quote as Quotation).recommended).length > 1) fail();
-    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment"];
+    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment", "withdrawn", "rejected", "cancelled", "reopened", "reassigned", "archived"];
     for (const event of item.history) { keys(event, ["id", "at", "actorId", "action", "note", "from", "to"], ["id", "at", "actorId", "action", "note"]); textFields(event, ["id", "actorId", "action"], 100); textFields(event, ["note"], 20000); if (!memberIds.has(event.actorId as string) || !actions.includes(event.action as string) || !dateTime(event.at) || (event.from !== undefined && !hasEnumKey(event.from, STATUS_LABELS)) || (event.to !== undefined && !hasEnumKey(event.to, STATUS_LABELS))) fail(); }
   }
   uniqueIds((value.ideas as unknown as Idea[]).flatMap((idea) => idea.history));

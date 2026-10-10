@@ -133,8 +133,15 @@ export async function logout(request: Request): Promise<Response> {
 }
 
 async function summaries(q: Queryable): Promise<AccountSummary[]> {
-  const rows = await q.query<{ id: string; username: string | null }>("select m.id, a.username from wasl.members m left join wasl.accounts a on a.member_id = m.id order by m.created_at, m.id");
-  return rows.rows.map((row) => ({ memberId: row.id, username: row.username || row.id, hasPassword: Boolean(row.username), protected: row.id === "root" }));
+  const rows = await q.query<{ id: string; username: string | null; email: string | null }>("select m.id, a.username, m.email from wasl.members m left join wasl.accounts a on a.member_id = m.id order by m.created_at, m.id");
+  return rows.rows.map((row) => ({ memberId: row.id, username: row.username || row.id, hasPassword: Boolean(row.username), protected: row.id === "root", email: row.email || "" }));
+}
+
+function normalizedEmail(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value.trim())) throw new MediaServerError("أدخل بريداً إلكترونياً صالحاً أو اتركه فارغاً.", 422, "INVALID_EMAIL");
+  return value.trim().toLowerCase();
 }
 
 export async function readAccounts(request: Request) {
@@ -174,7 +181,7 @@ export async function mutateAccounts(request: Request): Promise<Response> {
       const next = addMediaMember(slice, actor, member as Parameters<typeof addMediaMember>[2]);
       const added = next.members.find((candidate) => !slice.members.some((old) => old.id === candidate.id))!;
       targetId = added.id;
-      await tx.query("insert into wasl.members (id, name, title, role, initials, color, active) values ($1, $2, $3, $4::wasl.member_role, $5, $6, true)", [added.id, added.name, added.title, added.role, added.initials, added.color]);
+      await tx.query("insert into wasl.members (id, name, title, role, initials, color, active, email) values ($1, $2, $3, $4::wasl.member_role, $5, $6, true, $7)", [added.id, added.name, added.title, added.role, added.initials, added.color, normalizedEmail(submitted.email) ?? null]);
       await tx.query("insert into wasl.accounts (member_id, username, password_hash) values ($1, $2, $3)", [added.id, username, await hashPassword(submitted.password)]);
     } else {
       if (typeof submitted.memberId !== "string" || !submitted.patch || typeof submitted.patch !== "object") throw new MediaServerError("اختر العضو والبيانات المطلوب تعديلها.", 422, "INVALID_ACCOUNT");
@@ -195,6 +202,8 @@ export async function mutateAccounts(request: Request): Promise<Response> {
       if (typeof submitted.password === "string") passwordPolicy(submitted.password, updated.role);
       const passwordHash = typeof submitted.password === "string" ? await hashPassword(submitted.password) : undefined;
       await tx.query("update wasl.members set name = $2, title = $3, role = $4::wasl.member_role, initials = $5, active = $6, updated_at = now() where id = $1", [targetId, updated.name, updated.title, updated.role, updated.initials, updated.active]);
+      const email = normalizedEmail(submitted.email);
+      if (email !== undefined) await tx.query("update wasl.members set email = $2 where id = $1", [targetId, email]);
       if (!account) {
         if (!passwordHash) throw new MediaServerError("هذا العضو لم يفعّل الدخول بعد. عيّن له كلمة مرور عند حفظ التعديلات.", 422, "PASSWORD_REQUIRED");
         await tx.query("insert into wasl.accounts (member_id, username, password_hash) values ($1, $2, $3)", [targetId, username, passwordHash]);

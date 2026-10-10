@@ -30,6 +30,7 @@ export default function Administration({
   const [settings, setSettings] = useState(data.settings),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [editing, setEditing] = useState<{ kind: "company" | "category"; id: string; value: string } | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null),
     [baseline, setBaseline] = useState(data.settings);
   const run = async (action: () => Promise<unknown>, success: string) => {
@@ -136,16 +137,26 @@ export default function Administration({
                       </span>
                     )}
                     <div className="min-w-0 flex-1">
-                      <span className="block font-medium">{c.name}</span>
+                      {editing?.kind === "company" && editing.id === c.id ? (
+                        <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.updateCompany(c.id, { name: editing.value }); setEditing(null); }, "حُفظ اسم الشركة."); }}>
+                          <input aria-label="اسم الشركة الجديد" required maxLength={150} className="media-input !w-auto flex-1" value={editing.value} onChange={(e) => setEditing({ ...editing, value: e.target.value })} />
+                          <ActionButton type="submit" disabled={busy}>حفظ</ActionButton>
+                          <ActionButton type="button" onClick={() => setEditing(null)}>إلغاء</ActionButton>
+                        </form>
+                      ) : <span className="block font-medium">{c.name}</span>}
                       <span className="text-xs text-[var(--soft)]">
                         {data.ideas.filter((i) => i.companyId === c.id).length}{" "}
                         أعمال مرتبطة
                       </span>
                     </div>
                   </div>
-                  <span className="media-badge media-badge-success">
-                    متاحة للنشر
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`media-badge ${c.active === false ? "" : "media-badge-success"}`}>
+                      {c.active === false ? "موقوفة" : "متاحة للنشر"}
+                    </span>
+                    <ActionButton className="!px-3 !text-xs" onClick={() => setEditing({ kind: "company", id: c.id, value: c.name })}>تعديل الاسم</ActionButton>
+                    <ActionButton className="!px-3 !text-xs" disabled={busy} onClick={() => void run(() => store.updateCompany(c.id, { active: c.active === false }), c.active === false ? "أُعيد تفعيل الشركة." : "أُوقفت الشركة، ولن تظهر في الأفكار الجديدة.")}>{c.active === false ? "تفعيل" : "إيقاف"}</ActionButton>
+                  </div>
                 </div>
               ))}
             </div>
@@ -195,16 +206,24 @@ export default function Administration({
                   key={c.id}
                   className="flex items-center justify-between gap-3 py-4"
                 >
-                  <span className="flex items-center gap-3">
+                  <span className="flex min-w-0 flex-1 items-center gap-3">
                     <span
-                      className="size-3 rounded-full"
+                      className="size-3 shrink-0 rounded-full"
                       style={{ background: c.color }}
                     />
-                    {c.name}
+                    {editing?.kind === "category" && editing.id === c.id ? (
+                      <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.updateCategory(c.id, { name: editing.value }); setEditing(null); }, "حُفظ اسم التصنيف."); }}>
+                        <input aria-label="اسم التصنيف الجديد" required maxLength={100} className="media-input !w-auto flex-1" value={editing.value} onChange={(e) => setEditing({ ...editing, value: e.target.value })} />
+                        <ActionButton type="submit" disabled={busy}>حفظ</ActionButton>
+                        <ActionButton type="button" onClick={() => setEditing(null)}>إلغاء</ActionButton>
+                      </form>
+                    ) : <span className={c.active === false ? "text-[var(--soft)]" : ""}>{c.name}{c.active === false ? " · موقوف" : ""}</span>}
                   </span>
-                  <span className="text-xs text-[var(--soft)]">
+                  <span className="flex flex-wrap items-center gap-2 text-xs text-[var(--soft)]">
                     {data.ideas.filter((i) => i.categoryId === c.id).length}{" "}
                     أفكار
+                    <ActionButton className="!px-3 !text-xs" onClick={() => setEditing({ kind: "category", id: c.id, value: c.name })}>تعديل</ActionButton>
+                    <ActionButton className="!px-3 !text-xs" disabled={busy} onClick={() => void run(() => store.updateCategory(c.id, { active: c.active === false }), c.active === false ? "أُعيد تفعيل التصنيف." : "أُوقف التصنيف، ولن يظهر في الأفكار الجديدة.")}>{c.active === false ? "تفعيل" : "إيقاف"}</ActionButton>
                   </span>
                 </div>
               ))}

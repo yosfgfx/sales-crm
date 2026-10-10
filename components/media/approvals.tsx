@@ -17,7 +17,7 @@ import {
   formatDate,
 } from "./ui";
 
-type Decision = "approved" | "changes";
+type Decision = "approved" | "changes" | "rejected";
 type Props = {
   data: MediaData;
   onOpen: (id: string) => void;
@@ -68,7 +68,7 @@ export default function Approvals({
   const selected = data.ideas.find((idea) => idea.id === decision?.ideaId);
 
   function startDecision(idea: Idea, value: Decision) {
-    setFeedback(idea.managerFeedback);
+    setFeedback("");
     setError("");
     setNotice("");
     setDecision({ ideaId: idea.id, value, updatedAt: idea.updatedAt });
@@ -85,8 +85,8 @@ export default function Approvals({
     event.preventDefault();
     if (!decision || busy || saving) return;
     setError("");
-    if (decision.value === "changes" && !feedback.trim()) {
-      setError("اكتب ملاحظات واضحة لفريق المحتوى قبل إعادة الفكرة للتعديل.");
+    if (decision.value !== "approved" && !feedback.trim()) {
+      setError(decision.value === "rejected" ? "اكتب سبب الرفض ليصل إلى صاحب الفكرة." : "اكتب ملاحظات واضحة لفريق المحتوى قبل إعادة الفكرة للتعديل.");
       feedbackField.current?.focus();
       return;
     }
@@ -116,7 +116,9 @@ export default function Approvals({
       const message =
         decision.value === "approved"
           ? "اعتُمدت الفكرة وأُحيلت تلقائياً إلى فريق التصميم للجدولة."
-          : "أُعيدت الفكرة للتعديل مع ملاحظاتك، وأُشعر مسؤول المحتوى للمتابعة.";
+          : decision.value === "rejected"
+            ? "رُفضت الفكرة نهائياً وأُشعر صاحبها بالسبب."
+            : "أُعيدت الفكرة للتعديل مع ملاحظاتك، وأُشعر مسؤول المحتوى للمتابعة.";
       setDecision(null);
       setFeedback("");
       if (onNotice) onNotice(message);
@@ -270,8 +272,11 @@ export default function Approvals({
                   {tab === "review" ? "مراجعة الفكرة والعرض" : "عرض التفاصيل"}
                   <Icon name="arrow" className="size-4" />
                 </ActionButton>
-                {canReview && idea.status === "review" && (
-                  <div className="grid grid-cols-2 gap-2">
+                {canReview && idea.status === "review" && idea.ownerId === currentUser?.id && (
+                  <p className="text-xs text-[var(--soft)]">يعتمد هذه الفكرة مدير آخر لأنك صاحبها.</p>
+                )}
+                {canReview && idea.status === "review" && idea.ownerId !== currentUser?.id && (
+                  <div className="grid grid-cols-3 gap-2">
                     <ActionButton
                       primary
                       onClick={() => startDecision(idea, "approved")}
@@ -285,6 +290,13 @@ export default function Approvals({
                       disabled={busy || saving}
                     >
                       إعادة للتعديل
+                    </ActionButton>
+                    <ActionButton
+                      className="!text-[var(--danger)]"
+                      onClick={() => startDecision(idea, "rejected")}
+                      disabled={busy || saving}
+                    >
+                      رفض
                     </ActionButton>
                   </div>
                 )}
@@ -308,7 +320,9 @@ export default function Approvals({
         title={
           decision?.value === "changes"
             ? "إعادة الفكرة للتعديل"
-            : "اعتماد الفكرة"
+            : decision?.value === "rejected"
+              ? "رفض الفكرة نهائياً"
+              : "اعتماد الفكرة"
         }
         description={selected?.title || "تأكيد قرار مراجعة الفكرة"}
         wide
@@ -339,15 +353,19 @@ export default function Approvals({
           <p className="text-sm text-[var(--soft)]">
             {decision?.value === "approved"
               ? "اعتماد هذه الفكرة يسجل قرارك ويُشعر فريق التصميم لبدء الجدولة. راجع النص والخطة والعرض والمرفقات قبل التأكيد."
-              : "تظهر ملاحظاتك بوضوح في الفكرة وتصل إلى مسؤول المحتوى. تبقى الفكرة بحاجة إلى تعديل وإعادة إرسال للاعتماد."}
+              : decision?.value === "rejected"
+                ? "تُغلق الفكرة ولا تعود للتعديل، ويصل سبب الرفض إلى صاحبها. يستطيع مدير النظام إعادة فتحها لاحقاً."
+                : "تظهر ملاحظاتك بوضوح في الفكرة وتصل إلى مسؤول المحتوى. تبقى الفكرة بحاجة إلى تعديل وإعادة إرسال للاعتماد."}
           </p>
           <label className="media-label">
             {decision?.value === "changes"
               ? "ما المطلوب تعديله؟"
-              : "ملاحظات الاعتماد (اختياري)"}
+              : decision?.value === "rejected"
+                ? "سبب الرفض"
+                : "ملاحظات الاعتماد (اختياري)"}
             <textarea
               ref={feedbackField}
-              required={decision?.value === "changes"}
+              required={decision?.value !== "approved"}
               maxLength={20000}
               rows={4}
               value={feedback}
@@ -388,7 +406,9 @@ export default function Approvals({
                 ? "جارٍ حفظ القرار…"
                 : decision?.value === "changes"
                   ? "إرسال الملاحظات وإعادة الفكرة"
-                  : "تأكيد الاعتماد"}
+                  : decision?.value === "rejected"
+                    ? "تأكيد الرفض"
+                    : "تأكيد الاعتماد"}
             </ActionButton>
           </div>
         </form>

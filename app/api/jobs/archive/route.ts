@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import { runDueArchiveJobs } from "@/lib/server/archive";
 import { apiError, MediaServerError, responseHeaders } from "@/lib/server/http";
+import { runBackgroundWork } from "@/lib/server/scheduler";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,7 +12,7 @@ function authorize(request: Request) {
 }
 
 async function run(request: Request) {
-  try { authorize(request); return Response.json({ results: await runDueArchiveJobs(5) }, { headers: responseHeaders }); } catch (error) { return apiError(error); }
+  try { authorize(request); return Response.json(await runBackgroundWork(true), { headers: responseHeaders }); } catch (error) { return apiError(error); }
 }
 
 export const GET = run;

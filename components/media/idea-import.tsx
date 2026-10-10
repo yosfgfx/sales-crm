@@ -72,10 +72,10 @@ export default function IdeaImport() {
             <input className="media-input mt-2" type="number" min={1} max={365} value={dueDays} onChange={(event) => setDueDays(Number(event.target.value))} />
           </label>
           <label className="media-label">الجهة الافتراضية
-            <select className="media-input mt-2" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>
+            <select className="media-input mt-2" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{data.companies.filter((company) => company.active !== false).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select>
           </label>
           <label className="media-label">التصنيف عند عدم مطابقة «نوع المحتوى»
-            <select className="media-input mt-2" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+            <select className="media-input mt-2" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>{data.categories.filter((category) => category.active !== false).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
           </label>
         </div>
         <ActionButton disabled={!file || busy} onClick={() => run(async () => {

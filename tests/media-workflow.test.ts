@@ -112,7 +112,7 @@ test("root has every administrator operational permission and may own imported i
   const ideaId = data.ideas[0].id;
   data = step(data, "root", (d, a) => patchMediaIdea(d, a, ideaId, { title: "اقتراح المدير الأعلى" }));
   data = step(data, "root", (d, a) => submitMediaIdea(d, a, ideaId));
-  data = step(data, "root", (d, a) => reviewMediaIdea(d, a, ideaId, "approved"));
+  data = step(data, "manager", (d, a) => reviewMediaIdea(d, a, ideaId, "approved")); reject(() => reviewMediaIdea(data, actor(data, "root"), ideaId, "approved"), "INVALID_TRANSITION");
   data = step(data, "root", (d, a) => scheduleMediaIdea(d, a, ideaId, { designerId: "faisal", scheduledAt: "2026-10-10" }));
   data = step(data, "root", (d, a) => changeMediaDesignStatus(d, a, ideaId, "designing"));
   assert.equal(data.ideas[0].status, "designing");

@@ -26,16 +26,16 @@ function toMember(row: Row): TeamMember {
 export async function loadReference(q: Queryable): Promise<Pick<MediaData, "members" | "companies" | "categories" | "settings">> {
   const [members, companies, categories, settings] = await Promise.all([
     q.query("select id, name, role::text as role, title, initials, color, active from wasl.members order by created_at, id"),
-    q.query("select id, name, short_name, initials, color from wasl.companies order by sort_order, created_at"),
-    q.query("select id, name, color, target_per_month from wasl.categories order by created_at, id"),
+    q.query("select id, name, short_name, initials, color, active from wasl.companies order by sort_order, created_at"),
+    q.query("select id, name, color, target_per_month, active from wasl.categories order by created_at, id"),
     q.query("select department_name, organization_name, logo_attachment_id from wasl.settings where id"),
   ]);
   const setting = settings.rows[0];
   const systemSettings: SystemSettings = { departmentName: text(setting?.department_name) || "إدارة التواصل الداخلي", organizationName: text(setting?.organization_name), logoUrl: setting?.logo_attachment_id ? `/api/files/${setting.logo_attachment_id}?inline=1` : DEFAULT_LOGO_URL, driveFolderId: "" };
   return {
     members: members.rows.map(toMember),
-    companies: companies.rows.map((row): Company => ({ id: text(row.id), name: text(row.name), shortName: text(row.short_name), initials: text(row.initials), color: text(row.color) })),
-    categories: categories.rows.map((row): ContentCategory => ({ id: text(row.id), name: text(row.name), color: text(row.color), targetPerMonth: Number(row.target_per_month) })),
+    companies: companies.rows.map((row): Company => ({ id: text(row.id), name: text(row.name), shortName: text(row.short_name), initials: text(row.initials), color: text(row.color), active: row.active !== false })),
+    categories: categories.rows.map((row): ContentCategory => ({ id: text(row.id), name: text(row.name), color: text(row.color), targetPerMonth: Number(row.target_per_month), active: row.active !== false })),
     settings: systemSettings,
   };
 }

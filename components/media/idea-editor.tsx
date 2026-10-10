@@ -36,9 +36,9 @@ export default function IdeaEditor({
   const store = useMediaStore();
   const initial: NewIdeaInput = {
     title: idea?.title || "",
-    companyId: idea?.companyId || store.data.companies[0]?.id || "",
+    companyId: idea?.companyId || store.data.companies.find((c) => c.active !== false)?.id || "",
     department: idea?.department || "",
-    categoryId: idea?.categoryId || store.data.categories[0]?.id || "",
+    categoryId: idea?.categoryId || store.data.categories.find((c) => c.active !== false)?.id || "",
     workType: idea?.workType || "design",
     description: idea?.description || "",
     content: idea?.content || "",
@@ -200,7 +200,7 @@ function EditorForm({
                   value={form.companyId}
                   onChange={(e) => update("companyId", e.target.value)}
                 >
-                  {store.data.companies.map((c) => (
+                  {store.data.companies.filter((c) => c.active !== false || c.id === form.companyId).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
@@ -246,7 +246,7 @@ function EditorForm({
                   value={form.categoryId}
                   onChange={(e) => update("categoryId", e.target.value)}
                 >
-                  {store.data.categories.map((c) => (
+                  {store.data.categories.filter((c) => c.active !== false || c.id === form.categoryId).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>

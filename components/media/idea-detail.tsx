@@ -26,7 +26,14 @@ import {
 import { uploadFiles } from "./idea-editor";
 import { PresentationPreview } from "./presentation";
 import { CompanyLogo } from "./company-logo";
-import { isAdministrator } from "@/lib/media-workflow";
+import { canCancelIdea, canDeleteIdea, canReopenIdea, canWithdrawIdea, isAdministrator } from "@/lib/media-workflow";
+
+const LIFECYCLE = {
+  reject: { title: "رفض الفكرة نهائياً", description: "تُغلق الفكرة ولا تعود للتعديل. يصل السبب إلى صاحبها.", label: "سبب الرفض", action: "رفض الفكرة", done: "رُفضت الفكرة وأُشعر صاحبها." },
+  cancel: { title: "إلغاء الفكرة", description: "تبقى الفكرة في السجل بحالة «ملغاة»، ويمكن لمدير النظام إعادة فتحها.", label: "سبب الإلغاء", action: "إلغاء الفكرة", done: "أُلغيت الفكرة." },
+  reopen: { title: "إعادة فتح العمل", description: "يعود العمل المسلّم إلى التصميم، وتعود الفكرة الملغاة أو المرفوضة إلى المسودة.", label: "سبب إعادة الفتح", action: "إعادة الفتح", done: "أُعيد فتح العمل." },
+  delete: { title: "حذف الفكرة نهائياً", description: "تُحذف الفكرة وسجلها ومرفقاتها من النظام، وتبقى نسخة منها في سجل الحذف لمدير النظام. ملفاتها في Google Drive لا تُحذف.", label: "سبب الحذف (اختياري)", action: "حذف الفكرة نهائياً", done: "حُذفت الفكرة." },
+} as const;
 
 const ARCHIVE_TEXT: Record<string, string> = { done: "أُرشف العمل في مجلد المشروع على Google Drive.", pending: "بانتظار الأرشفة التلقائية في Google Drive.", running: "جارٍ رفع العمل إلى Google Drive.", failed: "تعذّرت الأرشفة مؤقتاً، وستُعاد المحاولة تلقائياً.", needs_review: "الأرشفة تحتاج مراجعة مدير النظام.", not_started: "لم يُؤرشف هذا العمل بعد." };
 
@@ -44,15 +51,15 @@ export default function IdeaDetail({
   const [tab, setTab] = useState("overview"),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
-  const [feedback, setFeedback] = useState(idea.managerFeedback),
+  const [feedback, setFeedback] = useState(""),
     [returnDialog, setReturnDialog] = useState(false);
-  const [designer, setDesigner] = useState(
-      idea.designerId ||
-        (currentUser?.role === "designer"
-          ? currentUser.id
-          : data.members.find((m) => m.role === "designer")?.id) ||
-        "",
-    ),
+  const [lifecycle, setLifecycle] = useState<{ kind: "reject" | "cancel" | "reopen" | "delete"; text: string } | null>(null);
+  const [reassign, setReassign] = useState<{ ownerId: string; designerId: string } | null>(null);
+  const defaultDesigner = () =>
+    (data.members.some((m) => m.id === idea.designerId && m.active && m.role === "designer") ? idea.designerId : "") ||
+    (currentUser?.role === "designer" ? currentUser.id : data.members.find((m) => m.role === "designer" && m.active)?.id) ||
+    "";
+  const [designer, setDesigner] = useState(defaultDesigner),
     [scheduled, setScheduled] = useState(idea.scheduledAt || today()),
     [due, setDue] = useState(idea.dueDate),
     [priority, setPriority] = useState(idea.priority);
@@ -70,7 +77,7 @@ export default function IdeaDetail({
     [pendingQuoteAttachment, setPendingQuoteAttachment] =
       useState<Attachment | null>(null),
     [pendingUpload, setPendingUpload] = useState<Attachment[]>([]),
-    [scheduleVersion, setScheduleVersion] = useState(idea.updatedAt);
+    [scheduleBaseline, setScheduleBaseline] = useState({ designerId: idea.designerId, scheduledAt: idea.scheduledAt, dueDate: idea.dueDate, priority: idea.priority as string });
   const admin = isAdministrator(currentUser),
     canContent =
       admin ||
@@ -78,7 +85,7 @@ export default function IdeaDetail({
     canEdit =
       canContent && ["draft", "quotations", "changes"].includes(idea.status);
   const canReview =
-    (admin || currentUser?.role === "manager") && idea.status === "review";
+    (admin || currentUser?.role === "manager") && idea.status === "review" && idea.ownerId !== currentUser?.id;
   const canDesign =
     admin ||
     (currentUser?.role === "designer" &&
@@ -636,7 +643,7 @@ export default function IdeaDetail({
                 )}
                 {(canEdit ||
                   (canDesign &&
-                    ["designing", "design_review"].includes(idea.status))) && (
+                    ["scheduled", "designing", "design_review"].includes(idea.status))) && (
                   <form
                     onSubmit={upload}
                     className="space-y-4 rounded-xl border border-dashed border-[var(--input)] p-5"
@@ -798,37 +805,26 @@ export default function IdeaDetail({
                       dueDate: due,
                       priority,
                     },
-                    scheduleVersion,
+                    scheduleBaseline,
                   );
-                  setScheduleVersion(
-                    useMediaStore
-                      .getState()
-                      .data.ideas.find((item) => item.id === idea.id)!
-                      .updatedAt,
-                  );
+                  const saved = useMediaStore.getState().data.ideas.find((item) => item.id === idea.id)!;
+                  setScheduleBaseline({ designerId: saved.designerId, scheduledAt: saved.scheduledAt, dueDate: saved.dueDate, priority: saved.priority });
                 }, "جُدول العمل وأُرسل إشعار للمصمم.");
               }}
               className="space-y-4 rounded-xl border border-[#c9bfec] bg-[#f8f6ff] p-5"
             >
               <h2 className="!text-base">جدولة التنفيذ وإسناد التصميم</h2>
-              {scheduleVersion !== idea.updatedAt && (
+              {(["designerId", "scheduledAt", "dueDate", "priority"] as const).some((key) => scheduleBaseline[key] !== idea[key]) && (
                 <div className="rounded-xl bg-[#fff1dc] p-3 text-xs text-[var(--warning)]">
                   تحدّثت بيانات العمل منذ فتحه. حمّل أحدث الجدولة قبل الحفظ.
                   <ActionButton
                     className="mt-2 !text-xs"
                     onClick={() => {
-                      setDesigner(
-                        idea.designerId ||
-                          (currentUser?.role === "designer"
-                            ? currentUser.id
-                            : data.members.find((m) => m.role === "designer")
-                                ?.id) ||
-                          "",
-                      );
+                      setDesigner(defaultDesigner());
                       setScheduled(idea.scheduledAt || today());
                       setDue(idea.dueDate);
                       setPriority(idea.priority);
-                      setScheduleVersion(idea.updatedAt);
+                      setScheduleBaseline({ designerId: idea.designerId, scheduledAt: idea.scheduledAt, dueDate: idea.dueDate, priority: idea.priority });
                     }}
                   >
                     تحميل أحدث بيانات الجدولة
@@ -915,6 +911,24 @@ export default function IdeaDetail({
             آخر تحديث: {formatDate(idea.updatedAt)}
           </span>
           <div className="flex flex-wrap gap-3">
+            {canDeleteIdea(idea, currentUser) && (
+              <ActionButton className="!text-[var(--danger)]" disabled={busy} onClick={() => setLifecycle({ kind: "delete", text: "" })}>حذف الفكرة</ActionButton>
+            )}
+            {canCancelIdea(idea, currentUser) && (
+              <ActionButton disabled={busy} onClick={() => setLifecycle({ kind: "cancel", text: "" })}>إلغاء الفكرة</ActionButton>
+            )}
+            {canReopenIdea(idea, currentUser) && (
+              <ActionButton disabled={busy} onClick={() => setLifecycle({ kind: "reopen", text: "" })}>إعادة فتح</ActionButton>
+            )}
+            {admin && !["delivered", "cancelled", "rejected"].includes(idea.status) && (
+              <ActionButton disabled={busy} onClick={() => setReassign({ ownerId: idea.ownerId, designerId: idea.designerId })}>إعادة الإسناد</ActionButton>
+            )}
+            {canWithdrawIdea(idea, currentUser) && (
+              <ActionButton disabled={busy} onClick={() => void run(() => store.withdrawIdea(idea.id), "سُحبت الفكرة من الاعتماد. عدّلها ثم أعد إرسالها.")}>سحب من الاعتماد</ActionButton>
+            )}
+            {(admin || currentUser?.role === "manager") && idea.status === "review" && idea.ownerId === currentUser?.id && (
+              <span className="text-xs text-[var(--soft)]">يعتمد هذه الفكرة مدير آخر لأنك صاحبها.</span>
+            )}
             {canEdit && (
               <ActionButton
                 primary
@@ -934,6 +948,9 @@ export default function IdeaDetail({
             )}
             {canReview && (
               <>
+                <ActionButton className="!text-[var(--danger)]" onClick={() => setLifecycle({ kind: "reject", text: "" })} disabled={busy}>
+                  رفض نهائي
+                </ActionButton>
                 <ActionButton
                   onClick={() => setReturnDialog(true)}
                   disabled={busy}
@@ -946,11 +963,7 @@ export default function IdeaDetail({
                   onClick={() =>
                     void run(
                       () =>
-                        store.reviewIdea(
-                          idea.id,
-                          "approved",
-                          "تم اعتماد الفكرة والبدء بجدولة تنفيذها.",
-                        ),
+                        store.reviewIdea(idea.id, "approved", ""),
                       "اعتُمدت الفكرة وانتقلت تلقائيًا إلى استوديو التصميم.",
                     )
                   }
@@ -1018,7 +1031,7 @@ export default function IdeaDetail({
             )}
             {idea.status === "delivered" && (
               <span className="media-badge media-badge-success">
-                مؤرشف · يظهر في تقرير{" "}
+                سُلّم · يظهر في تقرير{" "}
                 {formatDate(idea.deliveredAt, {
                   month: "long",
                   year: "numeric",
@@ -1028,6 +1041,55 @@ export default function IdeaDetail({
             )}
           </div>
         </div>
+      </Modal>
+      <Modal
+        open={Boolean(lifecycle)}
+        onClose={() => setLifecycle(null)}
+        title={lifecycle ? LIFECYCLE[lifecycle.kind].title : ""}
+        description={lifecycle ? LIFECYCLE[lifecycle.kind].description : ""}
+      >
+        {lifecycle && (
+          <form
+            className="space-y-4 p-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const text = lifecycle.text;
+              void run(async () => {
+                if (lifecycle.kind === "reject") await store.reviewIdea(idea.id, "rejected", text);
+                if (lifecycle.kind === "cancel") await store.cancelIdea(idea.id, text);
+                if (lifecycle.kind === "reopen") await store.reopenIdea(idea.id, text);
+                if (lifecycle.kind === "delete") await store.deleteIdea(idea.id, text);
+                setLifecycle(null);
+              }, LIFECYCLE[lifecycle.kind].done);
+            }}
+          >
+            <label className="media-label">
+              {LIFECYCLE[lifecycle.kind].label}
+              <textarea className="media-input mt-2" rows={4} autoFocus required={lifecycle.kind !== "delete"} maxLength={4000} value={lifecycle.text} onChange={(e) => setLifecycle({ ...lifecycle, text: e.target.value })} />
+            </label>
+            <ActionButton type="submit" primary={lifecycle.kind !== "delete"} className={lifecycle.kind === "delete" ? "!text-[var(--danger)]" : ""} disabled={busy}>{LIFECYCLE[lifecycle.kind].action}</ActionButton>
+          </form>
+        )}
+      </Modal>
+      <Modal open={Boolean(reassign)} onClose={() => setReassign(null)} title="إعادة إسناد العمل" description="تنقل المسؤولية دون تغيير مرحلة العمل، ويُشعر المكلّف الجديد.">
+        {reassign && (
+          <form className="space-y-4 p-6" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.reassignIdea(idea.id, { ownerId: reassign.ownerId, ...(designStage ? { designerId: reassign.designerId } : {}) }); setReassign(null); }, "أُعيد إسناد العمل."); }}>
+            <label className="media-label">مسؤول المحتوى
+              <select className="media-input mt-2" value={reassign.ownerId} onChange={(e) => setReassign({ ...reassign, ownerId: e.target.value })}>
+                {data.members.filter((m) => m.active && ["content", "admin", "superadmin"].includes(m.role)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </label>
+            {designStage && (
+              <label className="media-label">المصمم
+                <select className="media-input mt-2" value={reassign.designerId} onChange={(e) => setReassign({ ...reassign, designerId: e.target.value })}>
+                  <option value="">بدون مصمم</option>
+                  {data.members.filter((m) => m.active && m.role === "designer").map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </label>
+            )}
+            <ActionButton type="submit" primary disabled={busy}>حفظ الإسناد</ActionButton>
+          </form>
+        )}
       </Modal>
       <Modal
         open={returnDialog}

@@ -2,11 +2,11 @@ export type MemberRole = "superadmin" | "admin" | "content" | "manager" | "desig
 export type Channel = "screens" | "whatsapp" | "email";
 export type WorkType = "motion" | "video" | "design" | "report" | "presentation" | "document";
 export type Priority = "urgent" | "high" | "normal" | "low";
-export type IdeaStatus = "draft" | "quotations" | "review" | "changes" | "approved" | "scheduled" | "designing" | "design_review" | "delivered";
-export type HistoryAction = "created" | "edited" | "submitted" | "changes_requested" | "approved" | "scheduled" | "design_started" | "design_review" | "delivered" | "attachments_added" | "attachment_removed" | "quotation_added" | "quotation_removed" | "comment";
+export type IdeaStatus = "draft" | "quotations" | "review" | "changes" | "approved" | "scheduled" | "designing" | "design_review" | "delivered" | "cancelled" | "rejected";
+export type HistoryAction = "created" | "edited" | "submitted" | "changes_requested" | "approved" | "scheduled" | "design_started" | "design_review" | "delivered" | "attachments_added" | "attachment_removed" | "quotation_added" | "quotation_removed" | "comment" | "withdrawn" | "rejected" | "cancelled" | "reopened" | "reassigned" | "archived";
 
-export interface Company { id: string; name: string; shortName: string; initials: string; color: string }
-export interface ContentCategory { id: string; name: string; color: string; targetPerMonth: number }
+export interface Company { id: string; name: string; shortName: string; initials: string; color: string; active?: boolean }
+export interface ContentCategory { id: string; name: string; color: string; targetPerMonth: number; active?: boolean }
 export interface TeamMember { id: string; name: string; role: MemberRole; title: string; initials: string; color: string; active: boolean }
 export interface Attachment { id: string; name: string; size: number; mime: string; url: string; kind: "brief" | "quotation" | "final"; channel?: Channel; createdAt?: string }
 export interface Quotation { id: string; vendor: string; amount: number; scope: string; days: number; attachmentId?: string; recommended: boolean }
@@ -36,15 +36,15 @@ export type NewIdeaInput = Pick<Idea, "title" | "companyId" | "department" | "ca
 export type MemberPatch = Partial<Pick<TeamMember, "name" | "title" | "active">> & { role?: Exclude<MemberRole, "superadmin"> };
 export type NewMemberInput = Pick<TeamMember, "name" | "title"> & { role: Exclude<MemberRole, "superadmin"> };
 /** Account credentials are transient inputs. They must never enter shared MediaData. */
-export type NewAccountInput = NewMemberInput & { username: string; password: string };
-export type AccountPatch = MemberPatch & { username?: string; password?: string };
+export type NewAccountInput = NewMemberInput & { username: string; password: string; email?: string };
+export type AccountPatch = MemberPatch & { username?: string; password?: string; email?: string };
 export type AccountBaseline = Pick<TeamMember, "name" | "title" | "role" | "active"> & { username: string };
-export interface AccountSummary { memberId: string; username: string; hasPassword: boolean; protected: boolean }
+export interface AccountSummary { memberId: string; username: string; hasPassword: boolean; protected: boolean; email?: string }
 export interface AccountsResponse { version: number; accounts: AccountSummary[] }
 export interface AccountMutationResponse extends VersionedMediaData { accounts: AccountSummary[]; currentUser: TeamMember | null; reloginRequired: boolean }
 export interface ScheduleInput { designerId: string; scheduledAt: string; dueDate?: string; priority?: Priority }
 
-export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "مراجعة التصميم", delivered: "تم التسليم" };
+export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "مراجعة المصمم النهائية", delivered: "تم التسليم", cancelled: "ملغاة", rejected: "مرفوضة" };
 export const WORK_TYPE_LABELS: Record<WorkType, string> = { motion: "موشن جرافيك", video: "مونتاج فيديو", design: "تصميم", report: "تقرير", presentation: "عرض تقديمي", document: "مستندات" };
 export const CHANNEL_LABELS: Record<Channel, string> = { screens: "الشاشات الداخلية", whatsapp: "واتساب", email: "البريد الداخلي" };
 export const PRIORITY_LABELS: Record<Priority, string> = { urgent: "عاجلة", high: "عالية", normal: "عادية", low: "منخفضة" };

@@ -708,7 +708,7 @@ export function IdeaCard({
   data: MediaData;
   onOpen: (id: string) => void;
 }) {
-  const late = idea.dueDate < today() && idea.status !== "delivered";
+  const late = idea.dueDate < today() && !["delivered", "cancelled", "rejected", "draft"].includes(idea.status);
   return (
     <ActionButton
       onClick={() => onOpen(idea.id)}
@@ -805,7 +805,7 @@ function Overview({
   const waiting = data.ideas.filter((i) => i.status === "review");
   const active = data.ideas.filter((i) => production.includes(i.status));
   const late = data.ideas.filter(
-    (i) => i.dueDate < today() && i.status !== "delivered",
+    (i) => i.dueDate < today() && !["delivered", "cancelled", "rejected", "draft"].includes(i.status),
   );
   const attention = data.ideas
     .filter(
@@ -1066,12 +1066,14 @@ function WorkBoard({
     [category, setCategory] = useState("all"),
     [proposer, setProposer] = useState("all"),
     [mine, setMine] = useState(false),
+    [showClosed, setShowClosed] = useState(false),
     [view, setView] = useState("board");
   const user = useMediaStore((s) => s.currentUser);
   const stages =
     mode === "content"
-      ? ["draft", "quotations", "review", "changes"]
+      ? ["draft", "quotations", "review", "changes", ...(showClosed ? ["rejected", "cancelled"] : [])]
       : ["approved", "scheduled", "designing", "design_review", "delivered"];
+  const closedCount = data.ideas.filter((i) => i.status === "rejected" || i.status === "cancelled").length;
   const ideas = data.ideas.filter(
     (i) =>
       stages.includes(i.status) &&
@@ -1088,6 +1090,12 @@ function WorkBoard({
     <>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
+          {mode === "content" && closedCount > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
+              إظهار المرفوضة والملغاة ({closedCount})
+            </label>
+          )}
           <label>
             <span className="sr-only">تصفية حسب الشركة</span>
             <select

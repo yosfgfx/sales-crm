@@ -11,7 +11,7 @@ import { WorkflowError } from "@/lib/media-workflow";
 
 interface SessionResponse { user: TeamMember | null; demo: boolean; configured: boolean }
 interface OperationResult {
-  idea?: Idea; companies?: Company[]; categories?: ContentCategory[]; settings?: SystemSettings;
+  idea?: Idea; deletedIdeaId?: string; companies?: Company[]; categories?: ContentCategory[]; settings?: SystemSettings;
   notifications: MediaData["notifications"];
 }
 export interface MediaState {
@@ -23,8 +23,13 @@ export interface MediaState {
   createIdea: (input: NewIdeaInput) => Promise<Idea>;
   patchIdea: (ideaId: string, patch: IdeaPatch, expectedUpdatedAt?: string) => Promise<void>;
   submitIdea: (ideaId: string) => Promise<void>;
-  reviewIdea: (ideaId: string, decision: "approved" | "changes", feedback?: string) => Promise<void>;
-  scheduleIdea: (ideaId: string, input: ScheduleInput, expectedUpdatedAt?: string) => Promise<void>;
+  reviewIdea: (ideaId: string, decision: "approved" | "changes" | "rejected", feedback?: string) => Promise<void>;
+  withdrawIdea: (ideaId: string) => Promise<void>;
+  cancelIdea: (ideaId: string, reason: string) => Promise<void>;
+  reopenIdea: (ideaId: string, reason: string) => Promise<void>;
+  reassignIdea: (ideaId: string, input: { ownerId?: string; designerId?: string }) => Promise<void>;
+  deleteIdea: (ideaId: string, reason?: string) => Promise<void>;
+  scheduleIdea: (ideaId: string, input: ScheduleInput, expectedSchedule?: { designerId: string; scheduledAt: string; dueDate: string; priority: string }) => Promise<void>;
   changeDesignStatus: (ideaId: string, status: "designing" | "design_review" | "delivered") => Promise<void>;
   addAttachments: (ideaId: string, files: Attachment[]) => Promise<void>;
   removeAttachment: (ideaId: string, attachmentId: string) => Promise<void>;
@@ -35,6 +40,8 @@ export interface MediaState {
   updateSettings: (patch: Partial<SystemSettings>, expectedSettings?: Partial<SystemSettings>) => Promise<void>;
   addCompany: (name: string) => Promise<Company>;
   addCategory: (name: string) => Promise<ContentCategory>;
+  updateCompany: (companyId: string, patch: { name?: string; shortName?: string; active?: boolean }) => Promise<void>;
+  updateCategory: (categoryId: string, patch: { name?: string; active?: boolean; targetPerMonth?: number }) => Promise<void>;
   readAccounts: () => Promise<AccountSummary[]>;
   loadAccounts: () => Promise<AccountSummary[]>;
   createAccount: (input: NewAccountInput) => Promise<TeamMember>;
@@ -127,6 +134,7 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
       useMediaStore.setState((state: MediaState) => {
         const data = { ...state.data, notifications: result.notifications };
         if (result.idea) data.ideas = state.data.ideas.some((idea: Idea) => idea.id === result.idea!.id) ? state.data.ideas.map((idea: Idea) => (idea.id === result.idea!.id ? result.idea! : idea)) : [result.idea, ...state.data.ideas];
+        if (result.deletedIdeaId) data.ideas = data.ideas.filter((idea: Idea) => idea.id !== result.deletedIdeaId);
         if (result.companies) data.companies = result.companies;
         if (result.categories) data.categories = result.categories;
         if (result.settings) data.settings = result.settings;
@@ -169,8 +177,13 @@ export const useMediaStore = create<MediaState>(() => ({
   createIdea: (input) => operate({ type: "createIdea", input }, (result) => result.idea!),
   patchIdea: (ideaId, patch, expectedUpdatedAt) => operate({ type: "patchIdea", ideaId, patch, expectedUpdatedAt }),
   submitIdea: (ideaId) => operate({ type: "submitIdea", ideaId }),
+  withdrawIdea: (ideaId) => operate({ type: "withdrawIdea", ideaId }),
+  cancelIdea: (ideaId, reason) => operate({ type: "cancelIdea", ideaId, reason }),
+  reopenIdea: (ideaId, reason) => operate({ type: "reopenIdea", ideaId, reason }),
+  reassignIdea: (ideaId, input) => operate({ type: "reassignIdea", ideaId, ...input }),
+  deleteIdea: (ideaId, reason) => operate({ type: "deleteIdea", ideaId, reason }),
   reviewIdea: (ideaId, decision, feedback) => operate({ type: "reviewIdea", ideaId, decision, feedback }),
-  scheduleIdea: (ideaId, input, expectedUpdatedAt) => operate({ type: "scheduleIdea", ideaId, input, expectedUpdatedAt }),
+  scheduleIdea: (ideaId, input, expectedSchedule) => operate({ type: "scheduleIdea", ideaId, input, expectedSchedule }),
   changeDesignStatus: (ideaId, status) => operate({ type: "changeDesignStatus", ideaId, status }),
   addAttachments: (ideaId, files) => operate({ type: "addAttachments", ideaId, attachmentIds: files.map((file) => file.id) }),
   removeAttachment: (ideaId, attachmentId) => operate({ type: "removeAttachment", ideaId, attachmentId }),
@@ -186,8 +199,10 @@ export const useMediaStore = create<MediaState>(() => ({
   updateSettings: (patch, expected) => operate({ type: "updateSettings", patch, expected }),
   addCompany: (name) => operate({ type: "addCompany", name }, (result) => result.companies!.at(-1)!),
   addCategory: (name) => operate({ type: "addCategory", name }, (result) => result.categories!.at(-1)!),
+  updateCompany: (companyId, patch) => operate({ type: "updateCompany", companyId, ...patch }),
+  updateCategory: (categoryId, patch) => operate({ type: "updateCategory", categoryId, ...patch }),
   readAccounts: () => enqueue(loadAccountState),
   loadAccounts: () => enqueue(loadAccountState),
-  createAccount: ({ username, password, ...member }) => mutateAccount({ operation: "create", member, username, password }, (next, _previous, memberId) => next.members.find((item) => item.id === memberId)!),
-  updateAccount: (memberId, { username, password, ...patch }, expected) => mutateAccount({ operation: "update", memberId, patch, ...(username !== undefined ? { username } : {}), ...(password !== undefined ? { password } : {}) }, undefined, expected),
+  createAccount: ({ username, password, email, ...member }) => mutateAccount({ operation: "create", member, username, password, ...(email ? { email } : {}) }, (next, _previous, memberId) => next.members.find((item) => item.id === memberId)!),
+  updateAccount: (memberId, { username, password, email, ...patch }, expected) => mutateAccount({ operation: "update", memberId, patch, ...(username !== undefined ? { username } : {}), ...(password !== undefined ? { password } : {}), ...(email !== undefined ? { email } : {}) }, undefined, expected),
 }));

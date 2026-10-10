@@ -225,6 +225,7 @@ function MemberForm({
   );
   const [active, setActive] = useState(member?.active ?? true);
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(account?.email || "");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -247,8 +248,9 @@ function MemberForm({
           setError("كلمتا المرور غير متطابقتين.");
           return;
         }
-        if ((mustSetPassword || password) && password.length < 6) {
-          setError("استخدم كلمة مرور من 6 أحرف على الأقل.");
+        const minimum = role === "admin" || member?.role === "superadmin" ? 12 : 10;
+        if ((mustSetPassword || password) && password.length < minimum) {
+          setError(`استخدم كلمة مرور من ${minimum} أحرف على الأقل.`);
           return;
         }
         setBusy(true);
@@ -262,6 +264,7 @@ function MemberForm({
                 title,
                 ...(!protectedAccount ? { role, active, username } : {}),
                 ...(password ? { password } : {}),
+                email,
               },
               baseline,
             );
@@ -275,6 +278,7 @@ function MemberForm({
               role,
               username,
               password,
+              email,
             });
             onDone(
               "أُضيف " +
@@ -332,6 +336,21 @@ function MemberForm({
           {protectedAccount
             ? "يبقى اسم دخول هذا الحساب root ثابتًا."
             : "استخدم حروفًا إنجليزية وأرقامًا، ويمكن إضافة النقطة والشرطة. هذا هو الاسم الذي يستخدمه العضو للدخول."}
+        </p>
+        <label className="media-label">
+          البريد الإلكتروني للإشعارات
+          <input
+            type="email"
+            dir="ltr"
+            autoComplete="off"
+            maxLength={254}
+            className="media-input mt-2 text-start"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </label>
+        <p className="text-xs text-[var(--soft)]">
+          اختياري. تصل إليه إشعارات النظام بالبريد عند تفعيل الإرسال.
         </p>
         {!protectedAccount && (
           <label className="media-label">

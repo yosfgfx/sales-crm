@@ -585,13 +585,19 @@ const HISTORY_LABELS: Record<Idea["history"][number]["action"], string> = {
   approved: "اعتماد الفكرة",
   scheduled: "جدولة التصميم",
   design_started: "بدء التصميم",
-  design_review: "مراجعة التصميم",
+  design_review: "مراجعة المصمم النهائية",
   delivered: "تسليم العمل",
   attachments_added: "إضافة مرفقات",
   attachment_removed: "إزالة مرفق",
   quotation_added: "إضافة عرض سعر",
   quotation_removed: "إزالة عرض سعر",
   comment: "تعليق",
+  withdrawn: "سحب من الاعتماد",
+  rejected: "رفض الفكرة",
+  cancelled: "إلغاء الفكرة",
+  reopened: "إعادة فتح العمل",
+  reassigned: "إعادة إسناد",
+  archived: "أرشفة في Google Drive",
 };
 
 function splitText(value: string, limit = 650): string[] {
