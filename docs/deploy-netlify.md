@@ -1,5 +1,22 @@
 # نشر «وصل» على Netlify
 
+## حالة النشر (10 أكتوبر 2026)
+
+- نُشر commit `61ae282` على `https://wusl.netlify.app` من نسخة نظيفة لا تحتوي `.env.local`، ومعه الدالة المجدولة `wasl-jobs`.
+- أُضيفت متغيرات البيئة على Netlify. `WASL_SESSION_SECRET` و`CRON_SECRET` مولّدان خصيصاً للإنتاج، و`WASL_ENCRYPTION_KEY` هو نفسه المحلي لأن رمز Google المحفوظ مشفر به.
+- البريد معطل (`WASL_EMAIL_ENABLED=false`). اختبار الدخول إلى SMTP فشل لأن المصادقة على SMTP معطلة على مستوى مستأجر Microsoft 365 لنطاق hayen-hr.com. يفعّلها مسؤول M365 للصندوق y.abdulrahman@hayen-hr.com (Exchange admin center ← Mailbox ← Manage email apps ← Authenticated SMTP، أو `Set-CASMailbox -SmtpClientAuthenticationDisabled $false`)، ثم يُضبط المتغير `true` ويُعاد النشر.
+- نسخة احتياطية مشفرة قبل النشر في `~/WaslBackups/2026-10-10-predeploy/`.
+
+## إعادة النشر
+
+```sh
+git worktree add --detach /tmp/wasl-deploy main
+cp -r .netlify /tmp/wasl-deploy/
+cd /tmp/wasl-deploy && npm ci && npx netlify-cli deploy --build --prod
+```
+
+البناء من نسخة نظيفة يمنع دخول أسرار `.env.local` في ملفات النشر. تغيير متغير على Netlify لا يسري إلا بعد إعادة النشر.
+
 العنوان المعتمد: `https://wusl.netlify.app`.
 
 ## قبل النشر
