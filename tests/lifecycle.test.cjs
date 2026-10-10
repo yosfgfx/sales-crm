@@ -48,8 +48,14 @@ test("cancel is limited to owners before approval and to administrators before d
 test("delete: owners before approval, administrators any time, with an audit copy", async () => {
   await assert.rejects(h.op("noura", { type: "deleteIdea", ideaId: "idea-001" }), expectStatus(403));
   await assert.rejects(h.op("sara", { type: "deleteIdea", ideaId: "idea-003" }), expectStatus(403));
+  const fs = require("node:fs");
+  fs.mkdirSync(path.join(h.temporary, "files"), { recursive: true });
+  const blob = path.join(h.temporary, "files", "orphan-check");
+  fs.writeFileSync(blob, "abc");
+  await h.pg.query("insert into wasl.attachments (id, kind, name, size, mime, storage, local_path, owner_id, idea_id) values ('00000000-0000-4000-8000-00000000beef', 'brief', 'a.txt', 3, 'text/plain', 'local', 'files/orphan-check', 'noura', 'idea-003')");
   const own = await h.op("noura", { type: "deleteIdea", ideaId: "idea-003", reason: "لم تعد مطلوبة" });
   assert.equal(own.deletedIdeaId, "idea-003");
+  assert.equal(fs.existsSync(blob), false);
   assert.equal(await statusOf("idea-003"), undefined);
   const byAdmin = await h.op("admin", { type: "deleteIdea", ideaId: "idea-001" });
   assert.equal(byAdmin.deletedIdeaId, "idea-001");
@@ -129,4 +135,12 @@ test("old closed ideas arrive trimmed in the overview and load in full when open
   const full = await state.loadIdeaFor(viewer, "idea-010", h.database);
   assert.equal(full.partial, undefined);
   assert.ok(full.history.length >= delivered.history.length);
+});
+
+test("creating an idea ignores fields outside the editable set", async () => {
+  const input = { title: "فكرة نظيفة", companyId: "mawaredcom", department: "التواصل", categoryId: "wellbeing", workType: "design", description: "وصف", content: "نص", executionPlan: "خطة", channels: ["screens"], ownerId: "admin", requestedAt: "2026-10-10", dueDate: "2026-10-20", priority: "normal", needsQuotes: false };
+  const created = await h.op("admin", { type: "createIdea", input: { ...input, status: "approved", approvedAt: "2026-10-01T00:00:00.000Z", deliveredAt: "2026-10-02" } });
+  assert.equal(created.idea.status, "draft");
+  assert.equal(created.idea.approvedAt, undefined);
+  assert.equal(created.idea.deliveredAt, undefined);
 });

@@ -5,7 +5,7 @@ import { runDueArchiveJobs } from "./archive";
 import { deleteBlob } from "./blob-store";
 import { deleteFile, loadIntegration, uploadWhole } from "./google";
 import { ensureFolder } from "./archive";
-import { createBackup } from "../../scripts/lib/backup.mjs";
+import { BACKUP_EXTENSION, createBackup } from "../../scripts/lib/backup.mjs";
 import { database, type Queryable } from "./db";
 import { insertNotifications } from "./repository";
 
@@ -39,8 +39,19 @@ export async function runDailyJobs(q: Queryable = database(), today = riyadhDate
   }
   await insertNotifications(q, notices);
   const cleaned = await cleanupFiles(q);
+  return { ran: true, reminders: notices.length, cleaned };
+}
+
+export async function runDailyBackup(q: Queryable = database(), today = riyadhDate(), now = new Date()) {
+  if ((await q.query("select 1 from wasl.job_runs where key = $1", [`backup:${today}`])).rows.length) return { ran: false, reason: "done" as const };
+  const slot = Math.floor((now.getUTCHours() * 60 + now.getUTCMinutes()) / 30);
+  const attempt = await q.query("insert into wasl.job_runs (key) values ($1) on conflict (key) do nothing returning key", [`backup-try:${today}:${slot}`]);
+  if (!attempt.rows.length) return { ran: false, reason: "waiting" as const };
   const backup = await backupToDrive(q, today).catch(() => null);
-  return { ran: true, reminders: notices.length, cleaned, backup };
+  if (!backup) return { ran: true, saved: false };
+  await q.query("insert into wasl.job_runs (key) values ($1) on conflict (key) do nothing", [`backup:${today}`]);
+  await q.query("delete from wasl.job_runs where key like 'backup-try:%' and key < $1", [`backup-try:${today}`]);
+  return { ran: true, saved: true, backup };
 }
 
 export async function cleanupFiles(q: Queryable = database()) {
@@ -79,7 +90,7 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => (
 
 export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
   const pending = (await q.query<{ id: string; title: string; body: string; email: string | null; name: string }>(
-    "select n.id, n.title, n.body, m.email, m.name from wasl.notifications n join wasl.members m on m.id = n.recipient_id where n.emailed_at is null and n.created_at > now() - interval '2 days' order by n.created_at limit $1", [limit])).rows;
+    "with claimed as (update wasl.notifications set emailed_at = now() where id in (select id from wasl.notifications where emailed_at is null and created_at > now() - interval '2 days' order by created_at limit $1 for update skip locked) returning id, title, body, recipient_id) select c.id, c.title, c.body, m.email, m.name from claimed c join wasl.members m on m.id = c.recipient_id", [limit])).rows;
   const smtp = mailer();
   let sent = 0;
   const origin = process.env.MEDIA_APP_ORIGIN || "";
@@ -92,9 +103,8 @@ export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
           html: `<div dir="rtl" style="font-family:Tahoma,Arial"><p>${escapeHtml(notice.name)}،</p><p><b>${escapeHtml(notice.title)}</b></p><p>${escapeHtml(notice.body)}</p>${origin ? `<p><a href="${escapeHtml(origin)}">فتح نظام وصل</a></p>` : ""}</div>`,
         });
         sent++;
-      } catch { continue; }
+      } catch { await q.query("update wasl.notifications set emailed_at = null where id = $1", [notice.id]); }
     }
-    await q.query("update wasl.notifications set emailed_at = now() where id = $1", [notice.id]);
   }
   return { sent, pending: pending.length };
 }
@@ -102,7 +112,7 @@ export async function sendPendingEmails(q: Queryable = database(), limit = 20) {
 export async function runBackgroundWork(force = false) {
   if (!force && Date.now() - lastRun < 60_000) return null;
   lastRun = Date.now();
-  const results = { archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), email: await sendPendingEmails().catch(() => null) };
+  const results = { archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), backup: await runDailyBackup().catch(() => null), email: await sendPendingEmails().catch(() => null) };
   return results;
 }
 
@@ -110,9 +120,9 @@ export async function backupToDrive(q: Queryable = database(), today = riyadhDat
   const integration = await loadIntegration(q);
   if (!integration?.root_folder_id) return null;
   const root = integration.root_folder_id;
-  const folder = await ensureFolder("backups", root, "نسخ احتياطية للنظام", root, q);
+  const folder = await ensureFolder("backups", root, "نسخ احتياطية للنظام", root);
   const bytes = new Uint8Array(await createBackup(q));
-  const file = await uploadWhole({ name: `wasl-backup-${today}.json.gz`, parentId: folder, mime: "application/gzip", bytes, appProperties: { waslBackup: today } }, q);
+  const file = await uploadWhole({ name: `wasl-backup-${today}${BACKUP_EXTENSION}`, parentId: folder, mime: "application/octet-stream", bytes, appProperties: { waslBackup: today } }, q);
   await q.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, $2, $3, $4) on conflict (key) do update set folder_id = excluded.folder_id", [`backup:${today}`, root, file.id, file.name]);
   const old = (await q.query<{ key: string; folder_id: string }>("select key, folder_id from wasl.drive_folders where key like 'backup:%' and key < $1 order by key", [`backup:${new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10)}`])).rows;
   for (const entry of old) { await deleteFile(entry.folder_id, q).catch(() => undefined); await q.query("delete from wasl.drive_folders where key = $1", [entry.key]); }

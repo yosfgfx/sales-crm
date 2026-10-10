@@ -87,6 +87,10 @@ test("large files upload in chunks straight into the project folder and stream b
   const download = await files.downloadFile(h.getRequest(`/api/files/${attachment.id}?inline=1`, h.cookies.faisal), attachment.id);
   assert.equal(download.headers.get("content-type"), "image/png");
   assert.equal(Buffer.from(await download.arrayBuffer()).length, bytes.length);
+  const ranged = await files.downloadFile(new Request(`${h.ORIGIN}/api/files/${attachment.id}`, { headers: { cookie: h.cookies.faisal, range: "bytes=4194304-8388607" } }), attachment.id);
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.headers.get("content-range"), `bytes 4194304-8388607/${bytes.length}`);
+  assert.equal(Buffer.from(await ranged.arrayBuffer()).length, 4 * 1024 * 1024);
 });
 
 test("delivery archives automatically into year, month and company with a summary, and says so only after success (C1, C3)", async () => {
@@ -158,8 +162,18 @@ test("the daily backup lands in the archive's backup folder on Drive (H8)", asyn
   const result = await scheduler.backupToDrive(h.database, "2026-10-10");
   assert.ok(result.size > 100);
   const file = fake.files.get(result.fileId);
-  assert.equal(file.name, "wasl-backup-2026-10-10.json.gz");
-  assert.match(fake.pathOf(file.id), /\/نسخ احتياطية للنظام\/wasl-backup-2026-10-10\.json\.gz$/);
+  assert.equal(file.name, "wasl-backup-2026-10-10.json.gz.enc");
+  assert.match(fake.pathOf(file.id), /\/نسخ احتياطية للنظام\/wasl-backup-2026-10-10\.json\.gz\.enc$/);
+  assert.equal(file.bytes.subarray(0, 7).toString("latin1"), "WASLBK1");
+  assert.ok(!file.bytes.includes(Buffer.from("password_hash")));
+  const now = new Date("2026-10-10T09:00:00Z");
+  fake.state.failUploads = true;
+  assert.deepEqual(await scheduler.runDailyBackup(h.database, "2026-10-11", now), { ran: true, saved: false });
+  assert.equal((await scheduler.runDailyBackup(h.database, "2026-10-11", now)).reason, "waiting");
+  fake.state.failUploads = false;
+  const retried = await scheduler.runDailyBackup(h.database, "2026-10-11", new Date("2026-10-10T09:31:00Z"));
+  assert.equal(retried.saved, true);
+  assert.equal((await scheduler.runDailyBackup(h.database, "2026-10-11", new Date("2026-10-10T11:00:00Z"))).reason, "done");
 });
 
 test("an archive job interrupted mid-run is picked up again once its lock expires (N3)", async () => {
@@ -175,4 +189,21 @@ test("attachments larger than 100 MB pass validation up to 2 GB (N2)", async () 
   const data = createInitialMediaData();
   data.ideas[0].attachments = [{ id: "big", name: "video.mp4", size: 1_500_000_000, mime: "video/mp4", url: "/api/files/big", kind: "brief" }];
   assert.doesNotThrow(() => validateMediaData(data));
+});
+
+test("parallel uploads to a fresh idea create one project folder and one set of subfolders (N5)", async () => {
+  const ideaId = "idea-008";
+  const previous = (await h.pg.query("select drive_folder_id from wasl.ideas where id = $1", [ideaId])).rows[0].drive_folder_id;
+  if (previous) fake.files.get(previous).trashed = true;
+  await h.pg.query("update wasl.ideas set drive_folder_id = null where id = $1", [ideaId]);
+  const cookie = h.cookies.noura;
+  const start = (name) => uploads.startUpload(h.jsonRequest("/api/uploads", { ideaId, kind: "brief", name, size: 10, mime: "text/plain" }, { cookie }));
+  await Promise.all([start("a.txt"), start("b.txt"), start("c.txt")]);
+  const folderId = (await h.pg.query("select drive_folder_id from wasl.ideas where id = $1", [ideaId])).rows[0].drive_folder_id;
+  const parent = fake.files.get(folderId).parents[0];
+  const siblings = [...fake.files.values()].filter((file) => !file.trashed && file.parents.includes(parent) && file.name === fake.files.get(folderId).name);
+  assert.equal(siblings.length, 1);
+  const children = [...fake.files.values()].filter((file) => !file.trashed && file.parents.includes(folderId));
+  assert.equal(children.length, 3);
+  assert.equal(new Set(children.map((file) => file.name)).size, 3);
 });

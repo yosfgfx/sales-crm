@@ -84,9 +84,10 @@ export async function sessionUser(request: Request, q: Queryable = database()): 
   return member;
 }
 
-export async function requireUser(request: Request, q?: Queryable) {
+export async function requireUser(request: Request, q?: Queryable, options: { allowMissingMfa?: boolean } = {}) {
   const user = await sessionUser(request, q);
   if (!user) throw new MediaServerError("يرجى تسجيل الدخول للمتابعة.", 401, "AUTH_REQUIRED");
+  if (!options.allowMissingMfa && mfaMissing.has(user)) throw new MediaServerError("فعّل التحقق بخطوتين من «حسابي» قبل متابعة العمل بحساب مدير النظام.", 403, "MFA_SETUP_REQUIRED");
   return user;
 }
 export function requireAdministrator(user: TeamMember) {
@@ -241,10 +242,10 @@ export async function mutateAccounts(request: Request): Promise<Response> {
   return Response.json({ version: 0, data: state?.data, accounts: user && isAdministrator(user) ? await summaries(db) : [], currentUser: user, reloginRequired, memberId: outcome.targetId }, { headers: { ...responseHeaders, ...(reloginRequired ? { "Set-Cookie": clearCookie(request) } : {}) } });
 }
 
-export async function mfaAction(request: Request) {
+async function runMfa(request: Request): Promise<{ data: Record<string, unknown>; cookie?: string }> {
   assertSameOrigin(request);
   const db = database();
-  const user = await requireUser(request, db);
+  const user = await requireUser(request, db, { allowMissingMfa: true });
   const body = await readJson(request, 1024) as { action?: string; code?: string } | null;
   const account = await accountFor(db, user.id);
   if (!account) throw new MediaServerError("الحساب غير موجود.", 404, "ACCOUNT_NOT_FOUND");
@@ -254,22 +255,37 @@ export async function mfaAction(request: Request) {
     const secret = newSecret();
     await db.query("update wasl.accounts set totp_pending_enc = $2 where member_id = $1", [user.id, encryptSecret(secret)]);
     const uri = otpauthUri(secret, account.username);
-    return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
+    return { data: { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) } };
   }
   if (body?.action === "confirm") {
     const pending = (await db.query<{ totp_pending_enc: string | null }>("select totp_pending_enc from wasl.accounts where member_id = $1", [user.id])).rows[0]?.totp_pending_enc;
     if (!pending) throw new MediaServerError("ابدأ تفعيل التحقق بخطوتين أولاً.", 409, "MFA_NOT_STARTED");
     const step = verifyCode(decryptSecret(pending), code);
     if (step === null) throw new MediaServerError("الرمز غير صحيح. تأكد من ضبط وقت الجوال وأعد المحاولة.", 422, "INVALID_MFA");
-    await db.query("update wasl.accounts set totp_secret_enc = totp_pending_enc, totp_pending_enc = null, totp_enabled_at = now(), totp_last_step = $2 where member_id = $1", [user.id, step]);
-    return { enabled: true };
+    await db.query("update wasl.accounts set totp_secret_enc = totp_pending_enc, totp_pending_enc = null, totp_enabled_at = now(), totp_last_step = $2, auth_version = auth_version + 1, updated_at = now() where member_id = $1", [user.id, step]);
+    return { data: { enabled: true }, cookie: await reissue(request, db, user) };
   }
   if (body?.action === "disable") {
-    if (!account.totp_secret_enc) return { enabled: false };
+    if (!account.totp_secret_enc) return { data: { enabled: false } };
     if (isAdministrator(user) && adminMfaRequired()) throw new MediaServerError("التحقق بخطوتين إلزامي لمديري النظام.", 403, "MFA_REQUIRED_FOR_ADMINS");
-    if (verifyCode(decryptSecret(account.totp_secret_enc), code) === null) throw new MediaServerError("أدخل رمزاً صحيحاً لإيقاف التحقق بخطوتين.", 422, "INVALID_MFA");
-    await db.query("update wasl.accounts set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null where member_id = $1", [user.id]);
-    return { enabled: false };
+    const lastStep = account.totp_last_step === null ? null : Number(account.totp_last_step);
+    if (verifyCode(decryptSecret(account.totp_secret_enc), code, Date.now(), lastStep) === null) throw new MediaServerError("أدخل رمزاً صحيحاً لم يُستخدم من قبل لإيقاف التحقق بخطوتين.", 422, "INVALID_MFA");
+    await db.query("update wasl.accounts set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null, auth_version = auth_version + 1, updated_at = now() where member_id = $1", [user.id]);
+    return { data: { enabled: false }, cookie: await reissue(request, db, user) };
   }
   throw new MediaServerError("إجراء غير معروف.");
+}
+
+async function reissue(request: Request, q: Queryable, member: TeamMember) {
+  const account = await accountFor(q, member.id);
+  return account ? issueCookie(request, account, member) : undefined;
+}
+
+export async function mfaAction(request: Request) {
+  return (await runMfa(request)).data;
+}
+
+export async function mfaResponse(request: Request) {
+  const { data, cookie } = await runMfa(request);
+  return Response.json(data, { headers: { ...responseHeaders, ...(cookie ? { "Set-Cookie": cookie } : {}) } });
 }

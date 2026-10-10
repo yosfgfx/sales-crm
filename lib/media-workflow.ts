@@ -53,8 +53,10 @@ function commitIdea(data: MediaData, actor: TeamMember, previous: Idea, next: Id
   return result;
 }
 
-export function createMediaIdea(data: MediaData, actor: TeamMember, input: NewIdeaInput, ctx?: WorkflowContext): MediaData {
+export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdeaInput, ctx?: WorkflowContext): MediaData {
   requireRole(data, actor, ["admin", "content"]);
+  const input = Object.fromEntries(patchKeys.map((key) => [key, raw?.[key]])) as NewIdeaInput;
+  if (typeof input.title !== "string" || typeof input.requestedAt !== "string" || typeof input.ownerId !== "string") throw new WorkflowError("بيانات الفكرة غير مكتملة.");
   if (!isAdministrator(actor) && input.ownerId !== actor.id) throw new WorkflowError("يجب أن تكون أنت مسؤول الفكرة الجديدة.", "FORBIDDEN", 403);
   const owner = data.members.find((member) => member.id === input.ownerId && member.active);
   if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً من فريق المحتوى والتنسيق.");

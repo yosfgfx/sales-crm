@@ -12,7 +12,8 @@ export function projectIdea(viewer: TeamMember, idea: Idea): Idea {
   const plain: Idea = administrator(viewer) || !idea.archive?.folderUrl ? idea : { ...idea, archive: { status: idea.archive.status, ...(idea.archive.archivedAt ? { archivedAt: idea.archive.archivedAt } : {}) } };
   if (canSeeQuotations(viewer, idea)) return plain;
   const hidden = new Set(plain.attachments.filter((file) => file.kind === "quotation").map((file) => file.id));
-  const projected: Idea = { ...plain, quotations: [], attachments: plain.attachments.filter((file) => !hidden.has(file.id)) };
+  const history = plain.history.map((event) => event.action === "quotation_added" ? { ...event, note: "أُضيف عرض سعر" } : event.action === "quotation_removed" ? { ...event, note: "حُذف عرض سعر" } : event);
+  const projected: Idea = { ...plain, history, quotations: [], attachments: plain.attachments.filter((file) => !hidden.has(file.id)) };
   if (projected.sourceProposal) projected.sourceProposal = { ...projected.sourceProposal, funding: "", sourceApproval: "", reviewNote: undefined };
   if (projected.sourceProposal && projected.sourceProposal.reviewNote === undefined) delete projected.sourceProposal.reviewNote;
   return projected;

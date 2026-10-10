@@ -55,7 +55,12 @@ function createFakeDrive() {
         file.parents = [...file.parents.filter((parent) => !remove.includes(parent)), url.searchParams.get("addParents")].filter(Boolean);
         return json(view(file));
       }
-      if (url.searchParams.get("alt") === "media") return new Response(file.bytes, { status: 200, headers: { "content-length": String(file.bytes.length) } });
+      if (url.searchParams.get("alt") === "media") {
+        const range = /^bytes=(\d+)-(\d*)$/.exec(new Headers(init.headers || {}).get("range") || "");
+        if (!range) return new Response(file.bytes, { status: 200, headers: { "content-length": String(file.bytes.length) } });
+        const start = Number(range[1]), end = Math.min(range[2] ? Number(range[2]) : file.bytes.length - 1, file.bytes.length - 1);
+        return new Response(file.bytes.subarray(start, end + 1), { status: 206, headers: { "content-length": String(end - start + 1), "content-range": `bytes ${start}-${end}/${file.bytes.length}` } });
+      }
       return json(view(file));
     }
     throw new Error(`Unhandled Drive call ${method} ${url.pathname}`);

@@ -2,18 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Attachment, TeamMember } from "@/data/media";
 import { isAdministrator, requireAdministrator, requireUser } from "./auth";
-import { dataDirectory, deleteBlob, putBlob, readBlob } from "./blob-store";
+import { deleteBlob, putBlob, readBlob } from "./blob-store";
 import { database } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, responseHeaders } from "./http";
 import { streamFile } from "./google";
 import { loadIdeas, toAttachment } from "./repository";
 import { canSeeQuotations } from "./state";
 
-const FILE_LIMIT = 5 * 1024 * 1024;
-const UPLOAD_LIMIT = 5 * 1024 * 1024;
+const FILE_LIMIT = 4 * 1024 * 1024;
+const UPLOAD_LIMIT = 4 * 1024 * 1024;
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
-export { dataDirectory };
 
 export function sniffInlineMime(bytes: Uint8Array): string | null {
   const head = Buffer.from(bytes.subarray(0, 16));
@@ -50,7 +49,7 @@ export async function uploadFiles(request: Request): Promise<Attachment[]> {
   const actor = await requireUser(request, db);
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.startsWith("multipart/form-data")) throw new MediaServerError("اختر الملفات لإرفاقها.", 415, "INVALID_CONTENT_TYPE");
-  const body = await limitedBody(request, UPLOAD_LIMIT + 1024 * 1024);
+  const body = await limitedBody(request, UPLOAD_LIMIT + 256 * 1024);
   let form: FormData;
   try { form = await new Response(body as BodyInit, { headers: { "Content-Type": contentType } }).formData(); } catch { throw new MediaServerError("تعذّر قراءة الملفات. اخترها مجدداً."); }
   const kind = String(form.get("kind") || "");
@@ -63,8 +62,8 @@ export async function uploadFiles(request: Request): Promise<Attachment[]> {
   const files = form.getAll("files");
   if (files.length < 1 || files.length > (isLogo ? 1 : 10) || files.some((file) => typeof file === "string")) throw new MediaServerError(isLogo ? "اختر صورة شعار واحدة." : "يمكن إرفاق من ملف واحد إلى ١٠ ملفات في كل مرة.");
   let total = 0;
-  for (const file of files as File[]) { total += file.size; if (file.size === 0 || file.size > (isLogo ? 5 * 1024 * 1024 : FILE_LIMIT)) throw new MediaServerError(isLogo ? "يجب ألا يتجاوز حجم الشعار ٥ ميجابايت، وألا يكون فارغاً." : "قبل ربط Google Drive يُقبل ملف حتى ٥ ميجابايت فقط. اطلب من مالك النظام ربط Drive لرفع الملفات الكبيرة.", 413, "FILE_TOO_LARGE"); }
-  if (total > UPLOAD_LIMIT) throw new MediaServerError("قبل ربط Google Drive يكون الحد الإجمالي للدفعة ٥ ميجابايت. ارفع الملفات على دفعات أو اطلب ربط Drive.", 413, "UPLOAD_TOO_LARGE");
+  for (const file of files as File[]) { total += file.size; if (file.size === 0 || file.size > FILE_LIMIT) throw new MediaServerError(isLogo ? "يجب ألا يتجاوز حجم الشعار ٤ ميجابايت، وألا يكون فارغاً." : "قبل ربط Google Drive يُقبل ملف حتى ٤ ميجابايت فقط. اطلب من مالك النظام ربط Drive لرفع الملفات الكبيرة.", 413, "FILE_TOO_LARGE"); }
+  if (total > UPLOAD_LIMIT) throw new MediaServerError("قبل ربط Google Drive يكون الحد الإجمالي للدفعة ٤ ميجابايت. ارفع الملفات على دفعات أو اطلب ربط Drive.", 413, "UPLOAD_TOO_LARGE");
   const created: { storage: string; key: string }[] = [];
   try {
     const rows: { id: string; name: string; size: number; mime: string; inline: string | null; sha256: string; storage: string; key: string }[] = [];
@@ -105,11 +104,27 @@ export async function downloadFile(request: Request, id: string): Promise<Respon
   const inline = new URL(request.url).searchParams.get("inline") === "1" && Boolean(row.inline_mime);
   const name = encodeURIComponent(String(row.name)).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   const headers = { ...responseHeaders, "Content-Type": inline ? String(row.inline_mime) : "application/octet-stream", "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="attachment"; filename*=UTF-8''${name}`, "Content-Security-Policy": "sandbox; default-src 'none'", "Cross-Origin-Resource-Policy": "same-origin" };
+  const range = requestedRange(request.headers.get("range"));
   if (row.storage === "drive") {
-    const upstream = await streamFile(String(row.drive_file_id), db);
+    const upstream = await streamFile(String(row.drive_file_id), db, range ? `bytes=${range.start}-${range.end ?? ""}` : undefined);
     const length = upstream.headers.get("content-length");
-    return new Response(upstream.body, { headers: { ...headers, ...(length ? { "Content-Length": length } : {}) } });
+    const contentRange = upstream.status === 206 ? upstream.headers.get("content-range") : null;
+    return new Response(upstream.body, { status: contentRange ? 206 : 200, headers: { ...headers, "Accept-Ranges": "bytes", ...(length ? { "Content-Length": length } : {}), ...(contentRange ? { "Content-Range": contentRange } : {}) } });
   }
   const bytes = await readBlob(String(row.storage), String(row.local_path));
-  return new Response(bytes as BodyInit, { headers: { ...headers, "Content-Length": String(bytes.length) } });
+  if (range) {
+    if (range.start >= bytes.length) return new Response(null, { status: 416, headers: { ...headers, "Content-Range": `bytes */${bytes.length}` } });
+    const end = Math.min(range.end ?? bytes.length - 1, bytes.length - 1);
+    const part = bytes.subarray(range.start, end + 1);
+    return new Response(part as BodyInit, { status: 206, headers: { ...headers, "Accept-Ranges": "bytes", "Content-Length": String(part.length), "Content-Range": `bytes ${range.start}-${end}/${bytes.length}` } });
+  }
+  return new Response(bytes as BodyInit, { headers: { ...headers, "Accept-Ranges": "bytes", "Content-Length": String(bytes.length) } });
+}
+
+function requestedRange(header: string | null) {
+  const match = header?.match(/^bytes=(\d{1,15})-(\d{0,15})$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : undefined;
+  return end !== undefined && end < start ? null : { start, end };
 }

@@ -31,20 +31,29 @@ async function stillThere(id: string, parent: string, q: Queryable) {
   catch (error) { if (error instanceof DriveError && (error.status === 404 || error.status === 403)) return null; throw error; }
 }
 
-export async function ensureFolder(key: string, parentId: string, name: string, root: string, q: Queryable = database()) {
-  const cached = (await q.query<{ folder_id: string }>("select folder_id from wasl.drive_folders where key = $1 and root_folder_id = $2", [key, root])).rows[0];
-  if (cached && await stillThere(cached.folder_id, parentId, q)) return cached.folder_id;
-  const created = await createFolder(name, parentId, q);
-  await q.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, $2, $3, $4) on conflict (key) do update set root_folder_id = excluded.root_folder_id, folder_id = excluded.folder_id, name = excluded.name, created_at = now()", [key, root, created.id, name]);
-  return created.id;
+function withKeyLock<T>(key: string, operation: (tx: Queryable) => Promise<T>) {
+  return database().transaction(async (tx) => {
+    await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`wasl.drive:${key}`]);
+    return operation(tx);
+  });
 }
 
-async function deliveredParent(idea: Idea, data: Pick<MediaData, "companies">, root: string, q: Queryable) {
+export async function ensureFolder(key: string, parentId: string, name: string, root: string) {
+  return withKeyLock(`folder:${key}`, async (tx) => {
+    const cached = (await tx.query<{ folder_id: string }>("select folder_id from wasl.drive_folders where key = $1 and root_folder_id = $2", [key, root])).rows[0];
+    if (cached && await stillThere(cached.folder_id, parentId, tx)) return cached.folder_id;
+    const created = await createFolder(name, parentId, tx);
+    await tx.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, $2, $3, $4) on conflict (key) do update set root_folder_id = excluded.root_folder_id, folder_id = excluded.folder_id, name = excluded.name, created_at = now()", [key, root, created.id, name]);
+    return created.id;
+  });
+}
+
+async function deliveredParent(idea: Idea, data: Pick<MediaData, "companies">, root: string) {
   const date = idea.deliveredAt || new Date().toISOString().slice(0, 10);
-  const year = await ensureFolder(`year:${date.slice(0, 4)}`, root, date.slice(0, 4), root, q);
-  const month = await ensureFolder(`month:${date.slice(0, 7)}`, year, monthFolderName(date), root, q);
+  const year = await ensureFolder(`year:${date.slice(0, 4)}`, root, date.slice(0, 4), root);
+  const month = await ensureFolder(`month:${date.slice(0, 7)}`, year, monthFolderName(date), root);
   const company = data.companies.find((item) => item.id === idea.companyId);
-  return ensureFolder(`company:${date.slice(0, 7)}:${idea.companyId}`, month, companyFolderName(company?.shortName || company?.name || "أخرى"), root, q);
+  return ensureFolder(`company:${date.slice(0, 7)}:${idea.companyId}`, month, companyFolderName(company?.shortName || company?.name || "أخرى"), root);
 }
 
 export async function ensureProjectFolders(ideaId: string, q: Queryable = database()) {
@@ -54,13 +63,21 @@ export async function ensureProjectFolders(ideaId: string, q: Queryable = databa
   const current = (await q.query<{ drive_folder_id: string | null }>("select drive_folder_id from wasl.ideas where id = $1", [ideaId])).rows[0]?.drive_folder_id;
   let project = current ? await getFile(current, q).catch(() => null) : null;
   if (!project || project.trashed) {
-    const parent = idea.status === "delivered" ? await deliveredParent(idea, await loadReference(q), root, q) : await ensureFolder("in-progress", root, IN_PROGRESS_FOLDER, root, q);
-    project = await createFolder(projectFolderName(idea), parent, q);
-    await q.query("update wasl.ideas set drive_folder_id = $2 where id = $1", [ideaId, project.id]);
-    await q.query("delete from wasl.drive_folders where key like $1", [`project:${ideaId}:%`]);
+    const parent = idea.status === "delivered" ? await deliveredParent(idea, await loadReference(q), root) : await ensureFolder("in-progress", root, IN_PROGRESS_FOLDER, root);
+    project = await withKeyLock(`project:${ideaId}`, async (tx) => {
+      const latest = (await tx.query<{ drive_folder_id: string | null }>("select drive_folder_id from wasl.ideas where id = $1", [ideaId])).rows[0]?.drive_folder_id;
+      if (latest && latest !== current) {
+        const existing = await getFile(latest, tx).catch(() => null);
+        if (existing && !existing.trashed) return existing;
+      }
+      const created = await createFolder(projectFolderName(idea), parent, tx);
+      await tx.query("update wasl.ideas set drive_folder_id = $2 where id = $1", [ideaId, created.id]);
+      await tx.query("delete from wasl.drive_folders where key like $1", [`project:${ideaId}:%`]);
+      return created;
+    });
   }
   const subfolders = {} as Record<keyof typeof SUBFOLDERS, string>;
-  for (const [kind, name] of Object.entries(SUBFOLDERS) as [keyof typeof SUBFOLDERS, string][]) subfolders[kind] = await ensureFolder(`project:${ideaId}:${kind}`, project.id, name, root, q);
+  for (const [kind, name] of Object.entries(SUBFOLDERS) as [keyof typeof SUBFOLDERS, string][]) subfolders[kind] = await ensureFolder(`project:${ideaId}:${kind}`, project.id, name, root);
   return { root, project, subfolders, idea };
 }
 
@@ -118,7 +135,7 @@ export async function archiveIdea(ideaId: string, q: Queryable = database()) {
   const { root, project, subfolders, idea } = await ensureProjectFolders(ideaId, q);
   if (idea.status !== "delivered") throw new MediaServerError("لا تُؤرشف الفكرة قبل تسليمها.", 409, "NOT_DELIVERED");
   await uploadLocalAttachments(ideaId, subfolders, q);
-  const target = await deliveredParent(idea, await loadReference(q), root, q);
+  const target = await deliveredParent(idea, await loadReference(q), root);
   const current: DriveFile = await getFile(project.id, q);
   if (!(current.parents || []).includes(target)) await moveFile(project.id, target, current.parents || [], q);
   const [fresh] = await loadIdeas(q, { ids: [ideaId] });

@@ -8,6 +8,7 @@ import { isAdministrator, requireAdministrator, requireUser } from "./auth";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, MediaServerError, readJson } from "./http";
 import { enqueueArchive } from "./archive";
+import { deleteBlob } from "./blob-store";
 import { DEFAULT_LOGO_URL, insertNotifications, loadIdeas, loadNotifications, loadReference, lockIdea, nextIdeaCode, persistIdea, toAttachment } from "./repository";
 import { projectIdea } from "./state";
 
@@ -114,7 +115,8 @@ export async function runOperation(request: Request): Promise<OperationResult> {
   assertSameOrigin(request);
   const op = parse(await readJson(request));
   const db = database();
-  return db.transaction(async (tx) => {
+  const orphaned: { storage: string; local_path: string }[] = [];
+  const result = await db.transaction(async (tx) => {
     const actor = await requireUser(request, tx);
     if (["updateSettings", "addCompany", "addCategory", "updateCompany", "updateCategory", "reassignIdea", "reopenIdea"].includes(op.type)) requireAdministrator(actor);
     const done = async (extra: Omit<OperationResult, "notifications">): Promise<OperationResult> => ({ ...extra, notifications: await loadNotifications(tx, actor.id) });
@@ -181,6 +183,7 @@ export async function runOperation(request: Request): Promise<OperationResult> {
         if (!canDeleteIdea(idea, actor)) throw new MediaServerError("حذف الفكرة متاح لمدير النظام، ولصاحبها قبل اعتمادها فقط.", 403, "FORBIDDEN");
         await tx.query("insert into wasl.deleted_ideas (id, code, title, deleted_by, reason, snapshot) values ($1, $2, $3, $4, $5, $6::jsonb) on conflict (id) do nothing", [idea.id, idea.code, idea.title, actor.id, String(op.reason || "").slice(0, 4000), JSON.stringify(idea)]);
         await tx.query("update wasl.quotations set attachment_id = null where idea_id = $1", [idea.id]);
+        orphaned.push(...(await tx.query<{ storage: string; local_path: string }>("select storage::text as storage, local_path from wasl.attachments where (idea_id = $1 or requested_idea_id = $1) and storage in ('local', 'supabase') and local_path is not null", [idea.id])).rows);
         await tx.query("delete from wasl.ideas where id = $1", [idea.id]);
         return done({ deletedIdeaId: idea.id });
       }
@@ -190,4 +193,6 @@ export async function runOperation(request: Request): Promise<OperationResult> {
       }
     }
   });
+  await Promise.all(orphaned.map((blob) => deleteBlob(blob.storage, blob.local_path).catch(() => undefined)));
+  return result;
 }

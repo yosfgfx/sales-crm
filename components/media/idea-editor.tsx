@@ -272,7 +272,7 @@ function EditorForm({
                 اختر صورًا أو ملفات تدعم الفكرة
               </span>
               <span className="mt-1 block text-xs text-[var(--soft)]">
-                جميع أنواع الملفات · حتى 25 MB للملف
+                جميع أنواع الملفات · حتى 2 GB للملف
               </span>
               <input
                 className="media-input mt-4 !bg-white"

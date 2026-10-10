@@ -4,13 +4,20 @@ import { WorkflowError } from "@/lib/media-workflow";
 
 type Progress = (sent: number, total: number) => void;
 
+const LEGACY_FILE_LIMIT = 4 * 1024 * 1024;
+
 async function legacyUpload(files: File[], ideaId: string, kind: Attachment["kind"], channel?: Channel): Promise<Attachment[]> {
-  const form = new FormData();
-  files.forEach((file) => form.append("files", file));
-  form.set("ideaId", ideaId);
-  form.set("kind", kind);
-  if (channel) form.set("channel", channel);
-  return (await apiRequest<{ files: Attachment[] }>("/api/files", { method: "POST", body: form })).files;
+  if (files.some((file) => file.size > LEGACY_FILE_LIMIT)) throw new WorkflowError("قبل ربط Google Drive يُقبل ملف حتى ٤ ميجابايت فقط. اطلب من مالك النظام ربط Drive لرفع الملفات الكبيرة.", "FILE_TOO_LARGE", 413);
+  const uploaded: Attachment[] = [];
+  for (const file of files) {
+    const form = new FormData();
+    form.append("files", file);
+    form.set("ideaId", ideaId);
+    form.set("kind", kind);
+    if (channel) form.set("channel", channel);
+    uploaded.push(...(await apiRequest<{ files: Attachment[] }>("/api/files", { method: "POST", body: form })).files);
+  }
+  return uploaded;
 }
 
 async function sendChunk(url: string, body: Blob) {

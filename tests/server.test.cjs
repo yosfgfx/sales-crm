@@ -85,15 +85,21 @@ test("quotations and their files are hidden from designers but visible to the ow
   form.append("ideaId", "idea-008"); form.append("kind", "quotation"); form.append("files", new Blob(["%PDF-1.4 quote"]), "عرض.pdf");
   const uploaded = await files.uploadFiles(new Request(`${ORIGIN}/api/files`, { method: "POST", headers: { cookie: cookies.noura, origin: ORIGIN }, body: form }));
   await op("noura", { type: "addAttachments", ideaId: "idea-008", attachmentIds: [uploaded[0].id] });
-  await op("noura", { type: "addQuotation", ideaId: "idea-008", quote: { id: "quote-test-1", vendor: "مورد", amount: 4500, scope: "تصميم", days: 5, attachmentId: uploaded[0].id, recommended: true } });
+  await op("noura", { type: "addQuotation", ideaId: "idea-008", quote: { id: "quote-test-1", vendor: "مطبعة النخبة", amount: 4500, scope: "تصميم", days: 5, attachmentId: uploaded[0].id, recommended: true } });
   const viewOf = async (who) => (await state.loadStateFor((await auth.currentSession(getRequest("/api/media", cookies[who]))).user)).data;
   const designerIdea = (await viewOf("faisal")).ideas.find((idea) => idea.id === "idea-008");
   assert.equal(designerIdea.quotations.length, 0);
   assert.ok(designerIdea.attachments.every((file) => file.kind !== "quotation"));
+  assert.ok(!JSON.stringify(designerIdea.history).includes("مطبعة"));
+  assert.ok(JSON.stringify((await viewOf("manager")).ideas.find((idea) => idea.id === "idea-008").history).includes("مطبعة"));
   assert.equal((await viewOf("manager")).ideas.find((idea) => idea.id === "idea-008").quotations[0].amount, 4500);
   assert.equal((await viewOf("noura")).ideas.find((idea) => idea.id === "idea-008").quotations.length, 1);
   await assert.rejects(files.downloadFile(getRequest(`/api/files/${uploaded[0].id}`, cookies.faisal), uploaded[0].id), expectStatus(403));
   assert.equal((await files.downloadFile(getRequest(`/api/files/${uploaded[0].id}`, cookies.manager), uploaded[0].id)).status, 200);
+  const partial = await files.downloadFile(new Request(`${ORIGIN}/api/files/${uploaded[0].id}`, { headers: { cookie: cookies.manager, range: "bytes=0-1" } }), uploaded[0].id);
+  assert.equal(partial.status, 206);
+  assert.equal((await partial.arrayBuffer()).byteLength, 2);
+  assert.match(partial.headers.get("content-range"), /^bytes 0-1\/\d+$/);
 });
 
 test("each member receives only their own notifications (H1)", async () => {

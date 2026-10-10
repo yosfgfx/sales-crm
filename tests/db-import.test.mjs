@@ -6,6 +6,8 @@ import { importState, verifyImport } from "../scripts/lib/import-state.mjs";
 import { createInitialMediaData, MEDIA_CATEGORIES, MEDIA_COMPANIES } from "../data/media.ts";
 import { bootstrapRoot } from "../scripts/lib/bootstrap.mjs";
 
+process.env.WASL_ENCRYPTION_KEY ||= Buffer.alloc(32, 9).toString("base64");
+
 async function freshDatabase() {
   const pg = new PGlite();
   await pg.exec("create role anon nologin; create role authenticated nologin;");
@@ -87,15 +89,25 @@ test("a backup restores every table into an empty database (H8)", async () => {
   await applyMigrations(source.db);
   const document = sampleDocument();
   await importState(source.db, document, { demoIdeaIds: [] });
+  await source.db.query("insert into wasl.attachments (id, kind, name, size, mime, storage, local_path, owner_id) values ('logo-1', 'brief', 'logo.png', 3, 'image/png', 'local', 'files/logo-1', 'root')");
+  await source.db.query("update wasl.settings set logo_attachment_id = 'logo-1'");
   const archive = await createBackup(source.db);
+  assert.equal(archive.subarray(0, 7).toString("latin1"), "WASLBK1");
+  assert.ok(!archive.includes(Buffer.from("password_hash")));
   const target = await freshDatabase();
   await applyMigrations(target.db);
   const restored = await restoreBackup(target.db, archive);
   assert.equal(restored.ideas, document.data.ideas.length);
-  assert.deepEqual((await verifyImport(target.db, document)).mismatches, []);
+  assert.equal((await target.db.query("select logo_attachment_id from wasl.settings")).rows[0].logo_attachment_id, "logo-1");
+  assert.deepEqual((await verifyImport(target.db, document)).mismatches.map(({ table, source, database }) => [table, database - source]), [["attachments", 1]]);
   const channels = (await target.db.query("select channels::text[] as c from wasl.ideas order by id limit 1")).rows[0].c;
   assert.ok(Array.isArray(channels) && channels.length > 0);
   await assert.rejects(restoreBackup(target.db, archive), /فارغة/);
+  const tampered = Buffer.from(archive);
+  tampered[tampered.length - 1] ^= 1;
+  const empty = await freshDatabase();
+  await applyMigrations(empty.db);
+  await assert.rejects(restoreBackup(empty.db, tampered), /فك تشفير/);
 });
 
 test("attachments stored in Supabase Storage satisfy the storage check (N1)", async () => {

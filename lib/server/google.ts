@@ -157,6 +157,6 @@ export async function exportPdf(fileId: string, q?: Queryable) {
   return new Uint8Array(await (await drive(`/files/${encodeURIComponent(fileId)}/export?mimeType=application%2Fpdf`, {}, q)).arrayBuffer());
 }
 
-export async function streamFile(fileId: string, q?: Queryable) {
-  return drive(`/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(10 * 60_000) }, q);
+export async function streamFile(fileId: string, q?: Queryable, range?: string) {
+  return drive(`/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`, { signal: AbortSignal.timeout(10 * 60_000), ...(range ? { headers: { Range: range } } : {}) }, q);
 }

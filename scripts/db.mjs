@@ -5,7 +5,7 @@ import { databaseConfig, loadLocalEnv } from "./lib/env.mjs";
 import { applyMigrations } from "./lib/migrations.mjs";
 import { importState, verifyImport } from "./lib/import-state.mjs";
 import { bootstrapRoot } from "./lib/bootstrap.mjs";
-import { createBackup, restoreBackup } from "./lib/backup.mjs";
+import { BACKUP_EXTENSION, createBackup, restoreBackup } from "./lib/backup.mjs";
 import { writeFileSync } from "node:fs";
 
 loadLocalEnv();
@@ -45,7 +45,7 @@ try {
     const result = await importState(db, document, { demoIdeaIds: await demoIdeaIds(), manifestOwner: manifestOwner(dataDir) });
     console.log(JSON.stringify({ ...result, verification: await verifyImport(db, document) }, null, 2));
   } else if (command === "backup") {
-    const file = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : `wasl-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+    const file = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : `wasl-backup-${new Date().toISOString().slice(0, 10)}${BACKUP_EXTENSION}`;
     writeFileSync(file, await createBackup(db), { mode: 0o600 });
     console.log(JSON.stringify({ file }));
   } else if (command === "restore") {

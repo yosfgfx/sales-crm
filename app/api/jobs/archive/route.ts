@@ -3,7 +3,7 @@ import { apiError, MediaServerError, responseHeaders } from "@/lib/server/http";
 import { runBackgroundWork } from "@/lib/server/scheduler";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 26;
 
 function authorize(request: Request) {
   const secret = process.env.CRON_SECRET || "";

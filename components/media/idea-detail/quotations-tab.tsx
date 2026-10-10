@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Idea } from "@/data/media";
 import type { MediaState } from "@/stores/media-store";
+import AttachmentLink from "../attachment-link";
 import { ActionButton, Icon } from "../ui";
 
 type Run = (action: () => Promise<unknown>, success: string) => Promise<void>;
@@ -74,16 +75,14 @@ export function QuotationsTab({
               </span>
             </div>
             {file && (
-              <a
+              <AttachmentLink
+                file={file}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-xs underline decoration-[#b4accc] underline-offset-4"
-                href={file.url}
-                target="_blank"
-                rel="noopener noreferrer"
               >
                 <Icon name="file" className="size-4" />
                 <bdi>{file.name}</bdi>
                 <Icon name="download" className="size-3.5" />
-              </a>
+              </AttachmentLink>
             )}
             {canEdit && (
               <ActionButton

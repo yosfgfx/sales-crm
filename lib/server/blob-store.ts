@@ -18,7 +18,6 @@ function supabase() {
   return url && key ? { url: url.replace(/\/$/, ""), key } : null;
 }
 
-export const blobBackend = (): "supabase" | "local" => (supabase() ? "supabase" : "local");
 
 export async function putBlob(id: string, bytes: Uint8Array, mime: string): Promise<{ storage: "supabase" | "local"; key: string }> {
   const remote = supabase();

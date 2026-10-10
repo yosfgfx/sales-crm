@@ -41,10 +41,14 @@ test("two-factor sign-in: enroll, require the code, and refuse a replayed code (
 test("when required, administrators must enable two-factor before admin tools work (M6)", async () => {
   process.env.WASL_REQUIRE_ADMIN_MFA = "true";
   await assert.rejects(h.op("admin", { type: "addCategory", name: "تصنيف جديد" }), (error) => error.code === "MFA_SETUP_REQUIRED");
+  await assert.rejects(h.op("admin", { type: "addComment", ideaId: "idea-001", text: "تعليق" }), (error) => error.code === "MFA_SETUP_REQUIRED");
+  await assert.rejects(auth.requireUser(h.getRequest("/api/ideas/idea-001", h.cookies.admin)), (error) => error.code === "MFA_SETUP_REQUIRED");
+  assert.equal((await auth.requireUser(h.getRequest("/api/media", h.cookies.admin), undefined, { allowMissingMfa: true })).id, "admin");
   const session = await auth.currentSession(h.getRequest("/api/session", h.cookies.admin));
   assert.deepEqual(session.mfa, { enabled: false, required: true });
   const started = await mfa("admin", { action: "start" });
   await mfa("admin", { action: "confirm", code: totp.codeAt(started.secret, Math.floor(Date.now() / 30_000)) });
+  assert.equal(await auth.sessionUser(h.getRequest("/api/media", h.cookies.admin)), null);
   const fresh = cookieOf(await login("admin", { code: totp.codeAt(started.secret, Math.floor(Date.now() / 30_000) + 1) }, "10.1.1.3"));
   const result = await require(path.join(h.root, "lib/server/ops.ts")).runOperation(h.jsonRequest("/api/ops", { type: "addCategory", name: "تصنيف جديد" }, { cookie: fresh }));
   assert.ok(result.categories.some((category) => category.name === "تصنيف جديد"));
@@ -64,6 +68,8 @@ test("files uploaded but never attached are removed after a day (M7)", async () 
 
 test("server-side uploads before Drive is connected are capped to fit serverless limits (M8)", async () => {
   const form = new FormData();
-  form.append("ideaId", "idea-008"); form.append("kind", "brief"); form.append("files", new Blob([Buffer.alloc(5 * 1024 * 1024 + 1)]), "big.bin");
-  await assert.rejects(files.uploadFiles(new Request(`${h.ORIGIN}/api/files`, { method: "POST", headers: { cookie: h.cookies.noura, origin: h.ORIGIN }, body: form })), (error) => error.status === 413);
+  form.append("ideaId", "idea-008"); form.append("kind", "brief"); form.append("files", new Blob([Buffer.alloc(4 * 1024 * 1024 + 1)]), "big.bin");
+  await assert.rejects(files.uploadFiles(new Request(`${h.ORIGIN}/api/files`, { method: "POST", headers: { cookie: h.cookies.noura, origin: h.ORIGIN }, body: form })), (error) => error.code === "FILE_TOO_LARGE");
+  const oversized = new Request(`${h.ORIGIN}/api/files`, { method: "POST", headers: { cookie: h.cookies.noura, origin: h.ORIGIN, "content-type": "multipart/form-data; boundary=x" }, body: Buffer.alloc(5 * 1024 * 1024) });
+  await assert.rejects(files.uploadFiles(oversized), (error) => error.code === "REQUEST_TOO_LARGE");
 });

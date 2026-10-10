@@ -4,6 +4,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { CHANNEL_LABELS, type Attachment, type Channel, type Idea } from "@/data/media";
 import { postJson } from "@/lib/api-client";
 import { useMediaStore, type MediaState } from "@/stores/media-store";
+import AttachmentLink from "../attachment-link";
 import { ActionButton, Channels, Icon, bytes, formatDate } from "../ui";
 import { ARCHIVE_TEXT } from "./constants";
 
@@ -81,14 +82,12 @@ export function FilesTab({
                 <Icon name="file" />
               </span>
               <div className="min-w-0">
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <AttachmentLink
+                  file={file}
                   className="block text-sm font-medium break-all underline decoration-[#c9c3dd] underline-offset-4"
                 >
                   <bdi>{file.name}</bdi>
-                </a>
+                </AttachmentLink>
                 <span className="mt-1 block text-xs text-[var(--soft)]">
                   <bdi>{bytes(file.size)}</bdi> ·{" "}
                   {file.kind === "brief"
@@ -101,14 +100,14 @@ export function FilesTab({
                 </span>
               </div>
             </div>
-            <a
-              aria-label={`تنزيل ${file.name}`}
-              href={file.url}
+            <AttachmentLink
+              file={file}
+              label={`تنزيل ${file.name}`}
               download
               className="rounded-lg bg-white p-2.5 text-[var(--soft)]"
             >
               <Icon name="download" className="size-4" />
-            </a>
+            </AttachmentLink>
             {((canEdit && file.kind !== "final") ||
               (canDesign &&
                 designStage &&
@@ -231,7 +230,7 @@ export function FilesTab({
             />
           </label>
           <p className="text-xs text-[var(--soft)]">
-            جميع أنواع الملفات · حتى 25 MB للملف. أرفق نسخة نهائية لكل
+            جميع أنواع الملفات · حتى 2 GB للملف. أرفق نسخة نهائية لكل
             قناة مطلوبة قبل التسليم.
           </p>
           <ActionButton type="submit" disabled={busy}>
