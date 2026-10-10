@@ -17,6 +17,7 @@ import {
   shortReportDate,
 } from "@/lib/media-exports";
 import {
+  countText,
   ActionButton,
   Channels,
   EmptyState,
@@ -292,7 +293,7 @@ export function Reports({ data, onOpenIdea }: Props) {
                     <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                       <span>{department.name}</span>
                       <span className="text-xs text-[var(--soft)]">
-                        {department.count} أعمال ·{" "}
+                        {countText(department.count, "work")} ·{" "}
                         {department.averageDays === 0
                           ? "نفس اليوم"
                           : `${department.averageDays.toFixed(1)} يوم`}
@@ -427,7 +428,7 @@ export function Reports({ data, onOpenIdea }: Props) {
             </p>
           </div>
           <span className="rounded-lg bg-[var(--background)] px-3 py-1.5 text-xs text-[var(--soft)]">
-            {report.count} أعمال
+            {countText(report.count, "work")}
           </span>
         </div>
         {report.count ? (
@@ -464,7 +465,7 @@ export function Reports({ data, onOpenIdea }: Props) {
                         <span className="block max-w-[24em]">{idea.title}</span>
                         <span
                           dir="ltr"
-                          className="mt-1 block text-right text-[10px] font-normal text-[var(--soft)]"
+                          className="mt-1 block text-right text-xs font-normal text-[var(--soft)]"
                         >
                           {idea.code}
                         </span>

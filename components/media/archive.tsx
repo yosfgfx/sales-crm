@@ -143,7 +143,7 @@ export default function Archive({
                           </span>
                         </div>
                       )}
-                      <span className="absolute start-3 top-3 rounded-md bg-white/90 px-2 py-1 text-[11px] text-[#20273c]">
+                      <span className="absolute start-3 top-3 rounded-md bg-white/90 px-2 py-1 text-xs text-[#20273c]">
                         {WORK_TYPE_LABELS[idea.workType]}
                       </span>
                     </ActionButton>

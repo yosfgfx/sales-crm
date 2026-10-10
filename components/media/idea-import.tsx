@@ -5,7 +5,7 @@ import { CHANNEL_LABELS, WORK_TYPE_LABELS, type Channel, type WorkType } from "@
 import { IMPORT_HEADERS, OPTIONAL_HEADERS } from "@/lib/idea-import";
 import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
-import { ActionButton, Icon, errorText } from "./ui";
+import { ActionButton, countText, Icon, errorText } from "./ui";
 
 interface Preview {
   fileName: string; total: number; duplicates: number[]; issues: { row: number; message: string }[];
@@ -91,7 +91,7 @@ export default function IdeaImport() {
               <h3 className="!text-base">أصحاب الأفكار في النظام</h3>
               {preview.proposers.map((proposer) => (
                 <label key={proposer.name || "-"} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3">
-                  <span>{proposer.name || "غير مذكور"} · {proposer.count} فكرة</span>
+                  <span>{proposer.name || "غير مذكور"} · {countText(proposer.count, "idea")}</span>
                   <select className="media-input !w-auto" value={ownerMap[proposer.name] || ""} onChange={(event) => setOwnerMap({ ...ownerMap, [proposer.name]: event.target.value })}>
                     <option value="">اختر صاحب الفكرة</option>
                     {owners.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
@@ -122,11 +122,11 @@ export default function IdeaImport() {
             </div>
             <ActionButton primary disabled={busy || !importable || missingOwners.length > 0} onClick={() => run(async () => {
               const result = await request("apply");
-              setMessage(`استُوردت ${result.created?.length ?? 0} فكرة كمسودات${result.skipped ? `، وتُركت ${result.skipped} فكرة مكررة دون استيراد` : ""}.`);
+              setMessage(`استُوردت ${countText(result.created?.length ?? 0, "idea")} كمسودات${result.skipped ? `، وتُركت ${result.skipped} فكرة مكررة دون استيراد` : ""}.`);
               setPreview(null); setFile(null);
               await useMediaStore.getState().refresh();
             })}>
-              {busy ? "جارٍ الاستيراد…" : `استيراد ${importable} فكرة`}
+              {busy ? "جارٍ الاستيراد…" : `استيراد ${countText(importable, "idea")}`}
             </ActionButton>
             {missingOwners.length > 0 && <p className="text-xs text-[var(--soft)]">اختر صاحب الفكرة لكل مقدم قبل الاستيراد.</p>}
           </div>
@@ -143,7 +143,7 @@ export default function IdeaImport() {
             </label>
             <ActionButton className="!text-[var(--danger)]" disabled={busy || confirmation !== CONFIRMATION} onClick={() => run(async () => {
               const result = await send<{ deleted: number }>("/api/admin/demo-data", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: confirmation }) });
-              setMessage(`حُذفت ${result.deleted} فكرة تجريبية.`);
+              setMessage(`حُذفت ${countText(result.deleted, "idea")} من البيانات التجريبية.`);
               setDemo({ ideas: 0, notifications: 0 }); setConfirmation("");
               await useMediaStore.getState().refresh();
             })}>حذف البيانات التجريبية</ActionButton>

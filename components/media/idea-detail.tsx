@@ -19,6 +19,7 @@ import {
   Modal,
   PriorityBadge,
   StatusBadge,
+  TabList,
   bytes,
   errorText,
   formatDate,
@@ -195,6 +196,7 @@ export default function IdeaDetail({
       <Modal
         open
         onClose={onClose}
+        locked={busy}
         drawer
         title={idea.title}
         description={`${idea.code} · ${data.companies.find((c) => c.id === idea.companyId)?.name}`}
@@ -292,25 +294,10 @@ export default function IdeaDetail({
               </span>
             </div>
           )}
-          <div
-            className="flex flex-wrap gap-1.5 border-b border-[var(--border)] pb-3"
-            role="group"
-            aria-label="تفاصيل الفكرة"
-          >
-            {tabs.map((t) => (
-              <ActionButton
-                key={t.id}
-                aria-pressed={tab === t.id}
-                id={`tab-${t.id}`}
-                aria-controls={`panel-${t.id}`}
-                onClick={() => setTab(t.id)}
-                className={`!px-3 !text-xs !shadow-none ${tab === t.id ? "!bg-[var(--accent)] !text-[var(--primary)]" : "!bg-transparent"}`}
-              >
-                {t.label}
-              </ActionButton>
-            ))}
+          <div className="border-b border-[var(--border)] pb-3">
+            <TabList label="تفاصيل الفكرة" idPrefix="idea" compact value={tab} onChange={setTab} items={tabs} />
           </div>
-          <div role="region" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+          <div role="tabpanel" id="idea-panel" aria-labelledby={`idea-tab-${tab}`}>
             {tab === "overview" && (
               <div className="space-y-6">
                 <section>
@@ -1044,6 +1031,7 @@ export default function IdeaDetail({
       <Modal
         open={Boolean(lifecycle)}
         onClose={() => setLifecycle(null)}
+        locked={busy}
         title={lifecycle ? LIFECYCLE[lifecycle.kind].title : ""}
         description={lifecycle ? LIFECYCLE[lifecycle.kind].description : ""}
       >
@@ -1070,7 +1058,7 @@ export default function IdeaDetail({
           </form>
         )}
       </Modal>
-      <Modal open={Boolean(reassign)} onClose={() => setReassign(null)} title="إعادة إسناد العمل" description="تنقل المسؤولية دون تغيير مرحلة العمل، ويُشعر المكلّف الجديد.">
+      <Modal open={Boolean(reassign)} onClose={() => setReassign(null)} locked={busy} title="إعادة إسناد العمل" description="تنقل المسؤولية دون تغيير مرحلة العمل، ويُشعر المكلّف الجديد.">
         {reassign && (
           <form className="space-y-4 p-6" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.reassignIdea(idea.id, { ownerId: reassign.ownerId, ...(designStage ? { designerId: reassign.designerId } : {}) }); setReassign(null); }, "أُعيد إسناد العمل."); }}>
             <label className="media-label">مسؤول المحتوى
@@ -1093,6 +1081,7 @@ export default function IdeaDetail({
       <Modal
         open={returnDialog}
         onClose={() => setReturnDialog(false)}
+        locked={busy}
         title="إعادة الفكرة للتعديل"
         description="تظهر الملاحظة لمسؤول المحتوى حتى يعالجها ويعيد إرسال الفكرة."
       >
@@ -1128,6 +1117,7 @@ export default function IdeaDetail({
       <Modal
         open={quoteOpen}
         onClose={() => setQuoteOpen(false)}
+        locked={busy}
         title="إضافة عرض سعر"
         description="بيانات المورد والعرض وملفه الأصلي للمقارنة والاعتماد."
       >

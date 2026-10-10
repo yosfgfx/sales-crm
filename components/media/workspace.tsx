@@ -12,6 +12,7 @@ import {
 } from "@/data/media";
 import {
   ActionButton,
+  countText,
   Channels,
   EmptyState,
   Icon,
@@ -298,7 +299,7 @@ export default function MediaWorkspace() {
         <div>
           <span className="block text-2xl font-bold">
             وصْل
-            <span className="ms-2 text-[11px] font-normal text-[#b8b9d3]">
+            <span className="ms-2 text-xs font-normal text-[#b8b9d3]">
               WASL
             </span>
           </span>
@@ -306,7 +307,7 @@ export default function MediaWorkspace() {
         </div>
       </div>
       <div className="mx-4 mb-6 rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-        <span className="mb-1 block text-[11px] text-[#b8b9d3]">
+        <span className="mb-1 block text-xs text-[#b8b9d3]">
           مساحة العمل
         </span>
         <div className="flex items-center justify-between gap-2 text-sm">
@@ -332,7 +333,7 @@ export default function MediaWorkspace() {
           </ActionButton>
         ))}
       </nav>
-      <div className="mt-7 px-7 text-[11px] text-[#898da9]">الفريق</div>
+      <div className="mt-7 px-7 text-xs text-[#898da9]">الفريق</div>
       <div className="space-y-3 px-7 py-4">
         <div className="flex items-center gap-2 text-xs text-[#b8b9d3]">
           <span className="size-2 rounded-full bg-[#bea9ff]" />
@@ -370,7 +371,7 @@ export default function MediaWorkspace() {
           <Avatar name={currentUser.name} />
           <div className="flex-1 text-start">
             <span className="block text-sm">{currentUser.name}</span>
-            <span className="text-[11px] text-[#b8b9d3]">
+            <span className="text-xs text-[#b8b9d3]">
               {memberDisplayLabel(currentUser)}
             </span>
           </div>
@@ -747,7 +748,7 @@ export function IdeaCard({
       className="media-card !block h-auto w-full !rounded-xl !p-4 text-start !whitespace-normal !shadow-[0_1px_2px_#20273c05,0_0_0_1px_#e5e7ef] hover:!shadow-[0_5px_14px_#20273c0a,0_0_0_1px_#c9c2ed]"
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-[var(--soft)]">
+        <span className="text-xs text-[var(--soft)]">
           <bdi>{idea.code}</bdi>
         </span>
         <PriorityBadge priority={idea.priority} />
@@ -769,10 +770,10 @@ export function IdeaCard({
         <span className="min-w-0">{companyOf(data, idea.companyId)}</span>
       </span>
       <div className="mt-3 flex flex-wrap gap-2">
-        <span className="rounded-md bg-[var(--background)] px-2 py-1 text-[11px] text-[var(--soft)]">
+        <span className="rounded-md bg-[var(--background)] px-2 py-1 text-xs text-[var(--soft)]">
           {WORK_TYPE_LABELS[idea.workType]}
         </span>
-        <span className="rounded-md bg-[var(--background)] px-2 py-1 text-[11px] text-[var(--soft)]">
+        <span className="rounded-md bg-[var(--background)] px-2 py-1 text-xs text-[var(--soft)]">
           {data.categories.find((c) => c.id === idea.categoryId)?.name}
         </span>
       </div>
@@ -807,7 +808,7 @@ export function IdeaCard({
       </div>
       <div className="mt-3 flex items-center justify-between">
         <Channels channels={idea.channels} />
-        <span className="flex items-center gap-1 text-[11px] text-[var(--soft)]">
+        <span className="flex items-center gap-1 text-xs text-[var(--soft)]">
           <Icon name="file" className="size-3" />
           {idea.attachments.length}
         </span>
@@ -936,7 +937,7 @@ function Overview({
             </p>
           </div>
           <span className="text-xs text-[var(--soft)]">
-            {data.ideas.length} أعمال في المساحة
+            {countText(data.ideas.length, "work")} في المساحة
           </span>
         </div>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -1059,7 +1060,7 @@ function Overview({
                   <div className="mb-2 flex items-center justify-between text-xs">
                     <span>{category.name}</span>
                     <span className="text-[var(--soft)]">
-                      {count} {count ? "أفكار" : "· يحتاج محتوى"}
+                      {count ? countText(count, "idea") : "يحتاج محتوى"}
                     </span>
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-[var(--background)]">
@@ -1193,7 +1194,7 @@ function WorkBoard({
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-[var(--soft)]">
-            {ideas.length} أعمال
+            {countText(ideas.length, "work")}
           </span>
           <div className="flex gap-1 rounded-xl bg-white p-1 ring-1 ring-[var(--border)]">
             <ActionButton
@@ -1464,7 +1465,7 @@ function Calendar({
                             <ActionButton
                               key={idea.id}
                               onClick={() => onOpen(idea.id)}
-                              className="h-auto w-full justify-start !rounded-md !bg-[var(--accent)] !p-2 !text-start text-[11px] !whitespace-normal !shadow-none"
+                              className="h-auto w-full justify-start !rounded-md !bg-[var(--accent)] !p-2 !text-start text-xs !whitespace-normal !shadow-none"
                             >
                               <span className="leading-relaxed">
                                 {idea.title}

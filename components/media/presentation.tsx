@@ -57,11 +57,11 @@ export function PresentationPreview({
         <div className="absolute inset-x-0 top-0 h-1 bg-[#665ce1]" />
         <div className="flex items-center justify-between gap-4">
           <p
-            className={`text-[10px] ${slide.kind === "cover" ? "text-[#aabbdd]" : "text-[#8997af]"}`}
+            className={`text-xs ${slide.kind === "cover" ? "text-[#aabbdd]" : "text-[#8997af]"}`}
           >
             {idea.code} · {data.settings.departmentName}
           </p>
-          <span dir="ltr" className="text-[10px] opacity-60">
+          <span dir="ltr" className="text-xs opacity-60">
             {current + 1} / {slides.length}
           </span>
         </div>

@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import TeamSettings from "./team-settings";
 import Asset from "@/components/_ui/asset";
-import { ActionButton, Icon, errorText } from "./ui";
+import { ActionButton, Icon, TabList, errorText } from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
@@ -70,8 +70,12 @@ export default function Administration({
   };
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {[
+      <TabList
+        label="أقسام إدارة النظام"
+        idPrefix="admin"
+        value={tab}
+        onChange={(id) => { setTab(id); setMessage(""); }}
+        items={[
           { id: "approvals", label: "الاعتمادات" },
           { id: "companies", label: "الشركات" },
           { id: "categories", label: "تصنيفات المحتوى" },
@@ -79,24 +83,9 @@ export default function Administration({
           { id: "identity", label: "هوية التقارير" },
           { id: "drive", label: "أرشيف Google Drive" },
           { id: "import", label: "استيراد الأفكار" },
-        ].map((t) => (
-          <ActionButton
-            key={t.id}
-            onClick={() => {
-              setTab(t.id);
-              setMessage("");
-            }}
-            aria-pressed={tab === t.id}
-            className={
-              tab === t.id
-                ? "!bg-[var(--accent)] !text-[var(--primary)] !shadow-none"
-                : ""
-            }
-          >
-            {t.label}
-          </ActionButton>
-        ))}
-      </div>
+        ]}
+      />
+      <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`} className="contents">
       {tab === "approvals" && (
         <Approvals
           data={data}
@@ -329,6 +318,7 @@ export default function Administration({
           </ActionButton>
         </form>
       )}
+      </div>
       {message && (
         <div
           role="status"

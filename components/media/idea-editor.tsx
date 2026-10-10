@@ -34,6 +34,7 @@ export default function IdeaEditor({
   onSaved: (id: string) => void;
 }) {
   const store = useMediaStore();
+  const [locked, setLocked] = useState(false);
   const initial: NewIdeaInput = {
     title: idea?.title || "",
     companyId: idea?.companyId || store.data.companies.find((c) => c.active !== false)?.id || "",
@@ -60,6 +61,7 @@ export default function IdeaEditor({
     <Modal
       open={open}
       onClose={onClose}
+      locked={locked}
       wide
       title={idea ? "تعديل الفكرة" : "فكرة جديدة"}
       description="وضّح الفكرة والنص وخطة التنفيذ؛ يتكوّن عرض الاعتماد تلقائيًا من هذه البيانات."
@@ -71,6 +73,7 @@ export default function IdeaEditor({
           idea={idea}
           onClose={onClose}
           onSaved={onSaved}
+          onBusy={setLocked}
         />
       )}
     </Modal>
@@ -82,11 +85,13 @@ function EditorForm({
   idea,
   onClose,
   onSaved,
+  onBusy,
 }: {
   initial: NewIdeaInput;
   idea?: Idea;
   onClose: () => void;
   onSaved: (id: string) => void;
+  onBusy: (busy: boolean) => void;
 }) {
   const store = useMediaStore();
   const [form, setForm] = useState(initial),
@@ -111,6 +116,7 @@ function EditorForm({
       return;
     }
     setBusy(true);
+    onBusy(true);
     setError("");
     let savedId = createdId;
     try {
@@ -154,6 +160,7 @@ function EditorForm({
       );
     } finally {
       setBusy(false);
+      onBusy(false);
     }
   };
   return (

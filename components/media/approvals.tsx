@@ -7,6 +7,8 @@ import { isAdministrator } from "@/lib/media-workflow";
 import { CompanyLogo } from "./company-logo";
 import {
   ActionButton,
+  countText,
+  TabList,
   Channels,
   EmptyState,
   Icon,
@@ -155,11 +157,12 @@ export default function Approvals({
           </div>
         </div>
       )}
-      <div
-        className="flex flex-wrap gap-2"
-        aria-label="تصفية الأفكار حسب الاعتماد"
-      >
-        {[
+      <TabList
+        label="تصفية الأفكار حسب الاعتماد"
+        idPrefix="approvals"
+        value={tab}
+        onChange={(id) => { setTab(id); setNotice(""); }}
+        items={[
           {
             id: "review",
             label: "بانتظار المراجعة",
@@ -178,27 +181,8 @@ export default function Approvals({
               approvedStages.includes(idea.status),
             ).length,
           },
-        ].map((item) => (
-          <ActionButton
-            key={item.id}
-            aria-pressed={tab === item.id}
-            onClick={() => {
-              setTab(item.id);
-              setNotice("");
-            }}
-            className={
-              tab === item.id
-                ? "!bg-[var(--accent)] !text-[var(--primary)] !shadow-none"
-                : ""
-            }
-          >
-            {item.label}
-            <span className="rounded-md bg-[var(--background)] px-1.5 py-0.5 text-[10px] tabular-nums">
-              {item.count}
-            </span>
-          </ActionButton>
-        ))}
-      </div>
+        ].map((item) => ({ id: item.id, label: <>{item.label}<span className="rounded-md bg-[var(--background)] px-1.5 py-0.5 text-xs tabular-nums">{item.count}</span></> }))}
+      />
       {notice && (
         <p
           role="status"
@@ -247,7 +231,7 @@ export default function Approvals({
                 <Channels channels={idea.channels} />
               </div>
               <div className="my-4 flex flex-wrap justify-between gap-2 rounded-xl bg-[var(--background)] p-3 text-xs">
-                <span>{idea.quotations.length} عروض أسعار</span>
+                <span>{countText(idea.quotations.length, "quote")}</span>
                 <span>
                   {idea.quotations.length
                     ? `${Math.min(...idea.quotations.map((quote) => quote.amount)).toLocaleString("ar-SA")} ر.س. · أقل عرض`
@@ -317,6 +301,7 @@ export default function Approvals({
       <Modal
         open={!!decision}
         onClose={closeDecision}
+        locked={busy}
         title={
           decision?.value === "changes"
             ? "إعادة الفكرة للتعديل"
@@ -344,9 +329,9 @@ export default function Approvals({
                 {selected.description}
               </div>
               <p className="mt-3 text-xs text-[var(--soft)]">
-                {selected.attachments.length} مرفقات ·{" "}
-                {selected.quotations.length} عروض أسعار ·{" "}
-                {selected.channels.length} قنوات نشر
+                {countText(selected.attachments.length, "attachment")} ·{" "}
+                {countText(selected.quotations.length, "quote")} ·{" "}
+                {countText(selected.channels.length, "channel")}
               </p>
             </div>
           )}

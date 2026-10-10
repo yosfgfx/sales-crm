@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import Button from "@/components/_ui/button";
 import { cn } from "@/lib/utils";
@@ -235,9 +235,11 @@ export function Modal({
   children,
   wide,
   drawer,
+  locked,
 }: {
   open: boolean;
   onClose: () => void;
+  locked?: boolean;
   title: string;
   description?: string;
   children: ReactNode;
@@ -248,7 +250,7 @@ export function Modal({
     <DialogPrimitive.Root
       open={open}
       onOpenChange={(value) => {
-        if (!value) onClose();
+        if (!value && !locked) onClose();
       }}
     >
       <DialogPrimitive.Portal>
@@ -278,7 +280,7 @@ export function Modal({
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close asChild>
-              <ActionButton aria-label="إغلاق النافذة" className="size-10 px-0">
+              <ActionButton aria-label="إغلاق النافذة" className="size-10 px-0" disabled={locked} title={locked ? "انتظر حتى تكتمل العملية" : undefined}>
                 <Icon name="close" />
               </ActionButton>
             </DialogPrimitive.Close>
@@ -405,4 +407,67 @@ export function errorText(error: unknown) {
   return error instanceof Error
     ? error.message
     : "تعذر إتمام العملية. أعد المحاولة.";
+}
+
+export function TabList({
+  label,
+  items,
+  value,
+  onChange,
+  idPrefix,
+  compact,
+}: {
+  label: string;
+  items: { id: string; label: ReactNode }[];
+  value: string;
+  onChange: (id: string) => void;
+  idPrefix: string;
+  compact?: boolean;
+}) {
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    const keys: Record<string, number> = { ArrowLeft: 1, ArrowRight: -1, ArrowDown: 1, ArrowUp: -1 };
+    if (!(event.key in keys) && event.key !== "Home" && event.key !== "End") return;
+    event.preventDefault();
+    const index = items.findIndex((item) => item.id === value);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + keys[event.key] + items.length) % items.length;
+    onChange(items[next].id);
+    document.getElementById(`${idPrefix}-tab-${items[next].id}`)?.focus();
+  };
+  return (
+    <div role="tablist" aria-label={label} onKeyDown={move} className={cn("flex flex-wrap", compact ? "gap-1.5" : "gap-2")}>
+      {items.map((item) => (
+        <ActionButton
+          key={item.id}
+          role="tab"
+          id={`${idPrefix}-tab-${item.id}`}
+          aria-selected={value === item.id}
+          aria-controls={`${idPrefix}-panel`}
+          tabIndex={value === item.id ? 0 : -1}
+          onClick={() => onChange(item.id)}
+          className={cn(compact && "!px-3 !text-xs !shadow-none", value === item.id ? "!bg-[var(--accent)] !text-[var(--primary)] !shadow-none" : compact ? "!bg-transparent" : "")}
+        >
+          {item.label}
+        </ActionButton>
+      ))}
+    </div>
+  );
+}
+
+export const NOUNS = {
+  idea: { one: "فكرة واحدة", two: "فكرتان", few: "أفكار", many: "فكرة" },
+  work: { one: "عمل واحد", two: "عملان", few: "أعمال", many: "عملاً" },
+  file: { one: "ملف واحد", two: "ملفان", few: "ملفات", many: "ملفاً" },
+  attachment: { one: "مرفق واحد", two: "مرفقان", few: "مرفقات", many: "مرفقاً" },
+  quote: { one: "عرض سعر واحد", two: "عرضا سعر", few: "عروض أسعار", many: "عرض سعر" },
+  channel: { one: "قناة واحدة", two: "قناتان", few: "قنوات", many: "قناة" },
+} as const;
+
+export const formatCount = (value: number) => value.toLocaleString("ar-SA");
+
+export function countText(value: number, noun: keyof typeof NOUNS) {
+  const forms = NOUNS[noun];
+  if (value === 1) return forms.one;
+  if (value === 2) return forms.two;
+  const number = formatCount(value);
+  return value >= 3 && value <= 10 ? `${number} ${forms.few}` : `${number} ${forms.many}`;
 }
