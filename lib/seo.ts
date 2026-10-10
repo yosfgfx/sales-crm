@@ -5,7 +5,6 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 export const SITE_DESCRIPTION =
   "مساحة عمل فريق التواصل الداخلي لإدارة الأفكار والاعتمادات والتصميم والأرشفة والتقارير الشهرية.";
-export const DEFAULT_OG_IMAGE = "/opengraph-image.jpg";
 
 export function absoluteUrl(path: string) {
   return new URL(path, SITE_URL).toString();
@@ -40,14 +39,12 @@ type PageMetadataOptions = {
   title: string;
   description: string;
   path: string;
-  image?: string;
 };
 
 export function pageMetadata({
   title,
   description,
   path,
-  image = DEFAULT_OG_IMAGE,
 }: PageMetadataOptions): Metadata {
   const url = absoluteUrl(path);
 
@@ -63,13 +60,6 @@ export function pageMetadata({
       siteName: SITE_NAME,
       title,
       description,
-      images: [{ url: absoluteUrl(image) }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      images: [absoluteUrl(image)],
     },
   };
 }

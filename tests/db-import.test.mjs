@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
 import { applyMigrations } from "../scripts/lib/migrations.mjs";
 import { importState, verifyImport } from "../scripts/lib/import-state.mjs";
-import { createInitialMediaData } from "../data/media.ts";
+import { createInitialMediaData, MEDIA_CATEGORIES, MEDIA_COMPANIES } from "../data/media.ts";
+import { bootstrapRoot } from "../scripts/lib/bootstrap.mjs";
 
 async function freshDatabase() {
   const pg = new PGlite();
@@ -67,4 +68,32 @@ test("a failed import rolls back completely", async () => {
   await assert.rejects(importState(db, document));
   const ideas = await db.query("select count(*) as n from wasl.ideas");
   assert.equal(Number(ideas.rows[0].n), 0);
+});
+
+test("bootstrapping a fresh database creates only the owner and reference lists, never demo data (H5)", async () => {
+  const { db } = await freshDatabase();
+  await applyMigrations(db);
+  await assert.rejects(bootstrapRoot(db, { password: "short", companies: MEDIA_COMPANIES, categories: MEDIA_CATEGORIES }), /12/);
+  const result = await bootstrapRoot(db, { name: "يوسف", password: "Owner-Strong-Pass-2026", companies: MEDIA_COMPANIES, categories: MEDIA_CATEGORIES });
+  assert.equal(result.ideas, 0);
+  const counts = (await db.query("select (select count(*) from wasl.ideas) as ideas, (select count(*) from wasl.notifications) as notices, (select count(*) from wasl.members) as members")).rows[0];
+  assert.deepEqual([Number(counts.ideas), Number(counts.notices), Number(counts.members)], [0, 0, 1]);
+  await assert.rejects(bootstrapRoot(db, { password: "Owner-Strong-Pass-2026", companies: [], categories: [] }), /فارغة/);
+});
+
+test("a backup restores every table into an empty database (H8)", async () => {
+  const { createBackup, restoreBackup } = await import("../scripts/lib/backup.mjs");
+  const source = await freshDatabase();
+  await applyMigrations(source.db);
+  const document = sampleDocument();
+  await importState(source.db, document, { demoIdeaIds: [] });
+  const archive = await createBackup(source.db);
+  const target = await freshDatabase();
+  await applyMigrations(target.db);
+  const restored = await restoreBackup(target.db, archive);
+  assert.equal(restored.ideas, document.data.ideas.length);
+  assert.deepEqual((await verifyImport(target.db, document)).mismatches, []);
+  const channels = (await target.db.query("select channels::text[] as c from wasl.ideas order by id limit 1")).rows[0].c;
+  assert.ok(Array.isArray(channels) && channels.length > 0);
+  await assert.rejects(restoreBackup(target.db, archive), /فارغة/);
 });

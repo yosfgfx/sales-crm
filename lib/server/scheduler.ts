@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { MediaNotification } from "@/data/media";
 import { runDueArchiveJobs } from "./archive";
+import { deleteBlob } from "./blob-store";
+import { deleteFile, loadIntegration, uploadWhole } from "./google";
+import { ensureFolder } from "./archive";
+import { createBackup } from "../../scripts/lib/backup.mjs";
 import { database, type Queryable } from "./db";
 import { insertNotifications } from "./repository";
 
@@ -34,7 +38,33 @@ export async function runDailyJobs(q: Queryable = database(), today = riyadhDate
     }
   }
   await insertNotifications(q, notices);
-  return { ran: true, reminders: notices.length };
+  const cleaned = await cleanupFiles(q);
+  const backup = await backupToDrive(q, today).catch(() => null);
+  return { ran: true, reminders: notices.length, cleaned, backup };
+}
+
+export async function cleanupFiles(q: Queryable = database()) {
+  const orphans = (await q.query<{ id: string; storage: string; local_path: string | null; drive_file_id: string | null }>(
+    "select id, storage::text as storage, local_path, drive_file_id from wasl.attachments where idea_id is null and kind <> 'logo' and created_at < now() - interval '24 hours' limit 200")).rows;
+  let removed = 0;
+  for (const file of orphans) {
+    try {
+      if (file.storage === "drive" && file.drive_file_id) await deleteFile(file.drive_file_id, q).catch(() => undefined);
+      else if (file.local_path) await deleteBlob(file.storage, file.local_path);
+      await q.query("update wasl.quotations set attachment_id = null where attachment_id = $1", [file.id]);
+      await q.query("update wasl.upload_sessions set attachment_id = null where attachment_id = $1", [file.id]);
+      await q.query("delete from wasl.attachments where id = $1 and idea_id is null", [file.id]);
+      removed++;
+    } catch { continue; }
+  }
+  const stale = (await q.query<{ id: string; storage: string; local_path: string }>(
+    "select id, storage::text as storage, local_path from wasl.attachments where removed_at < now() - interval '30 days' and storage in ('local', 'supabase') and local_path is not null limit 200")).rows;
+  for (const file of stale) {
+    await deleteBlob(file.storage, file.local_path).catch(() => undefined);
+    await q.query("update wasl.attachments set local_path = null, storage = 'external', external_url = '' where id = $1", [file.id]).catch(() => undefined);
+  }
+  await q.query("delete from wasl.upload_sessions where status <> 'done' and expires_at < now()");
+  return { orphans: removed, expiredBlobs: stale.length };
 }
 
 function mailer() {
@@ -74,4 +104,17 @@ export async function runBackgroundWork(force = false) {
   lastRun = Date.now();
   const results = { archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), email: await sendPendingEmails().catch(() => null) };
   return results;
+}
+
+export async function backupToDrive(q: Queryable = database(), today = riyadhDate()) {
+  const integration = await loadIntegration(q);
+  if (!integration?.root_folder_id) return null;
+  const root = integration.root_folder_id;
+  const folder = await ensureFolder("backups", root, "نسخ احتياطية للنظام", root, q);
+  const bytes = new Uint8Array(await createBackup(q));
+  const file = await uploadWhole({ name: `wasl-backup-${today}.json.gz`, parentId: folder, mime: "application/gzip", bytes, appProperties: { waslBackup: today } }, q);
+  await q.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, $2, $3, $4) on conflict (key) do update set folder_id = excluded.folder_id", [`backup:${today}`, root, file.id, file.name]);
+  const old = (await q.query<{ key: string; folder_id: string }>("select key, folder_id from wasl.drive_folders where key like 'backup:%' and key < $1 order by key", [`backup:${new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000).toISOString().slice(0, 10)}`])).rows;
+  for (const entry of old) { await deleteFile(entry.folder_id, q).catch(() => undefined); await q.query("delete from wasl.drive_folders where key = $1", [entry.key]); }
+  return { fileId: file.id, size: bytes.length };
 }

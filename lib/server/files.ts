@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Attachment, TeamMember } from "@/data/media";
-import { isAdministrator, requireUser } from "./auth";
+import { isAdministrator, requireAdministrator, requireUser } from "./auth";
 import { dataDirectory, deleteBlob, putBlob, readBlob } from "./blob-store";
 import { database } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, responseHeaders } from "./http";
@@ -9,8 +9,8 @@ import { streamFile } from "./google";
 import { loadIdeas, toAttachment } from "./repository";
 import { canSeeQuotations } from "./state";
 
-const FILE_LIMIT = 25 * 1024 * 1024;
-const UPLOAD_LIMIT = 100 * 1024 * 1024;
+const FILE_LIMIT = 5 * 1024 * 1024;
+const UPLOAD_LIMIT = 5 * 1024 * 1024;
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
 export { dataDirectory };
@@ -35,7 +35,7 @@ export function safeFilename(name: string) {
 }
 
 export function assertUploadAllowed(actor: TeamMember, kind: string, idea: { status: string; ownerId: string; designerId: string; channels: string[] } | undefined, channel: string | null) {
-  if (kind === "logo") { if (!isAdministrator(actor)) throw new MediaServerError("تغيير شعار الإدارة متاح لمدير النظام فقط.", 403, "FILE_PERMISSION"); return; }
+  if (kind === "logo") { if (!isAdministrator(actor)) throw new MediaServerError("تغيير شعار الإدارة متاح لمدير النظام فقط.", 403, "FILE_PERMISSION"); requireAdministrator(actor); return; }
   if (!idea) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
   if (kind === "final") {
     if (!["scheduled", "designing", "design_review"].includes(idea.status) || !channel || !idea.channels.includes(channel) || (!isAdministrator(actor) && (actor.role !== "designer" || idea.designerId !== actor.id))) throw new MediaServerError("إرفاق النسخ النهائية متاح للمصمم المكلّف بعد جدولة الفكرة، وللقنوات المطلوبة فقط.", 403, "FILE_PERMISSION");
@@ -63,8 +63,8 @@ export async function uploadFiles(request: Request): Promise<Attachment[]> {
   const files = form.getAll("files");
   if (files.length < 1 || files.length > (isLogo ? 1 : 10) || files.some((file) => typeof file === "string")) throw new MediaServerError(isLogo ? "اختر صورة شعار واحدة." : "يمكن إرفاق من ملف واحد إلى ١٠ ملفات في كل مرة.");
   let total = 0;
-  for (const file of files as File[]) { total += file.size; if (file.size === 0 || file.size > (isLogo ? 5 * 1024 * 1024 : FILE_LIMIT)) throw new MediaServerError(isLogo ? "يجب ألا يتجاوز حجم الشعار ٥ ميجابايت، وألا يكون فارغاً." : "يجب ألا يتجاوز حجم كل ملف ٢٥ ميجابايت، وألا يكون فارغاً.", 413, "FILE_TOO_LARGE"); }
-  if (total > UPLOAD_LIMIT) throw new MediaServerError("الحد الإجمالي لملفات الدفعة هو ١٠٠ ميجابايت.", 413, "UPLOAD_TOO_LARGE");
+  for (const file of files as File[]) { total += file.size; if (file.size === 0 || file.size > (isLogo ? 5 * 1024 * 1024 : FILE_LIMIT)) throw new MediaServerError(isLogo ? "يجب ألا يتجاوز حجم الشعار ٥ ميجابايت، وألا يكون فارغاً." : "قبل ربط Google Drive يُقبل ملف حتى ٥ ميجابايت فقط. اطلب من مالك النظام ربط Drive لرفع الملفات الكبيرة.", 413, "FILE_TOO_LARGE"); }
+  if (total > UPLOAD_LIMIT) throw new MediaServerError("قبل ربط Google Drive يكون الحد الإجمالي للدفعة ٥ ميجابايت. ارفع الملفات على دفعات أو اطلب ربط Drive.", 413, "UPLOAD_TOO_LARGE");
   const created: { storage: string; key: string }[] = [];
   try {
     const rows: { id: string; name: string; size: number; mime: string; inline: string | null; sha256: string; storage: string; key: string }[] = [];

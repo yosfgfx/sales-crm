@@ -4,11 +4,14 @@ import pg from "pg";
 import { databaseConfig, loadLocalEnv } from "./lib/env.mjs";
 import { applyMigrations } from "./lib/migrations.mjs";
 import { importState, verifyImport } from "./lib/import-state.mjs";
+import { bootstrapRoot } from "./lib/bootstrap.mjs";
+import { createBackup, restoreBackup } from "./lib/backup.mjs";
+import { writeFileSync } from "node:fs";
 
 loadLocalEnv();
 const command = process.argv[2];
-const usage = "Usage: node scripts/db.mjs <check|migrate|import-state|verify-state> [--state path] [--server-stopped]";
-if (!["check", "migrate", "import-state", "verify-state"].includes(command)) { console.error(usage); process.exit(2); }
+const usage = "Usage: node scripts/db.mjs <check|migrate|import-state|verify-state|bootstrap-root|backup|restore> [--state path] [--server-stopped] [--name owner-name]";
+if (!["check", "migrate", "import-state", "verify-state", "bootstrap-root", "backup", "restore"].includes(command)) { console.error(usage); process.exit(2); }
 
 const client = new pg.Client({ ...databaseConfig(), connectionTimeoutMillis: 10_000 });
 const db = { query: (text, params) => client.query(text, params), exec: (sql) => client.query(sql) };
@@ -41,6 +44,19 @@ try {
     const dataDir = process.env.MEDIA_DATA_DIR || path.join(process.cwd(), ".media-data");
     const result = await importState(db, document, { demoIdeaIds: await demoIdeaIds(), manifestOwner: manifestOwner(dataDir) });
     console.log(JSON.stringify({ ...result, verification: await verifyImport(db, document) }, null, 2));
+  } else if (command === "backup") {
+    const file = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : `wasl-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+    writeFileSync(file, await createBackup(db), { mode: 0o600 });
+    console.log(JSON.stringify({ file }));
+  } else if (command === "restore") {
+    if (!process.argv[3]) throw new Error("حدد ملف النسخة الاحتياطية.");
+    console.log(JSON.stringify(await restoreBackup(db, readFileSync(process.argv[3]))));
+  } else if (command === "bootstrap-root") {
+    if (process.stdin.isTTY) throw new Error("مرّر كلمة مرور المالك عبر الإدخال القياسي، ولا تكتبها في الأمر نفسه. راجع docs/internal-comms-server.md.");
+    const password = (await new Promise((resolve) => { let value = ""; process.stdin.on("data", (chunk) => { value += chunk; }).on("end", () => resolve(value)); })).replace(/\r?\n$/, "");
+    const nameIndex = process.argv.indexOf("--name");
+    const { MEDIA_COMPANIES, MEDIA_CATEGORIES } = await import("../data/media.ts");
+    console.log(JSON.stringify(await bootstrapRoot(db, { name: nameIndex > 0 ? process.argv[nameIndex + 1] : undefined, password, companies: MEDIA_COMPANIES, categories: MEDIA_CATEGORIES })));
   } else {
     console.log(JSON.stringify(await verifyImport(db, readState()), null, 2));
   }

@@ -9,17 +9,17 @@ import {
 } from "@/data/media";
 import { WorkflowError } from "@/lib/media-workflow";
 
-interface SessionResponse { user: TeamMember | null; demo: boolean; configured: boolean }
+interface SessionResponse { user: TeamMember | null; demo: boolean; configured: boolean; mfa?: { enabled: boolean; required: boolean } | null }
 interface OperationResult {
   idea?: Idea; deletedIdeaId?: string; companies?: Company[]; categories?: ContentCategory[]; settings?: SystemSettings;
   notifications: MediaData["notifications"];
 }
 export interface MediaState {
   data: MediaData; version: number; currentUser: TeamMember | null; loading: boolean; saving: boolean;
-  error: string | null; initialized: boolean; demo: boolean; configured: boolean;
+  error: string | null; initialized: boolean; demo: boolean; configured: boolean; mfa: { enabled: boolean; required: boolean } | null;
   accounts: AccountSummary[]; accountsLoaded: boolean;
   initialize: () => Promise<void>; refresh: () => Promise<void>;
-  setCurrentUser: (memberId: string, password?: string) => Promise<void>;
+  setCurrentUser: (memberId: string, password?: string, code?: string) => Promise<void>;
   createIdea: (input: NewIdeaInput) => Promise<Idea>;
   patchIdea: (ideaId: string, patch: IdeaPatch, expectedUpdatedAt?: string) => Promise<void>;
   submitIdea: (ideaId: string) => Promise<void>;
@@ -77,7 +77,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 }
 async function loadState(): Promise<void> {
   const session = await responseJson<SessionResponse>(await fetch("/api/session", { cache: "no-store" }));
-  useMediaStore.setState({ currentUser: session.user, demo: false, configured: session.configured });
+  useMediaStore.setState({ currentUser: session.user, demo: false, configured: session.configured, mfa: session.mfa ?? null });
   if (!session.user) { useMediaStore.setState({ data: emptyData(), version: 0, initialized: true, accounts: [], accountsLoaded: false, error: null }); return; }
   const state = await responseJson<VersionedMediaData>(await fetch("/api/media", { cache: "no-store" }));
   const currentUser = state.data.members.find((member) => member.id === session.user?.id && member.active) ?? null;
@@ -150,7 +150,7 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
 
 export const useMediaStore = create<MediaState>(() => ({
   data: emptyData(), version: 0, currentUser: null, loading: true, saving: false, error: null,
-  initialized: false, demo: false, configured: true,
+  initialized: false, demo: false, configured: true, mfa: null,
   accounts: [], accountsLoaded: false,
   initialize: () => {
     if (useMediaStore.getState().initialized) return Promise.resolve();
@@ -168,9 +168,9 @@ export const useMediaStore = create<MediaState>(() => ({
       finally { useMediaStore.setState({ loading: false }); refreshPromise = null; }
     })(); return refreshPromise;
   },
-  setCurrentUser: (memberId, password) => enqueue(async () => {
+  setCurrentUser: (memberId, password, code) => enqueue(async () => {
     if (refreshPromise) await refreshPromise;
-    const session = await responseJson<SessionResponse>(await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: memberId, ...(password ? { password } : {}) }) }));
+    const session = await responseJson<SessionResponse>(await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: memberId, ...(password ? { password } : {}), ...(code ? { code } : {}) }) }));
     useMediaStore.setState({ currentUser: session.user, demo: false, configured: session.configured });
     await loadState();
   }),

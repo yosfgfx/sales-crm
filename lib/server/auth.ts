@@ -6,6 +6,9 @@ import { database, type Queryable } from "./db";
 import { assertSameOrigin, clientAddress, MediaServerError, readJson, responseHeaders } from "./http";
 import { loadIdeas, loadReference } from "./repository";
 import { loadStateFor } from "./state";
+import { decryptSecret, encryptSecret } from "./crypto";
+import { newSecret, otpauthUri, verifyCode } from "./totp";
+import QRCode from "qrcode";
 
 const scrypt = promisify(nodeScrypt);
 const COOKIE = "media_session";
@@ -13,7 +16,10 @@ const SESSION_SECONDS = 12 * 60 * 60;
 const USERNAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,63}$/;
 const UNKNOWN_ACCOUNT_HASH = `scrypt:${"0".repeat(48)}:${"0".repeat(128)}`;
 const ROLES = ["admin", "manager", "content", "designer"] as const;
-type Account = { member_id: string; username: string; password_hash: string; auth_version: number };
+type Account = { member_id: string; username: string; password_hash: string; auth_version: number; totp_secret_enc: string | null; totp_last_step: string | number | null };
+const ACCOUNT_COLUMNS = "member_id, username, password_hash, auth_version, totp_secret_enc, totp_last_step";
+const mfaMissing = new WeakSet<TeamMember>();
+export const adminMfaRequired = () => process.env.WASL_REQUIRE_ADMIN_MFA === "true" || (process.env.NODE_ENV === "production" && process.env.WASL_REQUIRE_ADMIN_MFA !== "false");
 
 export const isAdministrator = (member: Pick<TeamMember, "role"> | null | undefined) => member?.role === "admin" || member?.role === "superadmin";
 
@@ -56,7 +62,7 @@ function issueCookie(request: Request, account: Account, member: TeamMember) {
 const clearCookie = (request: Request) => sessionCookie(request, "", 0);
 
 async function accountFor(q: Queryable, memberId: string) {
-  return (await q.query<Account>("select member_id, username, password_hash, auth_version from wasl.accounts where member_id = $1", [memberId])).rows[0] || null;
+  return (await q.query<Account>(`select ${ACCOUNT_COLUMNS} from wasl.accounts where member_id = $1`, [memberId])).rows[0] || null;
 }
 async function memberById(q: Queryable, id: string) {
   return (await q.query<TeamMember>("select id, name, role::text as role, title, initials, color, active from wasl.members where id = $1", [id])).rows[0] || null;
@@ -74,6 +80,7 @@ export async function sessionUser(request: Request, q: Queryable = database()): 
   if (typeof parsed.id !== "string" || typeof parsed.expires !== "number" || parsed.expires < Date.now()) return null;
   const [member, account] = await Promise.all([memberById(q, parsed.id), accountFor(q, parsed.id)]);
   if (!member?.active || !account || parsed.revision !== revisionOf(account, member)) return null;
+  if (isAdministrator(member) && adminMfaRequired() && !account.totp_secret_enc) mfaMissing.add(member);
   return member;
 }
 
@@ -84,11 +91,14 @@ export async function requireUser(request: Request, q?: Queryable) {
 }
 export function requireAdministrator(user: TeamMember) {
   if (!isAdministrator(user)) throw new MediaServerError("هذا الإجراء متاح لمدير النظام فقط.", 403, "ADMIN_REQUIRED");
+  if (mfaMissing.has(user)) throw new MediaServerError("فعّل التحقق بخطوتين من «حسابي» قبل استخدام أدوات الإدارة.", 403, "MFA_SETUP_REQUIRED");
 }
 
 export async function currentSession(request: Request) {
-  const user = await sessionUser(request);
-  return { user, demo: false, configured: true };
+  const db = database();
+  const user = await sessionUser(request, db);
+  const account = user ? await accountFor(db, user.id) : null;
+  return { user, demo: false, configured: true, mfa: user ? { enabled: Boolean(account?.totp_secret_enc), required: isAdministrator(user) && adminMfaRequired() } : null };
 }
 
 const FAILURE_WINDOW_MS = 15 * 60_000;
@@ -116,12 +126,22 @@ export async function login(request: Request): Promise<Response> {
   const keys = [`ip:${address}`, `account:${username}|ip:${address}`];
   const q = database();
   if (await loginDelay(q, keys)) throw new MediaServerError("محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر قليلاً ثم حاول مجدداً.", 429, "LOGIN_RATE_LIMIT");
-  const account = (await q.query<Account>("select member_id, username, password_hash, auth_version from wasl.accounts where username = $1", [username])).rows[0];
+  const account = (await q.query<Account>(`select ${ACCOUNT_COLUMNS} from wasl.accounts where username = $1`, [username])).rows[0];
   const verified = password.length >= 1 && password.length <= 1024 && (await passwordMatches(password, account?.password_hash || UNKNOWN_ACCOUNT_HASH)) && Boolean(account);
   const member = account ? await memberById(q, account.member_id) : null;
   if (!verified || !account || !member?.active) {
     await recordFailure(q, keys);
     throw new MediaServerError("بيانات الدخول غير صحيحة أو الحساب غير مفعّل.", 401, "INVALID_CREDENTIALS");
+  }
+  if (account.totp_secret_enc) {
+    const code = typeof value?.code === "string" ? value.code.replace(/\s/g, "") : "";
+    if (!code) throw new MediaServerError("أدخل رمز التحقق من تطبيق المصادقة.", 401, "MFA_REQUIRED");
+    const step = verifyCode(decryptSecret(account.totp_secret_enc), code, Date.now(), account.totp_last_step === null ? null : Number(account.totp_last_step));
+    if (step === null) {
+      await recordFailure(q, keys);
+      throw new MediaServerError("رمز التحقق غير صحيح أو انتهت صلاحيته.", 401, "INVALID_MFA");
+    }
+    await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1", [account.member_id, step]);
   }
   await q.query("delete from wasl.login_attempts where key = $1", [keys[1]]);
   return Response.json({ user: member, demo: false, configured: true }, { headers: { ...responseHeaders, "Set-Cookie": issueCookie(request, account, member) } });
@@ -218,4 +238,37 @@ export async function mutateAccounts(request: Request): Promise<Response> {
   const reloginRequired = !user;
   const state = user ? await loadStateFor(user) : null;
   return Response.json({ version: 0, data: state?.data, accounts: user && isAdministrator(user) ? await summaries(db) : [], currentUser: user, reloginRequired, memberId: outcome.targetId }, { headers: { ...responseHeaders, ...(reloginRequired ? { "Set-Cookie": clearCookie(request) } : {}) } });
+}
+
+export async function mfaAction(request: Request) {
+  assertSameOrigin(request);
+  const db = database();
+  const user = await requireUser(request, db);
+  const body = await readJson(request, 1024) as { action?: string; code?: string } | null;
+  const account = await accountFor(db, user.id);
+  if (!account) throw new MediaServerError("الحساب غير موجود.", 404, "ACCOUNT_NOT_FOUND");
+  const code = String(body?.code || "").replace(/\s/g, "");
+  if (body?.action === "start") {
+    if (account.totp_secret_enc) throw new MediaServerError("التحقق بخطوتين مفعّل بالفعل.", 409, "MFA_ENABLED");
+    const secret = newSecret();
+    await db.query("update wasl.accounts set totp_pending_enc = $2 where member_id = $1", [user.id, encryptSecret(secret)]);
+    const uri = otpauthUri(secret, account.username);
+    return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
+  }
+  if (body?.action === "confirm") {
+    const pending = (await db.query<{ totp_pending_enc: string | null }>("select totp_pending_enc from wasl.accounts where member_id = $1", [user.id])).rows[0]?.totp_pending_enc;
+    if (!pending) throw new MediaServerError("ابدأ تفعيل التحقق بخطوتين أولاً.", 409, "MFA_NOT_STARTED");
+    const step = verifyCode(decryptSecret(pending), code);
+    if (step === null) throw new MediaServerError("الرمز غير صحيح. تأكد من ضبط وقت الجوال وأعد المحاولة.", 422, "INVALID_MFA");
+    await db.query("update wasl.accounts set totp_secret_enc = totp_pending_enc, totp_pending_enc = null, totp_enabled_at = now(), totp_last_step = $2 where member_id = $1", [user.id, step]);
+    return { enabled: true };
+  }
+  if (body?.action === "disable") {
+    if (!account.totp_secret_enc) return { enabled: false };
+    if (isAdministrator(user) && adminMfaRequired()) throw new MediaServerError("التحقق بخطوتين إلزامي لمديري النظام.", 403, "MFA_REQUIRED_FOR_ADMINS");
+    if (verifyCode(decryptSecret(account.totp_secret_enc), code) === null) throw new MediaServerError("أدخل رمزاً صحيحاً لإيقاف التحقق بخطوتين.", 422, "INVALID_MFA");
+    await db.query("update wasl.accounts set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null where member_id = $1", [user.id]);
+    return { enabled: false };
+  }
+  throw new MediaServerError("إجراء غير معروف.");
 }

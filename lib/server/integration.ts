@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { TeamMember } from "@/data/media";
 import { retryArchive } from "./archive";
-import { isAdministrator, requireUser } from "./auth";
+import { isAdministrator, requireAdministrator, requireUser } from "./auth";
 import { encryptSecret, decryptSecret } from "./crypto";
 import { database } from "./db";
 import { accessToken, appOrigin, authorizationUrl, createFolder, exchangeCode, FOLDER_MIME, forgetAccessToken, getFile, loadIntegration, moveFile, revokeToken, storageQuota } from "./google";
@@ -12,9 +12,11 @@ const DEFAULT_FOLDER = "WaslPlatform";
 
 function requireOwner(user: TeamMember) {
   if (user.id !== "root") throw new MediaServerError("ربط Google Drive وفصله متاحان لمالك النظام فقط.", 403, "OWNER_REQUIRED");
+  requireAdministrator(user);
 }
 function requireAdmin(user: TeamMember) {
   if (!isAdministrator(user)) throw new MediaServerError("إدارة مجلد الأرشيف متاحة لمالك النظام ومدير النظام فقط.", 403, "ADMIN_REQUIRED");
+  requireAdministrator(user);
 }
 const signState = (value: string) => createHmac("sha256", process.env.WASL_SESSION_SECRET || "").update(`oauth:root:${value}`).digest("base64url");
 const adminRedirect = (request: Request, query: string, cookie: string) => new Response(null, { status: 303, headers: { Location: `${appOrigin(request)}/?view=admin&tab=integrations&${query}`, "Set-Cookie": cookie, "Cache-Control": "no-store" } });

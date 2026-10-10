@@ -1,5 +1,6 @@
 "use client";
 
+import MfaSettings from "./mfa-settings";
 import { useEffect, useMemo, useState } from "react";
 import { useMediaStore } from "@/stores/media-store";
 import {
@@ -106,6 +107,8 @@ export default function MediaWorkspace() {
   const [adminTab, setAdminTab] = useState<string | undefined>();
   const [driveNotice, setDriveNotice] = useState<string | undefined>();
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaNeeded, setMfaNeeded] = useState(false);
   const initialize = store.initialize;
   useEffect(() => {
     void initialize();
@@ -184,10 +187,15 @@ export default function MediaWorkspace() {
           className="media-card w-full max-w-[30em] space-y-5 p-8"
           onSubmit={(e) => {
             e.preventDefault();
-            void run(async () => {
-              await store.setCurrentUser(loginMember, password);
-              setPassword("");
-            });
+            void (async () => {
+              try {
+                await store.setCurrentUser(loginMember, password, mfaNeeded ? mfaCode : undefined);
+                setPassword(""); setMfaCode(""); setMfaNeeded(false); setNotice("");
+              } catch (e) {
+                if (e instanceof Error && "code" in e && e.code === "MFA_REQUIRED") { setMfaNeeded(true); setNotice(""); useMediaStore.setState({ error: null }); }
+                else setNotice(errorText(e));
+              }
+            })();
           }}
         >
           <div className="flex size-14 items-center justify-center rounded-2xl bg-[var(--accent)] text-[var(--primary)]">
@@ -237,6 +245,23 @@ export default function MediaWorkspace() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+          )}
+          {mfaNeeded && (
+            <label className="media-label">
+              رمز التحقق من تطبيق المصادقة
+              <input
+                className="media-input mt-2 text-center"
+                dir="ltr"
+                required
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="\d{6}"
+                maxLength={6}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value)}
               />
             </label>
           )}
@@ -473,6 +498,12 @@ export default function MediaWorkspace() {
               )}
             </div>
           </div>
+          {store.mfa?.required && !store.mfa.enabled && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f2c98a] bg-[#fff6e8] p-4 text-sm text-[#7a4b00]">
+              <span>فعّل التحقق بخطوتين لحماية حساب الإدارة. أدوات الإدارة متوقفة حتى تفعيله.</span>
+              <ActionButton className="!text-xs" onClick={() => setAccount(true)}>تفعيل الآن</ActionButton>
+            </div>
+          )}
           {(error || notice) && (
             <div
               role={error ? "alert" : "status"}
@@ -604,6 +635,7 @@ export default function MediaWorkspace() {
         }
       >
         <div className="space-y-5 p-6">
+          <MfaSettings />
           <div className="flex items-center gap-3">
             <Avatar name={currentUser.name} />
             <div>

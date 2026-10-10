@@ -152,3 +152,12 @@ test("a revoked Google grant stops the archive and asks the owner to reconnect",
   await assert.rejects(google.accessToken(), (error) => error.code === "DRIVE_REAUTH_REQUIRED");
   fake.state.refreshFails = false;
 });
+
+test("the daily backup lands in the archive's backup folder on Drive (H8)", async () => {
+  const scheduler = require(path.join(h.root, "lib/server/scheduler.ts"));
+  const result = await scheduler.backupToDrive(h.database, "2026-10-10");
+  assert.ok(result.size > 100);
+  const file = fake.files.get(result.fileId);
+  assert.equal(file.name, "wasl-backup-2026-10-10.json.gz");
+  assert.match(fake.pathOf(file.id), /\/نسخ احتياطية للنظام\/wasl-backup-2026-10-10\.json\.gz$/);
+});

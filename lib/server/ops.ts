@@ -4,7 +4,7 @@ import {
   addMediaAttachments, addMediaCategory, addMediaComment, addMediaCompany, addMediaQuotation, canDeleteIdea, cancelMediaIdea, changeMediaDesignStatus, createMediaIdea, patchMediaIdea,
   reassignMediaIdea, removeMediaAttachment, updateMediaCategory, updateMediaCompany, removeMediaQuotation, reopenMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaSettings, validateMediaData, withdrawMediaIdea,
 } from "@/lib/media-workflow";
-import { isAdministrator, requireUser } from "./auth";
+import { isAdministrator, requireAdministrator, requireUser } from "./auth";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, MediaServerError, readJson } from "./http";
 import { enqueueArchive } from "./archive";
@@ -116,6 +116,7 @@ export async function runOperation(request: Request): Promise<OperationResult> {
   const db = database();
   return db.transaction(async (tx) => {
     const actor = await requireUser(request, tx);
+    if (["updateSettings", "addCompany", "addCategory", "updateCompany", "updateCategory", "reassignIdea", "reopenIdea"].includes(op.type)) requireAdministrator(actor);
     const done = async (extra: Omit<OperationResult, "notifications">): Promise<OperationResult> => ({ ...extra, notifications: await loadNotifications(tx, actor.id) });
     switch (op.type) {
       case "createIdea": {
