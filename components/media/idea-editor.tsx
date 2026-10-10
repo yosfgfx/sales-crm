@@ -18,23 +18,9 @@ import { ActionButton, Icon, Modal, bytes, errorText, today } from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { isAdministrator } from "@/lib/media-workflow";
 
-export async function uploadFiles(
-  files: File[],
-  ideaId: string,
-  kind: Attachment["kind"],
-  channel?: Channel,
-): Promise<Attachment[]> {
-  const form = new FormData();
-  files.forEach((file) => form.append("files", file));
-  form.set("ideaId", ideaId);
-  form.set("kind", kind);
-  if (channel) form.set("channel", channel);
-  const response = await fetch("/api/files", { method: "POST", body: form });
-  const result = await response.json();
-  if (!response.ok)
-    throw new Error(result.error || "تعذر رفع الملفات. أعد المحاولة.");
-  return result.files;
-}
+import { uploadFiles } from "@/lib/upload-client";
+
+export { uploadFiles };
 
 export default function IdeaEditor({
   open,

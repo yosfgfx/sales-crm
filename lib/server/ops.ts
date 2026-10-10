@@ -7,7 +7,8 @@ import {
 import { isAdministrator, requireUser } from "./auth";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, MediaServerError, readJson } from "./http";
-import { DEFAULT_LOGO_URL, insertNotifications, loadNotifications, loadReference, lockIdea, nextIdeaCode, persistIdea, toAttachment } from "./repository";
+import { enqueueArchive } from "./archive";
+import { DEFAULT_LOGO_URL, insertNotifications, loadIdeas, loadNotifications, loadReference, lockIdea, nextIdeaCode, persistIdea, toAttachment } from "./repository";
 import { projectIdea } from "./state";
 
 type Operation =
@@ -90,7 +91,8 @@ async function ideaOperation(tx: Queryable, actor: TeamMember, op: Exclude<Opera
   const after = next.ideas.find((idea) => idea.id === op.ideaId)!;
   await persistIdea(tx, before, after, actor.id);
   await insertNotifications(tx, next.notifications);
-  return after;
+  if (op.type === "changeDesignStatus" && after.status === "delivered") await enqueueArchive(tx, after.id);
+  return (await loadIdeas(tx, { ids: [after.id] }))[0];
 }
 
 export async function runOperation(request: Request): Promise<OperationResult> {

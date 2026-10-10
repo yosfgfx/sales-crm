@@ -9,7 +9,7 @@ export function canSeeQuotations(viewer: TeamMember, idea: Pick<Idea, "ownerId">
 }
 
 export function projectIdea(viewer: TeamMember, idea: Idea): Idea {
-  const plain = idea;
+  const plain: Idea = administrator(viewer) || !idea.archive?.folderUrl ? idea : { ...idea, archive: { status: idea.archive.status, ...(idea.archive.archivedAt ? { archivedAt: idea.archive.archivedAt } : {}) } };
   if (canSeeQuotations(viewer, idea)) return plain;
   const hidden = new Set(plain.attachments.filter((file) => file.kind === "quotation").map((file) => file.id));
   const projected: Idea = { ...plain, quotations: [], attachments: plain.attachments.filter((file) => !hidden.has(file.id)) };

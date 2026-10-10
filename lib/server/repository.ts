@@ -11,6 +11,7 @@ const textArray = (value: unknown): string[] => (Array.isArray(value) ? value.ma
 
 export function attachmentUrl(row: Row) {
   if (row.storage === "external") return text(row.external_url);
+  if (row.storage === "drive") return `/api/files/${row.id}${row.inline_mime ? "?inline=1" : ""}`;
   return `/api/files/${row.id}${row.inline_mime ? "?inline=1" : ""}`;
 }
 
@@ -41,7 +42,7 @@ export async function loadReference(q: Queryable): Promise<Pick<MediaData, "memb
 
 const IDEA_COLUMNS = `id, code, title, company_id, department, category_id, work_type::text as work_type, description, content, execution_plan, channels::text[] as channels,
   owner_id, coalesce(designer_id, '') as designer_id, requested_at::text as requested_at, due_date::text as due_date, coalesce(scheduled_at::text, '') as scheduled_at,
-  approved_at, delivered_at::text as delivered_at, priority::text as priority, status::text as status, needs_quotes, manager_feedback, source_proposal, created_at, updated_at`;
+  approved_at, delivered_at::text as delivered_at, priority::text as priority, status::text as status, needs_quotes, manager_feedback, source_proposal, created_at, updated_at, archive_status::text as archive_status, archived_at, drive_folder_id`;
 
 export async function loadIdeas(q: Queryable, filter: { ids?: string[] } = {}): Promise<Idea[]> {
   const where = filter.ids ? "where id = any($1::text[])" : "";
@@ -69,6 +70,7 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[] } = {}): 
     const deliveredAt = optionalText(row.delivered_at), approvedAt = row.approved_at ? iso(row.approved_at) : undefined;
     if (deliveredAt) idea.deliveredAt = deliveredAt;
     if (approvedAt) idea.approvedAt = approvedAt;
+    idea.archive = { status: row.archive_status as NonNullable<Idea["archive"]>["status"], ...(row.archived_at ? { archivedAt: iso(row.archived_at) } : {}), ...(row.drive_folder_id ? { folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(text(row.drive_folder_id))}` } : {}) };
     if (row.source_proposal) idea.sourceProposal = (typeof row.source_proposal === "string" ? JSON.parse(row.source_proposal) : row.source_proposal) as Idea["sourceProposal"];
     return idea;
   });

@@ -1,0 +1,191 @@
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { CHANNEL_LABELS, PRIORITY_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
+import { database, type Queryable } from "./db";
+import { dataDirectory } from "./files";
+import { createFolder, createGoogleDocFromHtml, deleteFile, DriveError, exportPdf, getFile, loadIntegration, moveFile, uploadWhole, type DriveFile } from "./google";
+import { MediaServerError } from "./http";
+import { insertNotifications, loadIdeas, loadReference } from "./repository";
+
+export const IN_PROGRESS_FOLDER = "قيد التنفيذ";
+export const SUBFOLDERS = { brief: "01 الموجز والمحتوى", quotation: "02 عروض الأسعار", final: "03 التصاميم النهائية" } as const;
+const SUMMARY_NAME = "ملخص المشروع.pdf";
+const MAX_ATTEMPTS = 6;
+
+const clean = (value: string) => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "بدون عنوان";
+export const projectFolderName = (idea: Pick<Idea, "code" | "workType" | "title">) => clean(`${idea.code} · ${WORK_TYPE_LABELS[idea.workType]} · ${idea.title}`);
+export function monthFolderName(date: string) {
+  const month = new Intl.DateTimeFormat("ar-SA", { calendar: "gregory", month: "long", timeZone: "Asia/Riyadh" }).format(new Date(`${date.slice(0, 7)}-15T12:00:00Z`));
+  return `${date.slice(5, 7)} - أعمال ${month}`;
+}
+export const companyFolderName = (shortName: string) => clean(`أعمال ${shortName}`);
+
+async function rootFolder(q: Queryable) {
+  const integration = await loadIntegration(q);
+  if (!integration) throw new MediaServerError("لم يُربط Google Drive بعد. يربطه مالك النظام من الإعدادات.", 409, "DRIVE_NOT_CONNECTED");
+  if (!integration.root_folder_id) throw new MediaServerError("لم يُحدَّد مجلد الأرشيف في Google Drive. يحدده مالك النظام أو مدير النظام من الإعدادات.", 409, "DRIVE_FOLDER_MISSING");
+  return integration.root_folder_id;
+}
+
+async function stillThere(id: string, parent: string, q: Queryable) {
+  try { const file = await getFile(id, q); return !file.trashed && (file.parents || []).includes(parent) ? file : null; }
+  catch (error) { if (error instanceof DriveError && (error.status === 404 || error.status === 403)) return null; throw error; }
+}
+
+export async function ensureFolder(key: string, parentId: string, name: string, root: string, q: Queryable = database()) {
+  const cached = (await q.query<{ folder_id: string }>("select folder_id from wasl.drive_folders where key = $1 and root_folder_id = $2", [key, root])).rows[0];
+  if (cached && await stillThere(cached.folder_id, parentId, q)) return cached.folder_id;
+  const created = await createFolder(name, parentId, q);
+  await q.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, $2, $3, $4) on conflict (key) do update set root_folder_id = excluded.root_folder_id, folder_id = excluded.folder_id, name = excluded.name, created_at = now()", [key, root, created.id, name]);
+  return created.id;
+}
+
+async function deliveredParent(idea: Idea, data: Pick<MediaData, "companies">, root: string, q: Queryable) {
+  const date = idea.deliveredAt || new Date().toISOString().slice(0, 10);
+  const year = await ensureFolder(`year:${date.slice(0, 4)}`, root, date.slice(0, 4), root, q);
+  const month = await ensureFolder(`month:${date.slice(0, 7)}`, year, monthFolderName(date), root, q);
+  const company = data.companies.find((item) => item.id === idea.companyId);
+  return ensureFolder(`company:${date.slice(0, 7)}:${idea.companyId}`, month, companyFolderName(company?.shortName || company?.name || "أخرى"), root, q);
+}
+
+export async function ensureProjectFolders(ideaId: string, q: Queryable = database()) {
+  const root = await rootFolder(q);
+  const [idea] = await loadIdeas(q, { ids: [ideaId] });
+  if (!idea) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
+  const current = (await q.query<{ drive_folder_id: string | null }>("select drive_folder_id from wasl.ideas where id = $1", [ideaId])).rows[0]?.drive_folder_id;
+  let project = current ? await getFile(current, q).catch(() => null) : null;
+  if (!project || project.trashed) {
+    const parent = idea.status === "delivered" ? await deliveredParent(idea, await loadReference(q), root, q) : await ensureFolder("in-progress", root, IN_PROGRESS_FOLDER, root, q);
+    project = await createFolder(projectFolderName(idea), parent, q);
+    await q.query("update wasl.ideas set drive_folder_id = $2 where id = $1", [ideaId, project.id]);
+    await q.query("delete from wasl.drive_folders where key like $1", [`project:${ideaId}:%`]);
+  }
+  const subfolders = {} as Record<keyof typeof SUBFOLDERS, string>;
+  for (const [kind, name] of Object.entries(SUBFOLDERS) as [keyof typeof SUBFOLDERS, string][]) subfolders[kind] = await ensureFolder(`project:${ideaId}:${kind}`, project.id, name, root, q);
+  return { root, project, subfolders, idea };
+}
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+
+export function summaryHtml(idea: Idea, data: Pick<MediaData, "members" | "companies" | "categories">) {
+  const member = (id?: string) => data.members.find((item) => item.id === id)?.name || "—";
+  const company = data.companies.find((item) => item.id === idea.companyId)?.name || "—";
+  const category = data.categories.find((item) => item.id === idea.categoryId)?.name || "—";
+  const approval = [...idea.history].reverse().find((event) => event.action === "approved");
+  const rows: [string, string][] = [
+    ["الرمز", idea.code], ["العنوان", idea.title], ["الجهة", company], ["الإدارة", idea.department || "—"], ["التصنيف", category], ["نوع العمل", WORK_TYPE_LABELS[idea.workType]],
+    ["القنوات", idea.channels.map((channel) => CHANNEL_LABELS[channel]).join("، ")], ["الأولوية", PRIORITY_LABELS[idea.priority]], ["الحالة", STATUS_LABELS[idea.status]],
+    ["صاحب الفكرة", member(idea.ownerId)], ["المصمم", member(idea.designerId)], ["تاريخ الطلب", idea.requestedAt], ["موعد التسليم", idea.dueDate], ["تاريخ التسليم", idea.deliveredAt || "—"],
+    ["اعتمدها", approval ? `${member(approval.actorId)} في ${approval.at.slice(0, 10)}` : "—"],
+  ];
+  const quotes = idea.quotations.map((quote) => `<tr><td>${escapeHtml(quote.vendor)}</td><td>${quote.amount.toLocaleString("en-US")} ر.س</td><td>${quote.days} يوم</td><td>${quote.recommended ? "موصى به" : ""}</td></tr>`).join("");
+  const history = idea.history.map((event) => `<tr><td>${escapeHtml(event.at.slice(0, 16).replace("T", " "))}</td><td>${escapeHtml(member(event.actorId))}</td><td>${escapeHtml(event.note)}</td></tr>`).join("");
+  const files = idea.attachments.map((file) => `<li>${escapeHtml(file.name)}${file.channel ? ` (${CHANNEL_LABELS[file.channel]})` : ""}</li>`).join("");
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapeHtml(idea.code)}</title></head><body dir="rtl" style="font-family:Arial">
+<h1>${escapeHtml(idea.title)}</h1><p>ملخص مشروع من نظام وصل</p>
+<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">${rows.map(([label, value]) => `<tr><th style="text-align:right;width:30%">${label}</th><td>${escapeHtml(value)}</td></tr>`).join("")}</table>
+<h2>الوصف</h2><p>${escapeHtml(idea.description).replace(/\n/g, "<br>")}</p>
+<h2>النص</h2><p>${escapeHtml(idea.content).replace(/\n/g, "<br>")}</p>
+<h2>خطة التنفيذ</h2><p>${escapeHtml(idea.executionPlan).replace(/\n/g, "<br>")}</p>
+${quotes ? `<h2>عروض الأسعار</h2><table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><tr><th>المورد</th><th>المبلغ</th><th>المدة</th><th></th></tr>${quotes}</table>` : ""}
+${files ? `<h2>الملفات</h2><ul>${files}</ul>` : ""}
+<h2>سجل النشاط</h2><table border="1" cellpadding="6" style="border-collapse:collapse;width:100%"><tr><th>الوقت</th><th>العضو</th><th>الإجراء</th></tr>${history}</table>
+</body></html>`;
+}
+
+async function uploadLocalAttachments(ideaId: string, subfolders: Record<keyof typeof SUBFOLDERS, string>, q: Queryable) {
+  const rows = await q.query<{ id: string; name: string; mime: string; kind: keyof typeof SUBFOLDERS; local_path: string }>("select id, name, mime, kind::text as kind, local_path from wasl.attachments where idea_id = $1 and removed_at is null and storage = 'local'", [ideaId]);
+  for (const row of rows.rows) {
+    const bytes = new Uint8Array(await readFile(path.join(dataDirectory(), "files", path.basename(row.local_path))));
+    const file = await uploadWhole({ name: row.name, parentId: subfolders[row.kind], mime: row.mime, bytes, appProperties: { waslAttachmentId: row.id } }, q);
+    await q.query("update wasl.attachments set storage = 'drive', drive_file_id = $2, drive_parent_id = $3 where id = $1 and storage = 'local'", [row.id, file.id, subfolders[row.kind]]);
+  }
+  return rows.rows.length;
+}
+
+async function replaceSummary(idea: Idea, projectId: string, q: Queryable) {
+  const reference = await loadReference(q);
+  const doc = await createGoogleDocFromHtml(`${idea.code} ملخص مؤقت`, summaryHtml(idea, reference), projectId, q);
+  try {
+    const pdf = await exportPdf(doc.id, q);
+    const previous = (await q.query<{ folder_id: string }>("select folder_id from wasl.drive_folders where key = $1", [`project:${idea.id}:summary`])).rows[0]?.folder_id;
+    const uploaded = await uploadWhole({ name: SUMMARY_NAME, parentId: projectId, mime: "application/pdf", bytes: pdf, appProperties: { waslIdeaId: idea.id } }, q);
+    await q.query("insert into wasl.drive_folders (key, root_folder_id, folder_id, name) values ($1, '-', $2, $3) on conflict (key) do update set folder_id = excluded.folder_id", [`project:${idea.id}:summary`, uploaded.id, SUMMARY_NAME]);
+    if (previous) await deleteFile(previous, q).catch(() => undefined);
+  } finally { await deleteFile(doc.id, q).catch(() => undefined); }
+}
+
+export async function archiveIdea(ideaId: string, q: Queryable = database()) {
+  const { root, project, subfolders, idea } = await ensureProjectFolders(ideaId, q);
+  if (idea.status !== "delivered") throw new MediaServerError("لا تُؤرشف الفكرة قبل تسليمها.", 409, "NOT_DELIVERED");
+  await uploadLocalAttachments(ideaId, subfolders, q);
+  const target = await deliveredParent(idea, await loadReference(q), root, q);
+  const current: DriveFile = await getFile(project.id, q);
+  if (!(current.parents || []).includes(target)) await moveFile(project.id, target, current.parents || [], q);
+  const [fresh] = await loadIdeas(q, { ids: [ideaId] });
+  await replaceSummary(fresh, project.id, q);
+  return { folderId: project.id };
+}
+
+export async function enqueueArchive(q: Queryable, ideaId: string) {
+  await q.query("update wasl.archive_jobs set status = 'done', updated_at = now() where idea_id = $1 and status in ('pending', 'failed')", [ideaId]);
+  const id = randomUUID();
+  await q.query("insert into wasl.archive_jobs (id, idea_id, kind) values ($1, $2, 'deliver')", [id, ideaId]);
+  await q.query("update wasl.ideas set archive_status = 'pending' where id = $1", [ideaId]);
+  return id;
+}
+
+async function claim(q: Queryable, jobId?: string) {
+  const rows = await q.query<{ id: string; idea_id: string; attempts: number }>(`update wasl.archive_jobs set status = 'running', locked_until = now() + interval '15 minutes', attempts = attempts + 1, updated_at = now()
+    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $1 and" : ""} status in ('pending', 'failed') and next_run_at <= now() and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
+    returning id, idea_id, attempts`, jobId ? [jobId] : []);
+  return rows.rows[0] || null;
+}
+
+async function notifyAdmins(q: Queryable, ideaId: string, title: string, body: string) {
+  const admins = (await q.query<{ id: string }>("select id from wasl.members where active and role in ('admin', 'superadmin')")).rows;
+  const now = new Date().toISOString();
+  await insertNotifications(q, admins.map((admin) => ({ id: randomUUID(), recipientId: admin.id, ideaId, type: "archive" as never, title, body, createdAt: now, read: false })));
+}
+
+export async function runArchiveJob(jobId?: string, q: Queryable = database()) {
+  const job = await claim(q, jobId);
+  if (!job) return null;
+  await q.query("update wasl.ideas set archive_status = 'running' where id = $1", [job.idea_id]);
+  try {
+    await archiveIdea(job.idea_id, q);
+    const [idea] = await loadIdeas(q, { ids: [job.idea_id] });
+    const now = new Date().toISOString();
+    await q.query("update wasl.archive_jobs set status = 'done', locked_until = null, last_error = null, updated_at = now() where id = $1", [job.id]);
+    await q.query("update wasl.ideas set archive_status = 'done', archived_at = now() where id = $1", [job.idea_id]);
+    const actor = (await loadIntegration(q))?.connected_by || idea.ownerId;
+    await q.query("insert into wasl.idea_events (id, idea_id, at, actor_id, action, note) values ($1, $2, now(), $3, 'archived', 'أُرشف العمل في Google Drive تلقائياً')", [randomUUID(), job.idea_id, actor]);
+    await insertNotifications(q, [...new Set([idea.ownerId, idea.designerId].filter(Boolean))].map((recipientId) => ({ id: randomUUID(), recipientId, ideaId: idea.id, type: "archive" as never, title: "أُرشف العمل في Google Drive", body: idea.title, createdAt: now, read: false })));
+    return { id: job.id, status: "done" as const };
+  } catch (error) {
+    const message = error instanceof MediaServerError ? error.message : "تعذّرت الأرشفة لسبب غير متوقع.";
+    const finalFailure = job.attempts >= MAX_ATTEMPTS || (error instanceof MediaServerError && ["DRIVE_NOT_CONNECTED", "DRIVE_FOLDER_MISSING", "DRIVE_REAUTH_REQUIRED", "DRIVE_STORAGE_QUOTA"].includes(error.code));
+    const status = finalFailure ? "needs_review" : "failed";
+    const delayMinutes = Math.min(2 ** job.attempts, 120);
+    const updated = await q.query<{ notified_failure: boolean }>(`update wasl.archive_jobs set status = $2, locked_until = null, last_error = $3, next_run_at = now() + ($4 || ' minutes')::interval, updated_at = now() where id = $1 returning notified_failure`, [job.id, status, message, String(delayMinutes)]);
+    await q.query("update wasl.ideas set archive_status = $2 where id = $1", [job.idea_id, finalFailure ? "needs_review" : "failed"]);
+    if (finalFailure && !updated.rows[0]?.notified_failure) {
+      await notifyAdmins(q, job.idea_id, "تعذّرت أرشفة عمل في Google Drive", message);
+      await q.query("update wasl.archive_jobs set notified_failure = true where id = $1", [job.id]);
+    }
+    return { id: job.id, status, error: message };
+  }
+}
+
+export async function runDueArchiveJobs(limit = 5, q: Queryable = database()) {
+  const results = [];
+  for (let index = 0; index < limit; index++) { const result = await runArchiveJob(undefined, q); if (!result) break; results.push(result); }
+  return results;
+}
+
+export async function retryArchive(ideaId: string, q: Queryable = database()) {
+  await q.query("update wasl.archive_jobs set status = 'failed', next_run_at = now(), attempts = 0, notified_failure = false where idea_id = $1 and status in ('failed', 'needs_review')", [ideaId]);
+  const job = (await q.query<{ id: string }>("select id from wasl.archive_jobs where idea_id = $1 and status in ('pending', 'failed') order by created_at desc limit 1", [ideaId])).rows[0];
+  return job ? runArchiveJob(job.id, q) : null;
+}

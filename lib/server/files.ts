@@ -5,6 +5,7 @@ import type { Attachment, TeamMember } from "@/data/media";
 import { isAdministrator, requireUser } from "./auth";
 import { database } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, responseHeaders } from "./http";
+import { streamFile } from "./google";
 import { loadIdeas, toAttachment } from "./repository";
 import { canSeeQuotations } from "./state";
 
@@ -41,7 +42,7 @@ export function safeFilename(name: string) {
   return path.basename(name.replaceAll("\\", "/")).replace(/[\u0000-\u001f\u007f]/g, "").replace(/[<>:"|?*]/g, "_").slice(0, 240).trim() || "مرفق";
 }
 
-function assertUploadAllowed(actor: TeamMember, kind: string, idea: { status: string; ownerId: string; designerId: string; channels: string[] } | undefined, channel: string | null) {
+export function assertUploadAllowed(actor: TeamMember, kind: string, idea: { status: string; ownerId: string; designerId: string; channels: string[] } | undefined, channel: string | null) {
   if (kind === "logo") { if (!isAdministrator(actor)) throw new MediaServerError("تغيير شعار الإدارة متاح لمدير النظام فقط.", 403, "FILE_PERMISSION"); return; }
   if (!idea) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
   if (kind === "final") {
@@ -105,14 +106,20 @@ export async function downloadFile(request: Request, id: string): Promise<Respon
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new MediaServerError("الملف غير موجود.", 404, "FILE_NOT_FOUND");
   const db = database();
   const actor = await requireUser(request, db);
-  const row = (await db.query("select a.id, a.name, a.kind::text as kind, a.local_path, a.inline_mime, a.owner_id, a.idea_id, a.requested_idea_id, a.removed_at, i.owner_id as idea_owner from wasl.attachments a left join wasl.ideas i on i.id = coalesce(a.idea_id, a.requested_idea_id) where a.id = $1 and a.storage = 'local'", [id])).rows[0];
+  const row = (await db.query("select a.id, a.name, a.kind::text as kind, a.storage::text as storage, a.local_path, a.drive_file_id, a.inline_mime, a.owner_id, a.idea_id, a.requested_idea_id, a.removed_at, i.owner_id as idea_owner from wasl.attachments a left join wasl.ideas i on i.id = coalesce(a.idea_id, a.requested_idea_id) where a.id = $1 and a.storage in ('local', 'drive')", [id])).rows[0];
   if (!row) throw new MediaServerError("الملف غير موجود.", 404, "FILE_NOT_FOUND");
   const ownUpload = row.owner_id === actor.id;
   const visible = row.kind === "logo" || ownUpload || isAdministrator(actor) || (row.idea_id && !row.removed_at && (row.kind !== "quotation" || canSeeQuotations(actor, { ownerId: String(row.idea_owner) })));
   if (!visible) throw new MediaServerError("ليس لديك صلاحية الوصول لهذا الملف.", 403, "FILE_PERMISSION");
-  let bytes: Buffer;
-  try { bytes = await readFile(path.join(fileDirectory(), path.basename(String(row.local_path)))); } catch { throw new MediaServerError("تعذّر العثور على الملف المحفوظ. تواصل مع المسؤول.", 404, "FILE_NOT_FOUND"); }
   const inline = new URL(request.url).searchParams.get("inline") === "1" && Boolean(row.inline_mime);
   const name = encodeURIComponent(String(row.name)).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-  return new Response(new Uint8Array(bytes), { headers: { ...responseHeaders, "Content-Type": inline ? String(row.inline_mime) : "application/octet-stream", "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="attachment"; filename*=UTF-8''${name}`, "Content-Length": String(bytes.length), "Content-Security-Policy": "sandbox; default-src 'none'", "Cross-Origin-Resource-Policy": "same-origin" } });
+  const headers = { ...responseHeaders, "Content-Type": inline ? String(row.inline_mime) : "application/octet-stream", "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="attachment"; filename*=UTF-8''${name}`, "Content-Security-Policy": "sandbox; default-src 'none'", "Cross-Origin-Resource-Policy": "same-origin" };
+  if (row.storage === "drive") {
+    const upstream = await streamFile(String(row.drive_file_id), db);
+    const length = upstream.headers.get("content-length");
+    return new Response(upstream.body, { headers: { ...headers, ...(length ? { "Content-Length": length } : {}) } });
+  }
+  let bytes: Buffer;
+  try { bytes = await readFile(path.join(fileDirectory(), path.basename(String(row.local_path)))); } catch { throw new MediaServerError("تعذّر العثور على الملف المحفوظ. تواصل مع المسؤول.", 404, "FILE_NOT_FOUND"); }
+  return new Response(new Uint8Array(bytes), { headers: { ...headers, "Content-Length": String(bytes.length) } });
 }

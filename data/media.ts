@@ -19,10 +19,13 @@ export interface Idea {
   priority: Priority; status: IdeaStatus; needsQuotes: boolean; quotations: Quotation[]; attachments: Attachment[];
   managerFeedback: string; history: HistoryEvent[]; createdAt: string; updatedAt: string;
   sourceProposal?: SourceProposal;
+  archive?: IdeaArchive;
 }
+export type ArchiveStatus = "not_started" | "pending" | "running" | "done" | "failed" | "needs_review";
+export interface IdeaArchive { status: ArchiveStatus; archivedAt?: string; folderUrl?: string }
 export interface MediaNotification {
   id: string; recipientId: string; ideaId: string; title: string; body: string;
-  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment";
+  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder";
   createdAt: string; read: boolean;
 }
 export interface SystemSettings { departmentName: string; organizationName: string; logoUrl: string; driveFolderId: string }

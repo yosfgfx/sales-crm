@@ -8,17 +8,22 @@ import { ActionButton, Icon, errorText } from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
+import DriveIntegration from "./drive-integration";
 
 export default function Administration({
   onOpenIdea,
   onNotice,
+  initialTab,
+  driveNotice,
 }: {
   onOpenIdea: (id: string) => void;
   onNotice?: (message: string) => void;
+  initialTab?: string;
+  driveNotice?: string;
 }) {
   const store = useMediaStore(),
     { data } = store;
-  const [tab, setTab] = useState("companies"),
+  const [tab, setTab] = useState(initialTab === "integrations" ? "drive" : initialTab || "companies"),
     [company, setCompany] = useState(""),
     [category, setCategory] = useState("");
   const [settings, setSettings] = useState(data.settings),
@@ -54,14 +59,11 @@ export default function Administration({
         setSettings((prev) => ({ ...prev, logoUrl }));
         setLogoFile(null);
       }
-      const patch =
-        tab === "drive"
-          ? { driveFolderId: settings.driveFolderId }
-          : {
-              departmentName: settings.departmentName,
-              organizationName: settings.organizationName,
-              logoUrl,
-            };
+      const patch = {
+        departmentName: settings.departmentName,
+        organizationName: settings.organizationName,
+        logoUrl,
+      };
       await store.updateSettings(patch, baseline);
       setBaseline(useMediaStore.getState().data.settings);
     }, "حُفظت هوية التقارير وإعدادات النظام.");
@@ -236,7 +238,8 @@ export default function Administration({
         </div>
       )}
       {tab === "team" && <TeamSettings />}
-      {(tab === "identity" || tab === "drive") && (
+      {tab === "drive" && <DriveIntegration notice={driveNotice} />}
+      {tab === "identity" && (
         <form
           onSubmit={saveSettings}
           className="media-card max-w-[60em] space-y-5 p-6"
@@ -297,53 +300,7 @@ export default function Administration({
                 </p>
               </div>
             </>
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="rounded-xl bg-[var(--accent)] p-3 text-[var(--primary)]">
-                  <Icon name="archive" className="size-6" />
-                </span>
-                <div>
-                  <h2>تصفح أرشيف Google Drive</h2>
-                  <p className="mt-1 text-[var(--soft)]">
-                    اعرض ملفات مجلد الفريق حسب تاريخ اليوم أو أي يوم تختاره.
-                  </p>
-                </div>
-              </div>
-              <label className="media-label">
-                معرّف مجلد الأرشيف
-                <input
-                  className="media-input mt-2"
-                  dir="ltr"
-                  value={settings.driveFolderId}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const id =
-                      raw.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1] || raw;
-                    setSettings({ ...settings, driveFolderId: id });
-                  }}
-                  placeholder="معرّف المجلد أو رابط المجلد"
-                />
-              </label>
-              <div className="rounded-xl bg-[var(--background)] p-5 text-sm leading-7 text-[var(--soft)]">
-                <ol className="list-inside list-decimal space-y-2">
-                  <li>
-                    فعّل Google Drive API وأضف بيانات حساب الخدمة إلى إعدادات
-                    الخادم.
-                  </li>
-                  <li>شارك مجلد الأرشيف مع بريد حساب الخدمة بصلاحية القارئ.</li>
-                  <li>
-                    احفظ معرّف المجلد، ثم افتح تبويب Google Drive في أرشيف
-                    الأعمال.
-                  </li>
-                </ol>
-                <p className="mt-4 text-xs">
-                  تُقرأ الملفات من المجلد حسب تاريخ تعديلها بتوقيت الرياض. تظل
-                  مفاتيح الربط على الخادم.
-                </p>
-              </div>
-            </>
-          )}
+          ) : null}
           <ActionButton type="submit" disabled={busy}>
             <Icon name="check" className="size-4" />
             {busy ? "جارٍ الحفظ…" : "حفظ الإعدادات"}

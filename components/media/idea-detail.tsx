@@ -28,6 +28,8 @@ import { PresentationPreview } from "./presentation";
 import { CompanyLogo } from "./company-logo";
 import { isAdministrator } from "@/lib/media-workflow";
 
+const ARCHIVE_TEXT: Record<string, string> = { done: "أُرشف العمل في مجلد المشروع على Google Drive.", pending: "بانتظار الأرشفة التلقائية في Google Drive.", running: "جارٍ رفع العمل إلى Google Drive.", failed: "تعذّرت الأرشفة مؤقتاً، وستُعاد المحاولة تلقائياً.", needs_review: "الأرشفة تحتاج مراجعة مدير النظام.", not_started: "لم يُؤرشف هذا العمل بعد." };
+
 export default function IdeaDetail({
   idea,
   onClose,
@@ -68,10 +70,7 @@ export default function IdeaDetail({
     [pendingQuoteAttachment, setPendingQuoteAttachment] =
       useState<Attachment | null>(null),
     [pendingUpload, setPendingUpload] = useState<Attachment[]>([]),
-    [scheduleVersion, setScheduleVersion] = useState(idea.updatedAt),
-    [driveFiles, setDriveFiles] = useState<
-      { id: string; name: string; webViewLink: string }[]
-    >([]);
+    [scheduleVersion, setScheduleVersion] = useState(idea.updatedAt);
   const admin = isAdministrator(currentUser),
     canContent =
       admin ||
@@ -605,56 +604,33 @@ export default function IdeaDetail({
                     </div>
                   ))}
                 </div>
-                {idea.status === "delivered" && canDesign && (
+                {idea.status === "delivered" && (
                   <section className="space-y-3 rounded-xl border border-[var(--border)] p-4">
                     <h2 className="!text-base">الأرشفة في Google Drive</h2>
                     <p className="text-sm text-[var(--soft)]">
-                      تُرفع الملفات النهائية الأصلية إلى المجلد المحدد في
-                      الإدارة. يحفظ النظام تقدم الرفع لتكمل المحاولة عند انقطاع
-                      الاتصال.
+                      {ARCHIVE_TEXT[idea.archive?.status || "not_started"]}
+                      {idea.archive?.archivedAt ? ` · ${formatDate(idea.archive.archivedAt)}` : ""}
                     </p>
-                    <ActionButton
-                      disabled={busy || !data.settings.driveFolderId}
-                      onClick={() =>
-                        void run(async () => {
-                          const response = await fetch("/api/drive", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ ideaId: idea.id }),
-                          });
-                          const result = await response.json();
-                          if (result.files) setDriveFiles(result.files);
-                          if (!response.ok)
-                            throw new Error(
-                              result.error ||
-                                "تعذر رفع الأعمال إلى Google Drive.",
-                            );
-                        }, "اكتملت أرشفة النسخ النهائية في Google Drive.")
-                      }
-                    >
-                      <Icon name="upload" className="size-4" />
-                      {busy ? "جارٍ أرشفة الملفات…" : "أرشفة النسخ النهائية"}
-                    </ActionButton>
-                    {!data.settings.driveFolderId && (
-                      <p className="text-xs text-[var(--soft)]">
-                        حدد مجلد Google Drive في صفحة إدارة النظام أولاً.
-                      </p>
+                    {admin && idea.archive?.folderUrl && (
+                      <a className="text-sm text-[var(--primary)] underline underline-offset-4" href={idea.archive.folderUrl} target="_blank" rel="noopener noreferrer">
+                        فتح مجلد المشروع في Drive
+                      </a>
                     )}
-                    {driveFiles.length > 0 && (
-                      <ul className="space-y-2">
-                        {driveFiles.map((file) => (
-                          <li key={file.id}>
-                            <a
-                              className="text-sm break-all text-[var(--primary)] underline underline-offset-4"
-                              href={file.webViewLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <bdi>{file.name}</bdi>
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
+                    {admin && ["failed", "needs_review", "not_started"].includes(idea.archive?.status || "not_started") && (
+                      <ActionButton
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            const response = await fetch("/api/integrations/google", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "retryArchive", ideaId: idea.id }) });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok) throw new Error(result.error || "تعذّرت إعادة محاولة الأرشفة.");
+                            await useMediaStore.getState().refresh();
+                          }, "أُعيدت محاولة الأرشفة.")
+                        }
+                      >
+                        <Icon name="refresh" className="size-4" />
+                        إعادة محاولة الأرشفة
+                      </ActionButton>
                     )}
                   </section>
                 )}
@@ -1031,7 +1007,7 @@ export default function IdeaDetail({
                   onClick={() =>
                     void run(
                       () => store.changeDesignStatus(idea.id, "delivered"),
-                      "تم التسليم وأرشفة العمل وإضافته إلى التقرير الشهري.",
+                      "تم التسليم وأُضيف العمل إلى التقرير الشهري. ستتم أرشفته في Google Drive تلقائياً.",
                     )
                   }
                 >

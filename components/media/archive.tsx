@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { WORK_TYPE_LABELS, type MediaData } from "@/data/media";
 import { CompanyLogo } from "./company-logo";
@@ -9,21 +9,10 @@ import {
   Channels,
   EmptyState,
   Icon,
-  bytes,
-  errorText,
   formatDate,
-  today,
 } from "./ui";
 
-interface DriveFile {
-  id: string;
-  name: string;
-  mimeType: string;
-  modifiedTime: string;
-  size?: string;
-  webViewLink?: string;
-  thumbnailLink?: string;
-}
+const ARCHIVE_LABELS: Record<string, string> = { done: "مؤرشف في Drive", pending: "بانتظار الأرشفة", running: "جارٍ الأرشفة", failed: "ستُعاد الأرشفة", needs_review: "الأرشفة تحتاج مراجعة", not_started: "لم يُؤرشف" };
 
 export default function Archive({
   data,
@@ -32,19 +21,9 @@ export default function Archive({
   data: MediaData;
   onOpenIdea: (id: string) => void;
 }) {
-  const [tab, setTab] = useState("system"),
-    [month, setMonth] = useState("all"),
+  const [month, setMonth] = useState("all"),
     [company, setCompany] = useState("all"),
     [type, setType] = useState("all");
-  const requestNumber = useRef(0);
-  const [date, setDate] = useState(today()),
-    [drive, setDrive] = useState<{
-      configured: boolean;
-      files: DriveFile[];
-      message?: string;
-    } | null>(null),
-    [loading, setLoading] = useState(false),
-    [error, setError] = useState("");
   const ideas = data.ideas
     .filter(
       (i) =>
@@ -64,65 +43,15 @@ export default function Archive({
   ]
     .sort()
     .reverse() as string[];
-  async function loadDrive(selectedDate = date) {
-    const request = ++requestNumber.current;
-    setDrive(null);
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(`/api/drive?date=${selectedDate}`, {
-        cache: "no-store",
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(
-          result.error ||
-            "تعذر تحميل الأرشيف. تحقق من إعدادات الربط وأعد المحاولة.",
-        );
-      if (request === requestNumber.current) setDrive(result);
-    } catch (e) {
-      if (request === requestNumber.current) setError(errorText(e));
-    } finally {
-      if (request === requestNumber.current) setLoading(false);
-    }
-  }
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          <ActionButton
-            onClick={() => setTab("system")}
-            aria-pressed={tab === "system"}
-            className={
-              tab === "system"
-                ? "!bg-[var(--accent)] !text-[var(--primary)] !shadow-none"
-                : ""
-            }
-          >
-            <Icon name="archive" className="size-4" />
-            الأعمال المسلّمة
-          </ActionButton>
-          <ActionButton
-            onClick={() => {
-              setTab("drive");
-              void loadDrive();
-            }}
-            aria-pressed={tab === "drive"}
-            className={
-              tab === "drive"
-                ? "!bg-[var(--accent)] !text-[var(--primary)] !shadow-none"
-                : ""
-            }
-          >
-            <Icon name="link" className="size-4" />
-            Google Drive
-          </ActionButton>
-        </div>
+        <h2 className="!text-base">الأعمال المسلّمة</h2>
         <span className="text-xs text-[var(--soft)]">
           كل النسخ النهائية مع تفاصيل طلبها
         </span>
       </div>
-      {tab === "system" ? (
+      {(
         <>
           <div className="flex flex-wrap gap-3">
             <label>
@@ -195,11 +124,7 @@ export default function Archive({
                           width={640}
                           height={360}
                           alt={`معاينة ${idea.title}`}
-                          src={
-                            file.url.startsWith("/api/")
-                              ? `${file.url}?inline=1`
-                              : file.url
-                          }
+                          src={file.url}
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -246,6 +171,7 @@ export default function Archive({
                       </p>
                       <div className="flex items-center justify-between gap-2 text-xs text-[var(--soft)]">
                         <span>{formatDate(idea.deliveredAt)}</span>
+                        <span>{ARCHIVE_LABELS[idea.archive?.status || "not_started"]}</span>
                         <span>
                           {
                             idea.attachments.filter((a) => a.kind === "final")
@@ -275,98 +201,6 @@ export default function Archive({
               description="تظهر الأعمال هنا تلقائيًا بعد إرفاق النسخ النهائية وتسجيل التسليم من استوديو التصميم."
             />
           )}
-        </>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <label className="media-label !mb-0">
-              تاريخ تعديل الملفات بتوقيت الرياض
-              <input
-                type="date"
-                required
-                className="media-input mt-2 !w-auto"
-                value={date}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    setDate(e.target.value);
-                    void loadDrive(e.target.value);
-                  }
-                }}
-              />
-            </label>
-            <ActionButton disabled={loading} onClick={() => void loadDrive()}>
-              <Icon name="refresh" className="size-4" />
-              {loading ? "جارٍ التحديث…" : "تحديث المجلد"}
-            </ActionButton>
-          </div>
-          {error && (
-            <p
-              role="alert"
-              className="rounded-xl bg-[#fff0f1] p-4 text-[var(--danger)]"
-            >
-              {error}
-            </p>
-          )}
-          {loading && (
-            <div
-              className="media-card p-8 text-center text-[var(--soft)]"
-              role="status"
-            >
-              جارٍ قراءة ملفات مجلد الفريق…
-            </div>
-          )}
-          {!loading && drive && !drive.configured && (
-            <EmptyState
-              title="أرشيف Google Drive ينتظر الربط"
-              description={
-                drive.message ||
-                "أدخل معرّف المجلد من إدارة النظام، وأضف بيانات حساب الخدمة إلى الخادم ليظهر الأرشيف هنا."
-              }
-            />
-          )}
-          {!loading &&
-            drive?.configured &&
-            (!drive.files.length ? (
-              <EmptyState
-                title="لا توجد ملفات في هذا اليوم"
-                description="اختر تاريخًا آخر أو ارفع الأعمال إلى مجلد الفريق ثم حدّث العرض."
-              />
-            ) : (
-              <div className="media-card divide-y divide-[var(--border)] overflow-hidden">
-                {drive.files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="flex flex-wrap items-center justify-between gap-3 p-5"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="rounded-xl bg-[var(--accent)] p-3 text-[var(--primary)]">
-                        <Icon name="file" />
-                      </span>
-                      <div className="min-w-0">
-                        <span className="block font-medium break-all">
-                          <bdi>{file.name}</bdi>
-                        </span>
-                        <span className="mt-1 block text-xs text-[var(--soft)]">
-                          {formatDate(file.modifiedTime)}
-                          {file.size && ` · ${bytes(Number(file.size))}`}
-                        </span>
-                      </div>
-                    </div>
-                    {file.webViewLink && (
-                      <a
-                        href={file.webViewLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="media-button media-button-secondary inline-flex min-h-10 items-center gap-2 rounded-xl px-4 py-2 text-sm"
-                      >
-                        فتح في Drive
-                        <Icon name="link" className="size-4" />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
         </>
       )}
     </>

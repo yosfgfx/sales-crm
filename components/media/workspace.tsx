@@ -102,12 +102,25 @@ export default function MediaWorkspace() {
   const [notifications, setNotifications] = useState(false);
   const [account, setAccount] = useState(false);
   const [notice, setNotice] = useState("");
-  const [loginMember, setLoginMember] = useState("root");
+  const [loginMember, setLoginMember] = useState("");
+  const [adminTab, setAdminTab] = useState<string | undefined>();
+  const [driveNotice, setDriveNotice] = useState<string | undefined>();
   const [password, setPassword] = useState("");
   const initialize = store.initialize;
   useEffect(() => {
     void initialize();
   }, [initialize]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.size) return;
+    const drive = params.get("drive");
+    const message = drive === "connected" ? "رُبط Google Drive بنجاح. اختر مجلد الأرشيف الآن." : drive === "error" ? (params.get("code") === "OAUTH_DENIED" ? "أُلغي ربط Google Drive من شاشة Google." : "تعذّر إكمال ربط Google Drive. أعد المحاولة من هنا.") : undefined;
+    window.history.replaceState(null, "", window.location.pathname);
+    queueMicrotask(() => {
+      if (params.get("view") === "admin") { setView("admin"); setAdminTab(params.get("tab") || undefined); }
+      if (message) setDriveNotice(message);
+    });
+  }, []);
   useEffect(() => {
     const refresh = () => {
       if (!document.hidden && !useMediaStore.getState().saving)
@@ -521,7 +534,7 @@ export default function MediaWorkspace() {
                 <Reports data={data} onOpenIdea={setSelected} />
               )}{" "}
               {view === "admin" && isAdministrator(currentUser) && (
-                <Administration onOpenIdea={setSelected} onNotice={setNotice} />
+                <Administration onOpenIdea={setSelected} onNotice={setNotice} initialTab={adminTab} driveNotice={driveNotice} />
               )}
             </>
           )}
