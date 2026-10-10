@@ -30,7 +30,7 @@ let pg, temporary;
 const cookies = {};
 
 function jsonRequest(url, value, { cookie = "", origin = ORIGIN, ip = "10.0.0.1" } = {}) {
-  return new Request(`${ORIGIN}${url}`, { method: "POST", headers: { "content-type": "application/json", cookie, origin, "x-forwarded-for": ip }, body: JSON.stringify(value) });
+  return new Request(`${ORIGIN}${url}`, { method: "POST", headers: { "content-type": "application/json", cookie, origin, "x-nf-client-connection-ip": ip }, body: JSON.stringify(value) });
 }
 const getRequest = (url, cookie) => new Request(`${ORIGIN}${url}`, { headers: { cookie } });
 const asCookie = (response) => response.headers.get("set-cookie").split(";")[0];
@@ -147,4 +147,12 @@ test("accounts enforce password policy, protect root and revoke sessions on chan
   await assert.rejects(auth.mutateAccounts(jsonRequest("/api/accounts", { operation: "update", memberId: "root", patch: { name: "x" } }, { cookie: cookies.admin })), expectStatus(403));
   await auth.mutateAccounts(jsonRequest("/api/accounts", { operation: "update", memberId: created.memberId, patch: {}, password: "Changed-Designer-Pass-2026" }, { cookie: cookies.admin }));
   assert.equal((await auth.currentSession(getRequest("/api/session", fresh))).user, null);
+});
+
+test("a forged X-Forwarded-For header cannot dodge the throttle, and one account has an overall limit (N4)", async () => {
+  const forged = (n) => new Request(`${ORIGIN}/api/session`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, "x-nf-client-connection-ip": "192.0.2.50", "x-forwarded-for": `10.9.9.${n}` }, body: JSON.stringify({ username: "sara", password: "wrong-password" }) });
+  for (let n = 0; n < 5; n++) await assert.rejects(auth.login(forged(n)), expectStatus(401));
+  await assert.rejects(auth.login(forged(99)), expectStatus(429));
+  for (let n = 0; n < 20; n++) await signIn("manager", "wrong-password", `198.18.0.${n}`).catch(() => undefined);
+  await assert.rejects(signIn("manager", undefined, "198.18.1.1"), expectStatus(429));
 });

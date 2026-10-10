@@ -97,3 +97,11 @@ test("a backup restores every table into an empty database (H8)", async () => {
   assert.ok(Array.isArray(channels) && channels.length > 0);
   await assert.rejects(restoreBackup(target.db, archive), /فارغة/);
 });
+
+test("attachments stored in Supabase Storage satisfy the storage check (N1)", async () => {
+  const { db } = await freshDatabase();
+  await applyMigrations(db);
+  await importState(db, sampleDocument());
+  await db.query("insert into wasl.attachments (id, kind, name, size, mime, storage, local_path, owner_id) values ('s1', 'brief', 'a.txt', 3, 'text/plain', 'supabase', 'files/s1', 'root')");
+  await assert.rejects(db.query("insert into wasl.attachments (id, kind, name, size, mime, storage, owner_id) values ('s2', 'brief', 'a.txt', 3, 'text/plain', 'supabase', 'root')"));
+});

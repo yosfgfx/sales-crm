@@ -54,7 +54,8 @@ export async function readJson(request: Request, maxBytes = 256 * 1024): Promise
 }
 
 export function clientAddress(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const candidate = forwarded || request.headers.get("x-real-ip") || "local";
+  const platform = request.headers.get("x-nf-client-connection-ip");
+  const trusted = process.env.WASL_TRUST_FORWARDED_FOR === "true" ? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() : null;
+  const candidate = platform || trusted || "local";
   return /^[a-fA-F0-9:.]{1,64}$/.test(candidate) ? candidate : "local";
 }

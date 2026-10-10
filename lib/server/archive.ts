@@ -135,8 +135,8 @@ export async function enqueueArchive(q: Queryable, ideaId: string) {
 }
 
 async function claim(q: Queryable, jobId?: string) {
-  const rows = await q.query<{ id: string; idea_id: string; attempts: number }>(`update wasl.archive_jobs set status = 'running', locked_until = now() + interval '15 minutes', attempts = attempts + 1, updated_at = now()
-    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $1 and" : ""} status in ('pending', 'failed') and next_run_at <= now() and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
+  const rows = await q.query<{ id: string; idea_id: string; attempts: number }>(`update wasl.archive_jobs set status = 'running', locked_until = now() + interval '5 minutes', attempts = attempts + 1, updated_at = now()
+    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $1 and" : ""} ((status in ('pending', 'failed') and next_run_at <= now()) or (status = 'running' and locked_until < now())) and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
     returning id, idea_id, attempts`, jobId ? [jobId] : []);
   return rows.rows[0] || null;
 }
@@ -183,7 +183,7 @@ export async function runDueArchiveJobs(limit = 5, q: Queryable = database()) {
 }
 
 export async function retryArchive(ideaId: string, q: Queryable = database()) {
-  await q.query("update wasl.archive_jobs set status = 'failed', next_run_at = now(), attempts = 0, notified_failure = false where idea_id = $1 and status in ('failed', 'needs_review')", [ideaId]);
+  await q.query("update wasl.archive_jobs set status = 'failed', next_run_at = now(), attempts = 0, notified_failure = false, locked_until = null where idea_id = $1 and (status in ('failed', 'needs_review') or (status = 'running' and locked_until < now()))", [ideaId]);
   const job = (await q.query<{ id: string }>("select id from wasl.archive_jobs where idea_id = $1 and status in ('pending', 'failed') order by created_at desc limit 1", [ideaId])).rows[0];
   return job ? runArchiveJob(job.id, q) : null;
 }

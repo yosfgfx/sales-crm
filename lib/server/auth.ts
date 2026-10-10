@@ -111,7 +111,8 @@ async function recordFailure(q: Queryable, keys: string[]) {
     await q.query(`insert into wasl.login_attempts (key, failures, window_started_at) values ($1, 1, now())
       on conflict (key) do update set failures = case when wasl.login_attempts.window_started_at < now() - interval '${FAILURE_WINDOW_MS / 60_000} minutes' then 1 else wasl.login_attempts.failures + 1 end,
       window_started_at = case when wasl.login_attempts.window_started_at < now() - interval '${FAILURE_WINDOW_MS / 60_000} minutes' then now() else wasl.login_attempts.window_started_at end`, [key]);
-    await q.query("update wasl.login_attempts set delay_until = now() + least(interval '15 minutes', interval '30 seconds' * power(2, failures - 5)) where key = $1 and failures >= 5", [key]);
+    const threshold = key.startsWith("acct:") ? 20 : 5;
+    await q.query("update wasl.login_attempts set delay_until = now() + least(interval '15 minutes', interval '30 seconds' * power(2, failures - $2)) where key = $1 and failures >= $2", [key, threshold]);
   }
 }
 
@@ -123,7 +124,7 @@ export async function login(request: Request): Promise<Response> {
   const password = typeof value?.password === "string" ? value.password : "";
   const username = identifier.toLowerCase();
   const address = clientAddress(request);
-  const keys = [`ip:${address}`, `account:${username}|ip:${address}`];
+  const keys = [`ip:${address}`, `account:${username}|ip:${address}`, `acct:${username}`];
   const q = database();
   if (await loginDelay(q, keys)) throw new MediaServerError("محاولات دخول خاطئة كثيرة من هذا الجهاز. انتظر قليلاً ثم حاول مجدداً.", 429, "LOGIN_RATE_LIMIT");
   const account = (await q.query<Account>(`select ${ACCOUNT_COLUMNS} from wasl.accounts where username = $1`, [username])).rows[0];
@@ -143,7 +144,7 @@ export async function login(request: Request): Promise<Response> {
     }
     await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1", [account.member_id, step]);
   }
-  await q.query("delete from wasl.login_attempts where key = $1", [keys[1]]);
+  await q.query("delete from wasl.login_attempts where key = any($1::text[])", [[keys[1], keys[2]]]);
   return Response.json({ user: member, demo: false, configured: true }, { headers: { ...responseHeaders, "Set-Cookie": issueCookie(request, account, member) } });
 }
 

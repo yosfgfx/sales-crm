@@ -161,3 +161,18 @@ test("the daily backup lands in the archive's backup folder on Drive (H8)", asyn
   assert.equal(file.name, "wasl-backup-2026-10-10.json.gz");
   assert.match(fake.pathOf(file.id), /\/نسخ احتياطية للنظام\/wasl-backup-2026-10-10\.json\.gz$/);
 });
+
+test("an archive job interrupted mid-run is picked up again once its lock expires (N3)", async () => {
+  await h.pg.query("update wasl.archive_jobs set status = 'running', locked_until = now() - interval '1 minute', next_run_at = now() where idea_id = 'idea-007'");
+  await h.pg.query("update wasl.ideas set archive_status = 'running' where id = 'idea-007'");
+  const [result] = await archive.runDueArchiveJobs(1);
+  assert.equal(result.status, "done");
+});
+
+test("attachments larger than 100 MB pass validation up to 2 GB (N2)", async () => {
+  const { validateMediaData } = require(path.join(h.root, "lib/media-workflow.ts"));
+  const { createInitialMediaData } = require(path.join(h.root, "data/media.ts"));
+  const data = createInitialMediaData();
+  data.ideas[0].attachments = [{ id: "big", name: "video.mp4", size: 1_500_000_000, mime: "video/mp4", url: "/api/files/big", kind: "brief" }];
+  assert.doesNotThrow(() => validateMediaData(data));
+});

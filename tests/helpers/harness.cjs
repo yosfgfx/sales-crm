@@ -39,7 +39,7 @@ async function createHarness() {
   await importState(raw, { version: 1, data, authentication: { schema: 1, secret: "x".repeat(64), accounts } }, { demoIdeaIds: data.ideas.map((idea) => idea.id) });
   const database = { query: (text, params) => pg.query(text, params), transaction: (operation) => pg.transaction((tx) => operation({ query: (text, params) => tx.query(text, params) })) };
   useDatabaseForTests(database);
-  const jsonRequest = (url, value, { cookie = "", origin = ORIGIN, ip = "10.0.0.1", method = "POST" } = {}) => new Request(`${ORIGIN}${url}`, { method, headers: { "content-type": "application/json", cookie, origin, "x-forwarded-for": ip }, body: JSON.stringify(value) });
+  const jsonRequest = (url, value, { cookie = "", origin = ORIGIN, ip = "10.0.0.1", method = "POST" } = {}) => new Request(`${ORIGIN}${url}`, { method, headers: { "content-type": "application/json", cookie, origin, "x-nf-client-connection-ip": ip }, body: JSON.stringify(value) });
   const getRequest = (url, cookie = "") => new Request(`${ORIGIN}${url}`, { headers: { cookie } });
   const cookies = {};
   for (const username of Object.keys(PASSWORDS)) cookies[username] = (await auth.login(jsonRequest("/api/session", { username, password: PASSWORDS[username] }))).headers.get("set-cookie").split(";")[0];
