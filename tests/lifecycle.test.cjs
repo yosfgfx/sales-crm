@@ -114,3 +114,19 @@ test("email stays off unless enabled, and pending notices are marked so they nev
   const left = (await h.pg.query("select count(*)::int as n from wasl.notifications where emailed_at is null and created_at > now() - interval '2 days'")).rows[0].n;
   assert.equal(left, 0);
 });
+
+test("old closed ideas arrive trimmed in the overview and load in full when opened", async () => {
+  const state = require(path.join(h.root, "lib/server/state.ts"));
+  const auth = require(path.join(h.root, "lib/server/auth.ts"));
+  const viewer = (await auth.currentSession(h.getRequest("/api/media", h.cookies.manager))).user;
+  const later = Date.now() + 400 * 86_400_000;
+  const overview = await state.loadStateFor(viewer, h.database, later);
+  const delivered = overview.data.ideas.find((idea) => idea.id === "idea-010");
+  assert.equal(delivered.partial, true);
+  assert.ok(delivered.history.length <= 1);
+  const open = overview.data.ideas.find((idea) => idea.status === "review");
+  assert.equal(open?.partial, undefined);
+  const full = await state.loadIdeaFor(viewer, "idea-010", h.database);
+  assert.equal(full.partial, undefined);
+  assert.ok(full.history.length >= delivered.history.length);
+});

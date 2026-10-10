@@ -19,6 +19,7 @@ export interface MediaState {
   error: string | null; initialized: boolean; demo: boolean; configured: boolean; mfa: { enabled: boolean; required: boolean } | null;
   accounts: AccountSummary[]; accountsLoaded: boolean; lastFailed: (() => Promise<unknown>) | null;
   retryLast: () => Promise<void>;
+  loadIdea: (ideaId: string) => Promise<void>;
   initialize: () => Promise<void>; refresh: () => Promise<void>;
   setCurrentUser: (memberId: string, password?: string, code?: string) => Promise<void>;
   createIdea: (input: NewIdeaInput) => Promise<Idea>;
@@ -161,6 +162,10 @@ export const useMediaStore = create<MediaState>(() => ({
     if (!action) return state.refresh();
     useMediaStore.setState({ lastFailed: null });
     await action();
+  },
+  loadIdea: async (ideaId: string): Promise<void> => {
+    const result = await responseJson<{ idea: Idea }>(await fetch(`/api/ideas/${encodeURIComponent(ideaId)}`, { cache: "no-store" }));
+    useMediaStore.setState((state: MediaState) => ({ data: { ...state.data, ideas: state.data.ideas.map((idea: Idea) => (idea.id === ideaId ? result.idea : idea)) } }));
   },
   initialize: () => {
     if (useMediaStore.getState().initialized) return Promise.resolve();

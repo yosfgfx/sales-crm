@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   type Attachment,
   type Channel,
@@ -37,6 +37,11 @@ export default function IdeaDetail({
 }) {
   const store = useMediaStore(),
     { data, currentUser } = store;
+  const partial = Boolean(idea.partial);
+  const loadIdea = store.loadIdea;
+  useEffect(() => {
+    if (partial) void loadIdea(idea.id).catch(() => undefined);
+  }, [partial, idea.id, loadIdea]);
   const [tab, setTab] = useState("overview"),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");

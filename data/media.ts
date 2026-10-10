@@ -20,6 +20,7 @@ export interface Idea {
   managerFeedback: string; history: HistoryEvent[]; createdAt: string; updatedAt: string;
   sourceProposal?: SourceProposal;
   archive?: IdeaArchive;
+  partial?: boolean;
 }
 export type ArchiveStatus = "not_started" | "pending" | "running" | "done" | "failed" | "needs_review";
 export interface IdeaArchive { status: ArchiveStatus; archivedAt?: string; folderUrl?: string }

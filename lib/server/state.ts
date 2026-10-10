@@ -18,7 +18,26 @@ export function projectIdea(viewer: TeamMember, idea: Idea): Idea {
   return projected;
 }
 
-export async function loadStateFor(viewer: TeamMember, q: Queryable = database()): Promise<{ version: number; data: MediaData }> {
+const CLOSED = ["delivered", "cancelled", "rejected"];
+const LITE_AFTER_MS = 30 * 86_400_000;
+
+export function liteIdea(idea: Idea): Idea {
+  const lite: Idea = { ...idea, history: idea.history.slice(-1), content: "", executionPlan: "", managerFeedback: "", description: idea.description.slice(0, 160), partial: true };
+  if (lite.sourceProposal) lite.sourceProposal = { ...lite.sourceProposal, originalGoal: "", originalConcept: "", reference: undefined, reviewNote: undefined };
+  if (lite.sourceProposal) for (const key of ["reference", "reviewNote"] as const) if (lite.sourceProposal[key] === undefined) delete lite.sourceProposal[key];
+  return lite;
+}
+
+export async function loadStateFor(viewer: TeamMember, q: Queryable = database(), now = Date.now()): Promise<{ version: number; data: MediaData }> {
   const [reference, ideas, notifications] = await Promise.all([loadReference(q), loadIdeas(q), loadNotifications(q, viewer.id)]);
-  return { version: 0, data: { ...reference, ideas: ideas.map((idea) => projectIdea(viewer, idea)), notifications } };
+  const shaped = ideas.map((idea) => {
+    const projected = projectIdea(viewer, idea);
+    return CLOSED.includes(idea.status) && now - new Date(idea.updatedAt).getTime() > LITE_AFTER_MS ? liteIdea(projected) : projected;
+  });
+  return { version: 0, data: { ...reference, ideas: shaped, notifications } };
+}
+
+export async function loadIdeaFor(viewer: TeamMember, id: string, q: Queryable = database()) {
+  const [idea] = await loadIdeas(q, { ids: [id] });
+  return idea ? projectIdea(viewer, idea) : null;
 }
