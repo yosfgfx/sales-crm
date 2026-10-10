@@ -18,7 +18,7 @@ export interface MediaState {
   data: MediaData; version: number; currentUser: TeamMember | null; loading: boolean; saving: boolean;
   error: string | null; initialized: boolean; demo: boolean; configured: boolean; mfa: { enabled: boolean; required: boolean } | null;
   accounts: AccountSummary[]; accountsLoaded: boolean; lastFailed: (() => Promise<unknown>) | null;
-  olderNotifications: boolean;
+  olderNotifications: boolean; notificationCursor: NotificationCursor | null;
   loadOlderNotifications: () => Promise<void>;
   retryLast: () => Promise<void>;
   loadIdea: (ideaId: string) => Promise<void>;
@@ -86,7 +86,11 @@ async function loadState(): Promise<void> {
   const state = await responseJson<VersionedMediaData>(await fetch("/api/media", { cache: "no-store" }));
   const currentUser = state.data.members.find((member) => member.id === session.user?.id && member.active) ?? null;
   const admin = currentUser?.role === "admin" || currentUser?.role === "superadmin";
-  useMediaStore.setState({ data: state.data, version: state.version, initialized: true, error: null, currentUser, olderNotifications: state.data.notifications.length >= NOTIFICATION_PAGE, ...(admin ? {} : { accounts: [], accountsLoaded: false }) });
+  const previous = useMediaStore.getState();
+  const sameUser = previous.initialized && previous.currentUser?.id === currentUser?.id;
+  const notifications = sameUser ? mergeNotifications(previous.data.notifications, state.data.notifications) : state.data.notifications;
+  const paging = sameUser ? {} : { notificationCursor: firstPageCursor(state.data.notifications), olderNotifications: Boolean(firstPageCursor(state.data.notifications)) };
+  useMediaStore.setState({ data: { ...state.data, notifications }, version: state.version, initialized: true, error: null, currentUser, ...paging, ...(admin ? {} : { accounts: [], accountsLoaded: false }) });
   if (admin && useMediaStore.getState().accountsLoaded) {
     const accountState = await responseJson<AccountsResponse>(await fetch("/api/accounts", { cache: "no-store" }));
     useMediaStore.setState({ accounts: accountState.accounts, accountsLoaded: true });
@@ -99,7 +103,7 @@ async function loadAccountState(): Promise<AccountSummary[]> {
   return result.accounts;
 }
 function signedOut(message?: string) {
-  useMediaStore.setState({ data: emptyData(), version: 0, currentUser: null, accounts: [], accountsLoaded: false, initialized: true, ...(message ? { error: message } : {}) });
+  useMediaStore.setState({ data: emptyData(), version: 0, currentUser: null, accounts: [], accountsLoaded: false, initialized: true, notificationCursor: null, olderNotifications: false, ...(message ? { error: message } : {}) });
 }
 
 function requireAccountRevision(data: MediaData, accounts: AccountSummary[], accountsLoaded: boolean, memberId: unknown, expected?: AccountBaseline) {
@@ -129,11 +133,22 @@ function mutateAccount<T = void>(operation: Record<string, unknown>, select?: (n
 }
 
 export const NOTIFICATION_PAGE = 50;
+type Notice = MediaData["notifications"][number];
+export type NotificationCursor = { createdAt: string; id: string };
 
-function mergeNotifications(current: MediaData["notifications"], fresh: MediaData["notifications"]) {
-  const newest = new Set(fresh.map((item) => item.id));
-  const cutoff = fresh.reduce((min, item) => (item.createdAt < min ? item.createdAt : min), fresh[0]?.createdAt || "");
-  return [...fresh, ...current.filter((item) => !newest.has(item.id) && item.createdAt < cutoff)];
+const newerFirst = (a: Pick<Notice, "createdAt" | "id">, b: Pick<Notice, "createdAt" | "id">) => (a.createdAt === b.createdAt ? (a.id < b.id ? 1 : a.id > b.id ? -1 : 0) : a.createdAt < b.createdAt ? 1 : -1);
+
+function firstPageCursor(fresh: Notice[]): NotificationCursor | null {
+  const sorted = [...fresh].sort(newerFirst);
+  const boundary = sorted[NOTIFICATION_PAGE - 1];
+  return boundary ? { createdAt: boundary.createdAt, id: boundary.id } : null;
+}
+
+export function mergeNotifications(current: Notice[], fresh: Notice[]) {
+  const cursor = firstPageCursor(fresh);
+  const known = new Set(fresh.map((item) => item.id));
+  const older = cursor ? current.filter((item) => !known.has(item.id) && newerFirst(item, cursor) > 0).map((item) => (item.read ? item : { ...item, read: true })) : [];
+  return [...fresh, ...older].sort(newerFirst);
 }
 
 function operate<T = void>(operation: Record<string, unknown>, select?: (result: OperationResult) => T): Promise<T> {
@@ -166,16 +181,18 @@ export const useMediaStore = create<MediaState>(() => ({
   data: emptyData(), version: 0, currentUser: null, loading: true, saving: false, error: null,
   initialized: false, demo: false, configured: true, mfa: null,
   accounts: [], accountsLoaded: false, lastFailed: null, olderNotifications: false,
+  notificationCursor: null,
   loadOlderNotifications: async (): Promise<void> => {
-    const { data, currentUser }: MediaState = useMediaStore.getState();
-    const own = data.notifications.filter((item) => item.recipientId === currentUser?.id);
-    const oldest = own.reduce((min, item) => (item.createdAt < min ? item.createdAt : min), own[0]?.createdAt || new Date().toISOString());
-    const result = await responseJson<{ notifications: MediaData["notifications"]; more: boolean }>(await fetch(`/api/notifications?before=${encodeURIComponent(oldest)}`, { cache: "no-store" }));
-    const known = new Set(data.ideas.map((idea) => idea.id));
+    const cursor = useMediaStore.getState().notificationCursor;
+    if (!cursor) return;
+    const result = await responseJson<{ notifications: MediaData["notifications"]; more: boolean }>(await fetch(`/api/notifications?before=${encodeURIComponent(cursor.createdAt)}&beforeId=${encodeURIComponent(cursor.id)}`, { cache: "no-store" }));
     useMediaStore.setState((state: MediaState) => {
       const ids = new Set(state.data.notifications.map((item) => item.id));
+      const known = new Set(state.data.ideas.map((idea) => idea.id));
       const older = result.notifications.filter((item) => !ids.has(item.id) && known.has(item.ideaId));
-      return { data: { ...state.data, notifications: [...state.data.notifications, ...older] }, olderNotifications: result.more };
+      const last = result.notifications.at(-1);
+      const next = result.more && last ? { createdAt: last.createdAt, id: last.id } : null;
+      return { data: { ...state.data, notifications: [...state.data.notifications, ...older].sort(newerFirst) }, notificationCursor: next, olderNotifications: Boolean(next) };
     });
   },
   retryLast: async (): Promise<void> => {

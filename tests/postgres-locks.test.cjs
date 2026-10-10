@@ -26,7 +26,8 @@ before(async () => {
 after(() => { global.fetch = realFetch; });
 
 test("eight parallel requests on real Postgres create one project folder and one of each subfolder (N5)", async (t) => {
-  if (!available) return t.skip("Start the E2E database first: npm run e2e:db");
+  assert.ok(available, "Start the E2E database first: npm run e2e:db");
+  void t;
   const results = await Promise.all(Array.from({ length: 8 }, () => archive.ensureProjectFolders("idea-008")));
   assert.equal(new Set(results.map((result) => result.project.id)).size, 1);
   for (const kind of ["brief", "quotation", "final"]) assert.equal(new Set(results.map((result) => result.subfolders[kind])).size, 1);

@@ -24,9 +24,10 @@ const CASES = [
   { name: "GET /api/accounts", allowed: ADMINS, call: (who) => route("accounts").GET(h.getRequest("/api/accounts", h.cookies[who])) },
   { name: "GET /api/admin/demo-data", allowed: ADMINS, call: (who) => route("admin/demo-data").GET(h.getRequest("/api/admin/demo-data", h.cookies[who])) },
   { name: "POST /api/import/ideas", allowed: ADMINS, call: (who) => route("import/ideas").POST(h.jsonRequest("/api/import/ideas", {}, { cookie: h.cookies[who] })) },
-  { name: "Drive connection test", allowed: ADMINS, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "test" }, { cookie: h.cookies[who] })) },
-  { name: "Drive picker token", allowed: ADMINS, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "pickerToken" }, { cookie: h.cookies[who] })) },
+  { name: "Drive connection test", allowed: ADMINS, driveCall: true, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "test" }, { cookie: h.cookies[who] })) },
+  { name: "Drive picker token", allowed: ADMINS, driveCall: true, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "pickerToken" }, { cookie: h.cookies[who] })) },
   { name: "Drive archive scan", allowed: ADMINS, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "scanArchive", ideaId: "idea-001" }, { cookie: h.cookies[who] })) },
+  { name: "Drive archive repair", allowed: ADMINS, call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "repairAttachment", attachmentId: "00000000-0000-4000-8000-000000000000", mode: "ignore" }, { cookie: h.cookies[who] })) },
   { name: "Drive connect", allowed: ["root"], call: (who) => route("integrations/google/start").GET(h.getRequest("/api/integrations/google/start", h.cookies[who])) },
   { name: "Drive disconnect", allowed: ["root"], call: (who) => route("integrations/google").POST(h.jsonRequest("/api/integrations/google", { action: "disconnect" }, { cookie: h.cookies[who] })) },
   { name: "add a company", allowed: ADMINS, op: (who) => ({ type: "addCompany", name: `شركة ${who}` }) },
@@ -42,6 +43,7 @@ for (const item of CASES.filter((entry) => !entry.skip)) {
       const status = await statusOf(() => item.op ? h.op(who, item.op(who)) : item.call(who));
       const allowed = item.allowed.includes(who);
       assert.equal(denied(status), !allowed, `${who} → ${status} (expected ${allowed ? "allowed" : "denied"})`);
+      if (allowed) assert.ok(status < 500 || item.driveCall, `${who} → ${status} (allowed calls must not fail on the server)`);
     }
   });
 }

@@ -109,6 +109,7 @@ test("root is protected against other admins, deactivation, downgrade and a seco
   reject(() => updateMediaMember(data, root, "root", { role: "admin" }), "ROOT_PROTECTED");
   const renamed = updateMediaMember(data, root, "root", { name: "صاحب الفكرة", title: "مدير المجموعة" }); validateMediaData(renamed);
   const disabled = structuredClone(data); disabled.members.find((member) => member.id === "root")!.active = false; reject(() => validateMediaData(disabled), "ROOT_PROTECTED");
+  const secondRoot = structuredClone(data); secondRoot.members.find((member) => member.id === "admin")!.role = "superadmin"; reject(() => validateMediaData(secondRoot), "ROOT_PROTECTED");
 });
 
 test("role changes require reassigning open work, while completed work preserves attribution by member id", () => {

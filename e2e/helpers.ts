@@ -6,7 +6,8 @@ export const ORIGIN = "http://localhost:3200";
 
 export async function signIn(page: Page, who: Who, ip = "198.51.100.10") {
   await page.context().setExtraHTTPHeaders({ "x-nf-client-connection-ip": ip });
-  const response = await page.request.post("/api/session", { data: { username: who, password: accounts[who] }, headers: { origin: ORIGIN } });
+  const origin = String(test.info().project.use.baseURL || ORIGIN);
+  const response = await page.request.post("/api/session", { data: { username: who, password: accounts[who] }, headers: { origin } });
   expect(response.status(), `sign in as ${who}`).toBe(200);
   await page.goto("/");
   await expect(page.getByRole("main")).toBeVisible();
@@ -28,7 +29,8 @@ export async function pageAs(browser: Browser, who: Who, options: BrowserContext
 
 export async function openIdea(page: Page, title: string) {
   const search = page.getByRole("searchbox", { name: "ابحث في كل الأفكار والأعمال" });
-  if (await search.isVisible()) {
+  await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toBeVisible();
+  if (await search.waitFor({ timeout: 3_000 }).then(() => true, () => false)) {
     await search.fill(title);
     await search.press("Enter");
   } else {

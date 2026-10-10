@@ -71,6 +71,7 @@ export class DriveError extends MediaServerError {}
 async function driveError(response: Response) {
   let reason = "";
   try { reason = ((await response.json()) as { error?: { errors?: { reason?: string }[] } }).error?.errors?.[0]?.reason || ""; } catch { /* Third-party bodies are not shown. */ }
+  if (["userRateLimitExceeded", "rateLimitExceeded", "backendError"].includes(reason) || response.status === 429) return new DriveError("Google Drive مشغول الآن. أعد المحاولة بعد قليل.", 503, "DRIVE_BUSY");
   if (reason === "storageQuotaExceeded") return new DriveError("مساحة Google Drive ممتلئة. يجب على مالك النظام توفير مساحة إضافية.", 507, "DRIVE_STORAGE_QUOTA");
   if (response.status === 416) return new DriveError("النطاق المطلوب خارج حجم الملف.", 416, "RANGE_NOT_SATISFIABLE");
   if (response.status === 404) return new DriveError("لم يُعثر على الملف أو المجلد في Google Drive. ربما حُذف أو نُقل.", 404, "DRIVE_NOT_FOUND");
@@ -101,6 +102,10 @@ export async function createFolder(name: string, parentId: string | null, q?: Qu
 export async function moveFile(id: string, newParent: string, oldParents: string[], q?: Queryable) {
   const params = new URLSearchParams({ addParents: newParent, removeParents: oldParents.filter((parent) => parent !== newParent).join(","), fields: FILE_FIELDS, supportsAllDrives: "true" });
   return (await drive(`/files/${encodeURIComponent(id)}?${params}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: "{}" }, q)).json() as Promise<DriveFile>;
+}
+
+export async function getFileDetails(id: string, q?: Queryable): Promise<DriveFile & { appProperties?: Record<string, string> }> {
+  return (await drive(`/files/${encodeURIComponent(id)}?${new URLSearchParams({ fields: `${FILE_FIELDS},appProperties`, supportsAllDrives: "true" })}`, {}, q)).json();
 }
 
 export async function untrashFile(id: string, q?: Queryable) {

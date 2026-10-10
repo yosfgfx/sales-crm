@@ -124,11 +124,12 @@ export async function insertNotifications(q: Queryable, notices: MediaNotificati
 
 export const NOTIFICATION_PAGE = 50;
 
-export async function loadNotifications(q: Queryable, memberId: string, options: { before?: string } = {}): Promise<MediaNotification[]> {
+export async function loadNotifications(q: Queryable, memberId: string, options: { before?: { createdAt: string; id: string } } = {}): Promise<MediaNotification[]> {
   const rows = options.before
-    ? await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications where recipient_id = $1 and created_at < $2::timestamptz order by created_at desc, id limit $3", [memberId, options.before, NOTIFICATION_PAGE])
-    : await q.query(`select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications n where recipient_id = $1
-        and (read_at is null or created_at >= coalesce((select min(created_at) from (select created_at from wasl.notifications where recipient_id = $1 order by created_at desc limit $2) latest), '-infinity'))
-        order by created_at desc, id limit 300`, [memberId, NOTIFICATION_PAGE]);
+    ? await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications where recipient_id = $1 and (created_at, id) < ($2::timestamptz, $3) order by created_at desc, id desc limit $4", [memberId, options.before.createdAt, options.before.id, NOTIFICATION_PAGE + 1])
+    : await q.query(`with latest as (select id from wasl.notifications where recipient_id = $1 order by created_at desc, id desc limit $2)
+        select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications n
+        where recipient_id = $1 and (id in (select id from latest) or read_at is null)
+        order by created_at desc, id desc limit 300`, [memberId, NOTIFICATION_PAGE]);
   return rows.rows.map((row) => ({ id: text(row.id), recipientId: text(row.recipient_id), ideaId: text(row.idea_id), type: row.type as MediaNotification["type"], title: text(row.title), body: text(row.body), createdAt: iso(row.created_at), read: Boolean(row.read_at) }));
 }

@@ -244,9 +244,27 @@ test("administrators can find and repair archived files that were trashed, delet
   assert.equal(relinked.drive_file_id, replacement.id);
   assert.match(fake.pathOf(replacement.id), /01 الموجز والمحتوى\/بديل\.png$/);
   assert.deepEqual((await act("admin", { action: "scanArchive", ideaId: "idea-008" })).scan.files, []);
+  const other = (await h.pg.query("select drive_file_id from wasl.attachments where storage = 'drive' and id <> $1 and drive_file_id is not null limit 1", [first.id])).rows[0];
+  if (other) await assert.rejects(act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "relink", fileId: other.drive_file_id }), (error) => error.code === "INVALID_REPLACEMENT");
+  const marked = await google.uploadWhole({ name: "نسخة.pdf", parentId: "root-of-my-drive", mime: "application/pdf", bytes: new Uint8Array([1]), appProperties: { waslBackup: "2026-10-01" } });
+  await assert.rejects(act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "relink", fileId: marked.id }), (error) => error.code === "INVALID_REPLACEMENT");
   fake.files.delete(replacement.id);
   await act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "ignore" });
   assert.ok((await h.pg.query("select removed_at from wasl.attachments where id = $1", [first.id])).rows[0].removed_at);
   const events = (await h.pg.query("select note from wasl.idea_events where idea_id = 'idea-008' and (action = 'archived' or action = 'attachment_removed') order by at")).rows.map((row) => row.note);
   assert.ok(events.some((note) => /استُعيد/.test(note)) && events.some((note) => /أُعيد ربط/.test(note)) && events.some((note) => /فُقد/.test(note)));
+});
+
+test("dropping a lost quotation file keeps the idea usable (third audit)", async () => {
+  const act = (who, body) => integration.integrationAction(h.jsonRequest("/api/integrations/google", body, { cookie: h.cookies[who] }));
+  const bytes = Buffer.from("%PDF-1.4 quote");
+  const file = await uploadThroughDrive("noura", "idea-008", "quotation", bytes, "عرض.pdf");
+  await h.op("noura", { type: "addAttachments", ideaId: "idea-008", attachmentIds: [file.id] });
+  await h.op("noura", { type: "addQuotation", ideaId: "idea-008", quote: { id: "lost-quote", vendor: "مورد مفقود", amount: 100, scope: "طباعة", days: 2, attachmentId: file.id, recommended: false } });
+  const driveId = (await h.pg.query("select drive_file_id from wasl.attachments where id = $1", [file.id])).rows[0].drive_file_id;
+  fake.files.delete(driveId);
+  await act("admin", { action: "repairAttachment", attachmentId: file.id, mode: "ignore" });
+  assert.equal((await h.pg.query("select attachment_id from wasl.quotations where id = 'lost-quote'")).rows[0].attachment_id, null);
+  const commented = await h.op("admin", { type: "addComment", ideaId: "idea-008", text: "ما زالت الفكرة قابلة للتعديل" });
+  assert.equal(commented.idea.history.at(-1).action, "comment");
 });

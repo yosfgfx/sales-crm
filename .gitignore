@@ -50,3 +50,5 @@ client_secret_*.json
 .e2e-data/
 e2e-report/
 e2e-results/
+e2e-report-live/
+e2e-results-live/

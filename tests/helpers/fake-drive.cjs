@@ -7,7 +7,7 @@ function createFakeDrive() {
   const calls = [];
   const state = { failUploads: false, refreshFails: false };
   const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json", ...headers } });
-  const view = (file) => ({ id: file.id, name: file.name, mimeType: file.mimeType, parents: file.parents, trashed: file.trashed, webViewLink: `https://drive.google.com/file/d/${file.id}/view`, size: file.bytes ? String(file.bytes.length) : undefined });
+  const view = (file) => ({ id: file.id, name: file.name, mimeType: file.mimeType, parents: file.parents, trashed: file.trashed, appProperties: file.appProperties, webViewLink: `https://drive.google.com/file/d/${file.id}/view`, size: file.bytes ? String(file.bytes.length) : undefined });
   const create = (meta, bytes) => { const id = `f${randomUUID().replace(/-/g, "").slice(0, 20)}`; const file = { id, name: meta.name, mimeType: meta.mimeType || "application/octet-stream", parents: meta.parents || ["root-of-my-drive"], trashed: false, appProperties: meta.appProperties || {}, bytes }; files.set(id, file); return file; };
 
   async function handler(input, init = {}) {

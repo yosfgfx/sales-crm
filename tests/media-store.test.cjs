@@ -28,7 +28,8 @@ function fixture(memberId = "noura") {
   remote.notifications = remote.notifications.filter((notice) => notice.recipientId === memberId);
   const requests = [];
   const handlers = {};
-  const { useMediaStore: store } = load("stores/media-store");
+  const storeModule = load("stores/media-store");
+  const { useMediaStore: store } = storeModule;
   transport = async (url, options = {}) => {
     requests.push({ url, method: options.method || "GET", body: options.body });
     if (handlers[url]) return handlers[url](options.body ? JSON.parse(options.body) : undefined, options);
@@ -37,7 +38,7 @@ function fixture(memberId = "noura") {
     if (url === "/api/accounts") return Response.json({ version: 0, accounts: remote.members.map((member) => ({ memberId: member.id, username: member.id, hasPassword: true, protected: false })) });
     throw new Error(`Unexpected request ${url}`);
   };
-  return { store, remote, requests, handlers };
+  return { store, remote, requests, handlers, storeModule };
 }
 
 test("an operation sends only the action and merges the returned idea", async () => {
@@ -150,4 +151,16 @@ test("retry repeats the action that failed on the network (M11)", async () => {
   await store.getState().retryLast();
   assert.deepEqual(bodies.map((body) => body.text), ["تعليق مهم", "تعليق مهم"]);
   assert.equal(store.getState().lastFailed, null);
+});
+
+test("merging a fresh first page keeps older loaded notifications and marks stale unread ones read (P1.5)", () => {
+  const { storeModule } = fixture("noura");
+  const notice = (n, read = true) => ({ id: `n-${String(n).padStart(3, "0")}`, recipientId: "noura", ideaId: "idea-001", type: "comment", title: `إشعار ${n}`, body: "", createdAt: new Date(Date.UTC(2026, 9, 1) - n * 3_600_000).toISOString(), read });
+  const loaded = [...Array.from({ length: 50 }, (_, n) => notice(n)), ...Array.from({ length: 30 }, (_, n) => notice(50 + n, n !== 5))];
+  const fresh = [notice(-1, false), ...Array.from({ length: 49 }, (_, n) => notice(n))];
+  const combined = storeModule.mergeNotifications(loaded, fresh);
+  assert.equal(combined.length, 81);
+  assert.equal(combined[0].id, "n-0-1");
+  assert.equal(combined.find((item) => item.id === "n-055").read, true);
+  assert.equal(new Set(combined.map((item) => item.id)).size, combined.length);
 });

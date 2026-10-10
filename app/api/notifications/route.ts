@@ -9,9 +9,11 @@ export async function GET(request: Request) {
   try {
     const db = database();
     const user = await requireUser(request, db);
-    const before = new URL(request.url).searchParams.get("before") || "";
-    if (Number.isNaN(Date.parse(before))) throw new MediaServerError("حدد تاريخ آخر إشعار معروض.");
-    const notifications = await loadNotifications(db, user.id, { before: new Date(before).toISOString() });
-    return Response.json({ notifications, more: notifications.length === NOTIFICATION_PAGE }, { headers: responseHeaders });
+    const params = new URL(request.url).searchParams;
+    const before = params.get("before") || "";
+    const beforeId = params.get("beforeId") || "";
+    if (Number.isNaN(Date.parse(before)) || !/^[A-Za-z0-9_-]{1,100}$/.test(beforeId)) throw new MediaServerError("حدد آخر إشعار معروض.");
+    const rows = await loadNotifications(db, user.id, { before: { createdAt: new Date(before).toISOString(), id: beforeId } });
+    return Response.json({ notifications: rows.slice(0, NOTIFICATION_PAGE), more: rows.length > NOTIFICATION_PAGE }, { headers: responseHeaders });
   } catch (error) { return apiError(error); }
 }

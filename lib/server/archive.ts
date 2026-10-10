@@ -212,6 +212,12 @@ export async function runDueArchiveJobs(limit = 5, q: Queryable = database()) {
 
 export async function retryArchive(ideaId: string, q: Queryable = database()) {
   await q.query("update wasl.archive_jobs set status = 'failed', next_run_at = now(), attempts = 0, notified_failure = false, locked_until = null where idea_id = $1 and (status in ('failed', 'needs_review') or (status = 'running' and locked_until < now()))", [ideaId]);
-  const job = (await q.query<{ id: string }>("select id from wasl.archive_jobs where idea_id = $1 and status in ('pending', 'failed') order by created_at desc limit 1", [ideaId])).rows[0];
-  return job ? runArchiveJob(job.id, q) : null;
+  let job = (await q.query<{ id: string }>("select id from wasl.archive_jobs where idea_id = $1 and status in ('pending', 'failed') order by created_at desc limit 1", [ideaId])).rows[0];
+  if (!job) {
+    const delivered = (await q.query("select 1 from wasl.ideas where id = $1 and status = 'delivered'", [ideaId])).rows.length > 0;
+    const running = (await q.query("select 1 from wasl.archive_jobs where idea_id = $1 and status = 'running'", [ideaId])).rows.length > 0;
+    if (!delivered || running) return null;
+    job = { id: await enqueueArchive(q, ideaId) };
+  }
+  return runArchiveJob(job.id, q);
 }

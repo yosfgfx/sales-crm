@@ -15,16 +15,16 @@ export default function ArchiveRepair({ ideaId }: { ideaId: string }) {
   const [scan, setScan] = useState<Scan | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const run = async (action: () => Promise<void>, success?: string) => {
+  const run = async (action: () => Promise<boolean | void>, success?: string) => {
     setBusy(true); setMessage("");
-    try { await action(); if (success) setMessage(success); } catch (error) { setMessage(errorText(error)); } finally { setBusy(false); }
+    try { if ((await action()) !== false && success) setMessage(success); } catch (error) { setMessage(errorText(error)); } finally { setBusy(false); }
   };
   const check = () => run(async () => { setScan((await call<{ scan: Scan }>({ action: "scanArchive", ideaId })).scan); });
   const repair = (attachmentId: string, mode: "restore" | "relink" | "ignore", success: string) => run(async () => {
     let fileId: string | undefined;
     if (mode === "relink") {
       const picked = await pickFromDrive("file", "اختر الملف البديل");
-      if (!picked) return;
+      if (!picked) return false;
       fileId = picked.id;
     }
     await call({ action: "repairAttachment", attachmentId, mode, fileId });
@@ -36,7 +36,16 @@ export default function ArchiveRepair({ ideaId }: { ideaId: string }) {
       <ActionButton disabled={busy} onClick={() => void check()}>فحص ملفات الأرشيف</ActionButton>
       {scan && (
         <div className="space-y-2 text-sm">
-          {scan.projectFolder === "missing" && <p className="text-[var(--danger)]">مجلد المشروع غير موجود في Drive. أعد محاولة الأرشفة لإنشائه من جديد.</p>}
+          {scan.projectFolder === "missing" && (
+            <div className="space-y-2">
+              <p className="text-[var(--danger)]">مجلد المشروع غير موجود في Drive.</p>
+              <ActionButton disabled={busy} onClick={() => void run(async () => {
+                await call({ action: "retryArchive", ideaId });
+                setScan((await call<{ scan: Scan }>({ action: "scanArchive", ideaId })).scan);
+                await useMediaStore.getState().loadIdea(ideaId);
+              }, "أُعيد إنشاء مجلد المشروع وملخصه. أصلح الملفات المفقودة من القائمة أدناه.")}>إعادة إنشاء مجلد المشروع</ActionButton>
+            </div>
+          )}
           {scan.files.length === 0 ? (
             <p className="text-[var(--soft)]">فُحص {scan.checked} ملف، وكلها في مكانها.</p>
           ) : (

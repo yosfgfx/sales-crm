@@ -20,7 +20,7 @@
     "test:lifecycle": "node --test tests/lifecycle.test.cjs",
     "test:security": "node --test tests/security.test.cjs",
     "test:permissions": "node --test tests/permissions.test.cjs",
-    "e2e:db": "docker start wasl-e2e-db 2>/dev/null || docker run -d --name wasl-e2e-db -e POSTGRES_PASSWORD=wasl-e2e-local -p 54329:5432 postgres:17-alpine",
+    "e2e:db": "docker start wasl-e2e-db 2>/dev/null || docker run -d --name wasl-e2e-db -e POSTGRES_PASSWORD=wasl-e2e-local -p 127.0.0.1:54329:5432 postgres:17-alpine",
     "test:e2e": "next build && npm run test:locks && playwright test",
     "test:locks": "node --test tests/postgres-locks.test.cjs"
   },
