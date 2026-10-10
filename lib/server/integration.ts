@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { TeamMember } from "@/data/media";
 import { retryArchive } from "./archive";
+import { repairAttachment, scanArchive } from "./archive-repair";
 import { isAdministrator, requireAdministrator, requireUser } from "./auth";
 import { encryptSecret, decryptSecret } from "./crypto";
 import { database } from "./db";
@@ -142,6 +143,16 @@ export async function integrationAction(request: Request) {
       requireAdmin(user);
       if (typeof body?.ideaId !== "string") throw new MediaServerError("حدد الفكرة.");
       return { ok: true, result: await retryArchive(body.ideaId, db) };
+    }
+    case "scanArchive": {
+      requireAdmin(user);
+      if (typeof body?.ideaId !== "string") throw new MediaServerError("حدد الفكرة.");
+      return { ok: true, scan: await scanArchive(body.ideaId, db) };
+    }
+    case "repairAttachment": {
+      requireAdmin(user);
+      if (typeof body?.attachmentId !== "string") throw new MediaServerError("حدد الملف.");
+      return repairAttachment({ attachmentId: body.attachmentId, mode: String(body.mode || ""), fileId: typeof body.fileId === "string" ? body.fileId : undefined }, user, db);
     }
     default: throw new MediaServerError("إجراء غير معروف.");
   }

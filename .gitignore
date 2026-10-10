@@ -45,3 +45,8 @@ next-env.d.ts
 
 # Google OAuth client secret downloads
 client_secret_*.json
+.tmp-scripts/
+
+.e2e-data/
+e2e-report/
+e2e-results/

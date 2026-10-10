@@ -51,6 +51,8 @@ function createFakeDrive() {
       if (match[2]) return new Response(Buffer.from("%PDF-1.7 summary"), { status: 200, headers: { "content-type": "application/pdf" } });
       if (method === "DELETE") { files.delete(file.id); return new Response(null, { status: 204 }); }
       if (method === "PATCH") {
+        const patch = init.body ? JSON.parse(String(init.body)) : {};
+        if (typeof patch.trashed === "boolean") file.trashed = patch.trashed;
         const remove = (url.searchParams.get("removeParents") || "").split(",").filter(Boolean);
         file.parents = [...file.parents.filter((parent) => !remove.includes(parent)), url.searchParams.get("addParents")].filter(Boolean);
         return json(view(file));

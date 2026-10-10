@@ -1,6 +1,6 @@
 "use client";
 
-import { WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
+import { WORK_TYPE_LABELS, type Idea, type MediaData, STATUS_HINTS } from "@/data/media";
 import { CompanyLogo } from "../company-logo";
 import { ActionButton, Icon, PriorityBadge, StatusBadge } from "../ui";
 
@@ -39,6 +39,7 @@ export function IdeaSummary({
           </ActionButton>
         )}
       </div>
+      <p className="text-sm text-[var(--soft)]">{STATUS_HINTS[idea.status]}</p>
       {idea.sourceProposal && (
         <section className="space-y-3 rounded-xl border border-[var(--border)] bg-[var(--background)] p-4">
           <h2 className="!text-base">إسناد المقترح</h2>

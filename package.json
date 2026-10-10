@@ -12,13 +12,17 @@
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node --test tests/server.test.cjs",
-    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:db && next build",
+    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:permissions && npm run test:db && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs",
     "test:drive": "node --test tests/drive.test.cjs",
     "test:import": "node --test tests/import.test.cjs",
     "test:lifecycle": "node --test tests/lifecycle.test.cjs",
-    "test:security": "node --test tests/security.test.cjs"
+    "test:security": "node --test tests/security.test.cjs",
+    "test:permissions": "node --test tests/permissions.test.cjs",
+    "e2e:db": "docker start wasl-e2e-db 2>/dev/null || docker run -d --name wasl-e2e-db -e POSTGRES_PASSWORD=wasl-e2e-local -p 54329:5432 postgres:17-alpine",
+    "test:e2e": "next build && npm run test:locks && playwright test",
+    "test:locks": "node --test tests/postgres-locks.test.cjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.31.0",
@@ -46,7 +50,9 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.0",
     "@electric-sql/pglite": "^0.2.17",
+    "@playwright/test": "^1.63.0",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

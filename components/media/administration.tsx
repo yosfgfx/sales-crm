@@ -5,7 +5,7 @@ import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import TeamSettings from "./team-settings";
 import Asset from "@/components/_ui/asset";
-import { ActionButton, Icon, TabList, errorText } from "./ui";
+import { ActionButton, Icon, TabList, countText, errorText, formatCount } from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
@@ -132,8 +132,7 @@ export default function Administration({
                         </form>
                       ) : <span className="block font-medium">{c.name}</span>}
                       <span className="text-xs text-[var(--soft)]">
-                        {data.ideas.filter((i) => i.companyId === c.id).length}{" "}
-                        أعمال مرتبطة
+                        الأعمال المرتبطة: {formatCount(data.ideas.filter((i) => i.companyId === c.id).length)}
                       </span>
                     </div>
                   </div>
@@ -207,8 +206,7 @@ export default function Administration({
                     ) : <span className={c.active === false ? "text-[var(--soft)]" : ""}>{c.name}{c.active === false ? " · موقوف" : ""}</span>}
                   </span>
                   <span className="flex flex-wrap items-center gap-2 text-xs text-[var(--soft)]">
-                    {data.ideas.filter((i) => i.categoryId === c.id).length}{" "}
-                    أفكار
+                    {countText(data.ideas.filter((i) => i.categoryId === c.id).length, "idea")}
                     <ActionButton className="!px-3 !text-xs" onClick={() => setEditing({ kind: "category", id: c.id, value: c.name })}>تعديل</ActionButton>
                     <ActionButton className="!px-3 !text-xs" disabled={busy} onClick={() => void run(() => store.updateCategory(c.id, { active: c.active === false }), c.active === false ? "أُعيد تفعيل التصنيف." : "أُوقف التصنيف، ولن يظهر في الأفكار الجديدة.")}>{c.active === false ? "تفعيل" : "إيقاف"}</ActionButton>
                   </span>

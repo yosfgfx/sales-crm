@@ -93,7 +93,7 @@ export function WorkTypesSection({
           <span className="text-xs text-[var(--soft)]">
             التسليم في نفس اليوم
           </span>
-          <strong className="mt-1 block text-xl text-[#248466] tabular-nums">
+          <strong className="mt-1 block text-xl text-[#1c6b53] tabular-nums">
             {report.sameDayRate}%{" "}
             <span className="text-xs font-normal">من الأعمال</span>
           </strong>

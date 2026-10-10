@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   CHANNEL_LABELS,
   PRIORITY_LABELS,
+  STATUS_HINTS,
   STATUS_LABELS,
   type Idea,
 } from "@/data/media";
@@ -114,7 +115,7 @@ export function StatusBadge({ status }: { status: Idea["status"] }) {
           ? "accent"
           : "neutral";
   return (
-    <span className={cn("media-badge", `media-badge-${tone}`)}>
+    <span className={cn("media-badge", `media-badge-${tone}`)} title={STATUS_HINTS[status]}>
       <span className="size-1.5 rounded-full bg-current" />
       {STATUS_LABELS[status]}
     </span>

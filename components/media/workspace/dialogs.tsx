@@ -71,6 +71,12 @@ export function NotificationsDialog({
               </ActionButton>
             ))
         )}
+        {store.olderNotifications && (
+          <ActionButton onClick={() => void run(() => store.loadOlderNotifications())} className="w-full">
+            عرض إشعارات أقدم
+          </ActionButton>
+        )}
+        <p className="text-center text-xs text-[var(--soft)]">تُحذف الإشعارات المقروءة بعد 90 يوماً.</p>
       </div>
     </Modal>
   );

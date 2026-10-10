@@ -222,3 +222,31 @@ test("parallel uploads to a fresh idea create one project folder and one set of 
   assert.equal(children.length, 3);
   assert.equal(new Set(children.map((file) => file.name)).size, 3);
 });
+
+test("administrators can find and repair archived files that were trashed, deleted or replaced (P2.8)", async () => {
+  const act = (who, body) => integration.integrationAction(h.jsonRequest("/api/integrations/google", body, { cookie: h.cookies[who] }));
+  await assert.rejects(act("noura", { action: "scanArchive", ideaId: "idea-008" }), expectStatus(403));
+  const rows = (await h.pg.query("select id, drive_file_id from wasl.attachments where idea_id = 'idea-008' and storage = 'drive' and removed_at is null order by created_at")).rows;
+  assert.ok(rows.length >= 1);
+  const [first] = rows;
+  const clean = await act("admin", { action: "scanArchive", ideaId: "idea-008" });
+  assert.deepEqual(clean.scan.files, []);
+  fake.files.get(first.drive_file_id).trashed = true;
+  assert.equal((await act("admin", { action: "scanArchive", ideaId: "idea-008" })).scan.files[0].problem, "trashed");
+  await act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "restore" });
+  assert.deepEqual((await act("admin", { action: "scanArchive", ideaId: "idea-008" })).scan.files, []);
+  fake.files.delete(first.drive_file_id);
+  assert.equal((await act("admin", { action: "scanArchive", ideaId: "idea-008" })).scan.files[0].problem, "missing");
+  const replacement = await google.uploadWhole({ name: "بديل.png", parentId: "root-of-my-drive", mime: "image/png", bytes: new Uint8Array([1, 2, 3]) });
+  await assert.rejects(act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "relink", fileId: (await h.pg.query("select drive_folder_id from wasl.ideas where id = 'idea-008'")).rows[0].drive_folder_id }), (error) => error.code === "INVALID_REPLACEMENT");
+  await act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "relink", fileId: replacement.id });
+  const relinked = (await h.pg.query("select drive_file_id, size from wasl.attachments where id = $1", [first.id])).rows[0];
+  assert.equal(relinked.drive_file_id, replacement.id);
+  assert.match(fake.pathOf(replacement.id), /01 الموجز والمحتوى\/بديل\.png$/);
+  assert.deepEqual((await act("admin", { action: "scanArchive", ideaId: "idea-008" })).scan.files, []);
+  fake.files.delete(replacement.id);
+  await act("admin", { action: "repairAttachment", attachmentId: first.id, mode: "ignore" });
+  assert.ok((await h.pg.query("select removed_at from wasl.attachments where id = $1", [first.id])).rows[0].removed_at);
+  const events = (await h.pg.query("select note from wasl.idea_events where idea_id = 'idea-008' and (action = 'archived' or action = 'attachment_removed') order by at")).rows.map((row) => row.note);
+  assert.ok(events.some((note) => /استُعيد/.test(note)) && events.some((note) => /أُعيد ربط/.test(note)) && events.some((note) => /فُقد/.test(note)));
+});

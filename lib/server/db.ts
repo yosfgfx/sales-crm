@@ -16,7 +16,7 @@ export function useDatabaseForTests(database: Database | null) { override = data
 function poolConfig(): PoolConfig {
   const ref = /^https:\/\/([a-z0-9]+)\.supabase\.co/.exec(process.env.SUPABASE_URL || "")?.[1];
   const password = process.env.SUPABASE_DB_PASSWORD;
-  const shared = { max: Number(process.env.WASL_DB_POOL_SIZE || 5), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: { rejectUnauthorized: false } };
+  const shared = { max: Number(process.env.WASL_DB_POOL_SIZE || 5), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: process.env.WASL_DB_SSL === "disable" ? false : { rejectUnauthorized: false } };
   if (ref && password) return { ...shared, host: process.env.SUPABASE_DB_HOST || "aws-1-eu-central-1.pooler.supabase.com", port: Number(process.env.SUPABASE_DB_PORT || 5432), user: `postgres.${ref}`, password, database: "postgres" };
   if (process.env.DATABASE_URL) return { ...shared, connectionString: process.env.DATABASE_URL };
   throw new MediaServerError("قاعدة بيانات النظام غير مهيأة. يجب على المسؤول ضبط اتصال Supabase في إعدادات الخادم.", 503, "DATABASE_CONFIGURATION");

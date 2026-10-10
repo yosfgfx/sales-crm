@@ -39,6 +39,7 @@ export async function runDailyJobs(q: Queryable = database(), today = riyadhDate
   }
   await insertNotifications(q, notices);
   const cleaned = await cleanupFiles(q);
+  await q.query("delete from wasl.notifications where read_at is not null and created_at < now() - interval '90 days'");
   return { ran: true, reminders: notices.length, cleaned };
 }
 

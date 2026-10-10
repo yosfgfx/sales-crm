@@ -155,7 +155,7 @@ export default function MediaWorkspace() {
       >
         انتقل إلى المحتوى
       </a>
-      <aside className="sticky top-0 hidden h-dvh w-[250px] shrink-0 flex-col bg-[#1d243c] text-white lg:flex">
+      <aside className="sticky top-0 hidden h-dvh w-[250px] shrink-0 flex-col overflow-y-auto bg-[#1d243c] text-white lg:flex">
         {sidebar}
       </aside>
       <div className="min-w-0 flex-1">

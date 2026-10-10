@@ -103,6 +103,10 @@ export async function moveFile(id: string, newParent: string, oldParents: string
   return (await drive(`/files/${encodeURIComponent(id)}?${params}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: "{}" }, q)).json() as Promise<DriveFile>;
 }
 
+export async function untrashFile(id: string, q?: Queryable) {
+  return (await drive(`/files/${encodeURIComponent(id)}?${new URLSearchParams({ fields: FILE_FIELDS, supportsAllDrives: "true" })}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trashed: false }) }, q)).json() as Promise<DriveFile>;
+}
+
 export async function deleteFile(id: string, q?: Queryable) {
   await drive(`/files/${encodeURIComponent(id)}?supportsAllDrives=true`, { method: "DELETE" }, q);
 }

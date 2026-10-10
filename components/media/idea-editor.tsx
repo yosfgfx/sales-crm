@@ -197,7 +197,7 @@ function EditorForm({
               />
             </label>
             <label className="media-label">
-              نص المحتوى
+              نص المحتوى *
               <textarea
                 required
                 name="content"
@@ -210,7 +210,7 @@ function EditorForm({
               />
             </label>
             <label className="media-label">
-              طريقة التنفيذ
+              طريقة التنفيذ *
               <textarea
                 required
                 name="executionPlan"

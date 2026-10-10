@@ -18,6 +18,8 @@ export interface MediaState {
   data: MediaData; version: number; currentUser: TeamMember | null; loading: boolean; saving: boolean;
   error: string | null; initialized: boolean; demo: boolean; configured: boolean; mfa: { enabled: boolean; required: boolean } | null;
   accounts: AccountSummary[]; accountsLoaded: boolean; lastFailed: (() => Promise<unknown>) | null;
+  olderNotifications: boolean;
+  loadOlderNotifications: () => Promise<void>;
   retryLast: () => Promise<void>;
   loadIdea: (ideaId: string) => Promise<void>;
   initialize: () => Promise<void>; refresh: () => Promise<void>;
@@ -84,7 +86,7 @@ async function loadState(): Promise<void> {
   const state = await responseJson<VersionedMediaData>(await fetch("/api/media", { cache: "no-store" }));
   const currentUser = state.data.members.find((member) => member.id === session.user?.id && member.active) ?? null;
   const admin = currentUser?.role === "admin" || currentUser?.role === "superadmin";
-  useMediaStore.setState({ data: state.data, version: state.version, initialized: true, error: null, currentUser, ...(admin ? {} : { accounts: [], accountsLoaded: false }) });
+  useMediaStore.setState({ data: state.data, version: state.version, initialized: true, error: null, currentUser, olderNotifications: state.data.notifications.length >= NOTIFICATION_PAGE, ...(admin ? {} : { accounts: [], accountsLoaded: false }) });
   if (admin && useMediaStore.getState().accountsLoaded) {
     const accountState = await responseJson<AccountsResponse>(await fetch("/api/accounts", { cache: "no-store" }));
     useMediaStore.setState({ accounts: accountState.accounts, accountsLoaded: true });
@@ -126,6 +128,14 @@ function mutateAccount<T = void>(operation: Record<string, unknown>, select?: (n
   });
 }
 
+export const NOTIFICATION_PAGE = 50;
+
+function mergeNotifications(current: MediaData["notifications"], fresh: MediaData["notifications"]) {
+  const newest = new Set(fresh.map((item) => item.id));
+  const cutoff = fresh.reduce((min, item) => (item.createdAt < min ? item.createdAt : min), fresh[0]?.createdAt || "");
+  return [...fresh, ...current.filter((item) => !newest.has(item.id) && item.createdAt < cutoff)];
+}
+
 function operate<T = void>(operation: Record<string, unknown>, select?: (result: OperationResult) => T): Promise<T> {
   useMediaStore.setState({ lastFailed: null });
   return enqueue(async () => {
@@ -135,7 +145,7 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
     try {
       const result = await responseJson<OperationResult>(await fetch("/api/ops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(operation) }));
       useMediaStore.setState((state: MediaState) => {
-        const data = { ...state.data, notifications: result.notifications };
+        const data = { ...state.data, notifications: mergeNotifications(state.data.notifications, result.notifications) };
         if (result.idea) data.ideas = state.data.ideas.some((idea: Idea) => idea.id === result.idea!.id) ? state.data.ideas.map((idea: Idea) => (idea.id === result.idea!.id ? result.idea! : idea)) : [result.idea, ...state.data.ideas];
         if (result.deletedIdeaId) data.ideas = data.ideas.filter((idea: Idea) => idea.id !== result.deletedIdeaId);
         if (result.companies) data.companies = result.companies;
@@ -155,7 +165,19 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
 export const useMediaStore = create<MediaState>(() => ({
   data: emptyData(), version: 0, currentUser: null, loading: true, saving: false, error: null,
   initialized: false, demo: false, configured: true, mfa: null,
-  accounts: [], accountsLoaded: false, lastFailed: null,
+  accounts: [], accountsLoaded: false, lastFailed: null, olderNotifications: false,
+  loadOlderNotifications: async (): Promise<void> => {
+    const { data, currentUser }: MediaState = useMediaStore.getState();
+    const own = data.notifications.filter((item) => item.recipientId === currentUser?.id);
+    const oldest = own.reduce((min, item) => (item.createdAt < min ? item.createdAt : min), own[0]?.createdAt || new Date().toISOString());
+    const result = await responseJson<{ notifications: MediaData["notifications"]; more: boolean }>(await fetch(`/api/notifications?before=${encodeURIComponent(oldest)}`, { cache: "no-store" }));
+    const known = new Set(data.ideas.map((idea) => idea.id));
+    useMediaStore.setState((state: MediaState) => {
+      const ids = new Set(state.data.notifications.map((item) => item.id));
+      const older = result.notifications.filter((item) => !ids.has(item.id) && known.has(item.ideaId));
+      return { data: { ...state.data, notifications: [...state.data.notifications, ...older] }, olderNotifications: result.more };
+    });
+  },
   retryLast: async (): Promise<void> => {
     const state: MediaState = useMediaStore.getState();
     const action = state.lastFailed;

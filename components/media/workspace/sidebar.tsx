@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Dispatch, SetStateAction } from "react";
 import { memberDisplayLabel, type TeamMember } from "@/data/media";
 import { isAdministrator } from "@/lib/media-workflow";
@@ -93,6 +94,9 @@ export function Sidebar({
           <p className="text-xs text-[#b8b9d3]">
             مساحة تجمع إبداع الفريق وتوثّق كل إنجاز.
           </p>
+          <Link href="/guide" className="mt-3 inline-block text-xs text-[#dfd9ff] underline underline-offset-4">
+            دليل الاستخدام
+          </Link>
         </div>
         <ActionButton
           onClick={() => setAccount(true)}

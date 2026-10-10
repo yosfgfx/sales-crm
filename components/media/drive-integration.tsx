@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest, postJson } from "@/lib/api-client";
+import { pickFromDrive } from "@/lib/drive-picker";
 import { formatMediaDate } from "@/lib/media-workflow";
 import { ActionButton, Icon, errorText } from "./ui";
 
@@ -11,29 +12,7 @@ interface Status {
   rootFolder?: { id: string; name: string | null; url: string } | null; lastCheckAt?: string | null; lastCheckOk?: boolean | null;
   pendingJobs?: number; lastBackup?: string | null; issues?: Issue[]; pickerConfigured?: boolean;
 }
-type PickerResult = { action: string; docs?: { id: string; name: string }[] };
-type PickerBuilder = { addView(view: unknown): PickerBuilder; setOAuthToken(token: string): PickerBuilder; setDeveloperKey(key: string): PickerBuilder; setAppId(id: string): PickerBuilder; setLocale(locale: string): PickerBuilder; setTitle(title: string): PickerBuilder; setCallback(callback: (result: PickerResult) => void): PickerBuilder; build(): { setVisible(visible: boolean): void } };
-declare global {
-  interface Window {
-    gapi?: { load(name: string, callback: () => void): void };
-    google?: { picker: { PickerBuilder: new () => PickerBuilder; DocsView: new (viewId: unknown) => { setIncludeFolders(v: boolean): unknown; setSelectFolderEnabled(v: boolean): unknown; setMimeTypes(v: string): unknown }; ViewId: { FOLDERS: unknown }; Action: { PICKED: string } } };
-  }
-}
-
 const call = <T,>(body?: Record<string, unknown>) => (body ? postJson<T>("/api/integrations/google", body) : apiRequest<T>("/api/integrations/google"));
-
-let pickerReady: Promise<void> | null = null;
-function loadPicker() {
-  if (!pickerReady) pickerReady = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://apis.google.com/js/api.js";
-    script.async = true;
-    script.onload = () => window.gapi?.load("picker", () => resolve());
-    script.onerror = () => { pickerReady = null; reject(new Error("تعذّر تحميل نافذة Google Drive. تحقق من الاتصال.")); };
-    document.head.appendChild(script);
-  });
-  return pickerReady;
-}
 
 const STATUS_TEXT: Record<string, string> = { failed: "ستُعاد المحاولة تلقائياً", needs_review: "تحتاج مراجعتك" };
 
@@ -56,15 +35,7 @@ export default function DriveIntegration({ notice }: { notice?: string }) {
   };
   const mode = moveExisting ? "move" : "fresh";
   const choose = () => run(async () => {
-    const { accessToken, apiKey, appId } = await call<{ accessToken: string; apiKey: string; appId: string }>({ action: "pickerToken" });
-    await loadPicker();
-    const picker = window.google!.picker;
-    const folder = await new Promise<{ id: string } | null>((resolve) => {
-      const view = new picker.DocsView(picker.ViewId.FOLDERS);
-      view.setIncludeFolders(true); view.setSelectFolderEnabled(true); view.setMimeTypes("application/vnd.google-apps.folder");
-      new picker.PickerBuilder().addView(view).setOAuthToken(accessToken).setDeveloperKey(apiKey).setAppId(appId).setLocale("ar").setTitle("اختر مجلد أرشيف وصل")
-        .setCallback((result) => { if (result.action === picker.Action.PICKED) resolve(result.docs?.[0] || null); else if (result.action === "cancel") resolve(null); }).build().setVisible(true);
-    });
+    const folder = await pickFromDrive("folder", "اختر مجلد أرشيف وصل");
     if (!folder) throw new Error("لم يُختر مجلد.");
     await call({ action: "selectFolder", folderId: folder.id, mode });
   }, "حُدِّد مجلد الأرشيف.");

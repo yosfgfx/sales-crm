@@ -17,6 +17,6 @@ export function databaseConfig() {
   if (ref && password) {
     return { host: process.env.SUPABASE_DB_HOST || "aws-1-eu-central-1.pooler.supabase.com", port: Number(process.env.SUPABASE_DB_PORT || 5432), user: `postgres.${ref}`, password, database: "postgres", ssl: { rejectUnauthorized: false } };
   }
-  if (process.env.DATABASE_URL) return { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } };
+  if (process.env.DATABASE_URL) return { connectionString: process.env.DATABASE_URL, ssl: process.env.WASL_DB_SSL === "disable" ? false : { rejectUnauthorized: false } };
   throw new Error("Set SUPABASE_URL and SUPABASE_DB_PASSWORD (or DATABASE_URL) in .env.local.");
 }

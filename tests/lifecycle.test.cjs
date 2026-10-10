@@ -149,3 +149,23 @@ test("creating an idea ignores fields outside the editable set", async () => {
   assert.equal(created.idea.approvedAt, undefined);
   assert.equal(created.idea.deliveredAt, undefined);
 });
+
+test("notifications load in pages, keep every unread one, and read ones older than 90 days are purged (P1.5)", async () => {
+  const repository = require(path.join(h.root, "lib/server/repository.ts"));
+  const route = require(path.join(h.root, "app/api/notifications/route.ts"));
+  await h.pg.query("delete from wasl.notifications where recipient_id = 'sara'");
+  for (let n = 0; n < 120; n++) await h.pg.query("insert into wasl.notifications (id, recipient_id, idea_id, type, title, created_at, read_at) values ($1, 'sara', 'idea-002', 'comment', $2, now() - ($3 || ' hours')::interval, case when $3::int = 100 then null else now() end)", [`page-${n}`, `إشعار ${n}`, String(n)]);
+  const first = await repository.loadNotifications(h.database, "sara");
+  assert.equal(first.length, 51);
+  assert.ok(first.some((item) => item.id === "page-100" && !item.read));
+  const oldest = first.filter((item) => item.id !== "page-100").at(-1).createdAt;
+  const response = await route.GET(h.getRequest(`/api/notifications?before=${encodeURIComponent(oldest)}`, h.cookies.sara));
+  const page = await response.json();
+  assert.equal(page.notifications.length, 50);
+  assert.equal(page.more, true);
+  assert.equal(page.notifications[0].id, "page-50");
+  await h.pg.query("insert into wasl.notifications (id, recipient_id, idea_id, type, title, created_at, read_at) values ('old-read', 'sara', 'idea-002', 'comment', 'قديم', now() - interval '100 days', now()), ('old-unread', 'sara', 'idea-002', 'comment', 'قديم', now() - interval '100 days', null)");
+  await scheduler.runDailyJobs(h.database, "2026-10-21");
+  const left = (await h.pg.query("select id from wasl.notifications where id in ('old-read', 'old-unread')")).rows.map((row) => row.id);
+  assert.deepEqual(left, ["old-unread"]);
+});

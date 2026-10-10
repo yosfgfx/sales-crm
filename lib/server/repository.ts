@@ -122,7 +122,13 @@ export async function insertNotifications(q: Queryable, notices: MediaNotificati
   for (const notice of notices) await q.query("insert into wasl.notifications (id, recipient_id, idea_id, type, title, body, created_at) values ($1, $2, $3, $4::wasl.notification_type, $5, $6, $7::timestamptz)", [notice.id, notice.recipientId, notice.ideaId || null, notice.type, notice.title, notice.body, notice.createdAt]);
 }
 
-export async function loadNotifications(q: Queryable, memberId: string, limit = 200): Promise<MediaNotification[]> {
-  const rows = await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications where recipient_id = $1 order by created_at desc limit $2", [memberId, limit]);
+export const NOTIFICATION_PAGE = 50;
+
+export async function loadNotifications(q: Queryable, memberId: string, options: { before?: string } = {}): Promise<MediaNotification[]> {
+  const rows = options.before
+    ? await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications where recipient_id = $1 and created_at < $2::timestamptz order by created_at desc, id limit $3", [memberId, options.before, NOTIFICATION_PAGE])
+    : await q.query(`select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications n where recipient_id = $1
+        and (read_at is null or created_at >= coalesce((select min(created_at) from (select created_at from wasl.notifications where recipient_id = $1 order by created_at desc limit $2) latest), '-infinity'))
+        order by created_at desc, id limit 300`, [memberId, NOTIFICATION_PAGE]);
   return rows.rows.map((row) => ({ id: text(row.id), recipientId: text(row.recipient_id), ideaId: text(row.idea_id), type: row.type as MediaNotification["type"], title: text(row.title), body: text(row.body), createdAt: iso(row.created_at), read: Boolean(row.read_at) }));
 }

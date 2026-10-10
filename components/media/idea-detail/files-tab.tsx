@@ -4,6 +4,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import { CHANNEL_LABELS, type Attachment, type Channel, type Idea } from "@/data/media";
 import { postJson } from "@/lib/api-client";
 import { useMediaStore, type MediaState } from "@/stores/media-store";
+import ArchiveRepair from "../archive-repair";
 import AttachmentLink from "../attachment-link";
 import { ActionButton, Channels, Icon, bytes, formatDate } from "../ui";
 import { ARCHIVE_TEXT } from "./constants";
@@ -159,6 +160,7 @@ export function FilesTab({
               إعادة محاولة الأرشفة
             </ActionButton>
           )}
+          {admin && idea.archive?.status === "done" && <ArchiveRepair ideaId={idea.id} />}
         </section>
       )}
       {(canEdit ||

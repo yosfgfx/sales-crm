@@ -53,7 +53,7 @@ export function RequestSection({
           />
         </label>
         <label className="media-label">
-          الإدارة المستفيدة أو جهة الطلب
+          الإدارة المستفيدة أو جهة الطلب *
           <input
             name="department"
             required

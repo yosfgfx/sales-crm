@@ -46,6 +46,19 @@ export interface AccountMutationResponse extends VersionedMediaData { accounts: 
 export interface ScheduleInput { designerId: string; scheduledAt: string; dueDate?: string; priority?: Priority }
 
 export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "مراجعة المصمم النهائية", delivered: "تم التسليم", cancelled: "ملغاة", rejected: "مرفوضة" };
+export const STATUS_HINTS: Record<IdeaStatus, string> = {
+  draft: "صاحب الفكرة يكتبها ويكمل تفاصيلها، ولا يراها المدير للاعتماد بعد.",
+  quotations: "تُجمع عروض أسعار الموردين قبل إرسال الفكرة للاعتماد.",
+  review: "أُرسلت الفكرة، وينتظر مدير الإدارة اعتماد الفكرة والمحتوى.",
+  changes: "طلب المدير تعديلاً. يعدّلها صاحبها ثم يعيد إرسالها.",
+  approved: "اعتُمدت الفكرة، ويحدد مدير الإدارة المصمم والموعد.",
+  scheduled: "حُدد المصمم والموعد، ويمكن للمصمم البدء ورفع الملفات.",
+  designing: "المصمم يعمل على التصميم.",
+  design_review: "المصمم يراجع عمله النهائي ويعتمده بنفسه، وتعليقات صاحب الفكرة للاستئناس.",
+  delivered: "سُلّم العمل، ويؤرشفه النظام تلقائياً في Google Drive.",
+  cancelled: "أُلغيت الفكرة، ويمكن لمدير النظام إعادة فتحها.",
+  rejected: "رفض المدير الفكرة نهائياً.",
+};
 export const WORK_TYPE_LABELS: Record<WorkType, string> = { motion: "موشن جرافيك", video: "مونتاج فيديو", design: "تصميم", report: "تقرير", presentation: "عرض تقديمي", document: "مستندات" };
 export const CHANNEL_LABELS: Record<Channel, string> = { screens: "الشاشات الداخلية", whatsapp: "واتساب", email: "البريد الداخلي" };
 export const PRIORITY_LABELS: Record<Priority, string> = { urgent: "عاجلة", high: "عالية", normal: "عادية", low: "منخفضة" };

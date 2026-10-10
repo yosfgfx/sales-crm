@@ -111,7 +111,7 @@ export default function TeamSettings() {
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-[var(--soft)]">
                   {member.role === "designer"
-                    ? "يجدول الأعمال المعتمدة وينفذها ويسلّم النسخ النهائية ويؤرشفها."
+                    ? "يجدول الأعمال المعتمدة وينفذها ويسلّم النسخ النهائية، ثم يؤرشفها النظام تلقائياً."
                     : member.role === "superadmin"
                       ? "يتابع أعمال الفريق من الفكرة حتى التسليم والأرشفة."
                       : member.role === "admin"

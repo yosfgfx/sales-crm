@@ -182,6 +182,7 @@ export default function Approvals({
           },
         ].map((item) => ({ id: item.id, label: <>{item.label}<span className="rounded-md bg-[var(--background)] px-1.5 py-0.5 text-xs tabular-nums">{item.count}</span></> }))}
       />
+      <div role="tabpanel" id="approvals-panel" aria-labelledby={`approvals-tab-${tab}`} className="space-y-5">
       {notice && (
         <p
           role="status"
@@ -297,6 +298,7 @@ export default function Approvals({
           description="عندما يرسل فريق المحتوى فكرة للمراجعة، ستظهر هنا مع عرضها وجميع مرفقاتها."
         />
       )}
+      </div>
       <DecisionDialog
         decision={decision}
         selected={selected}

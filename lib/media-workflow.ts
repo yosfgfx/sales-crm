@@ -91,10 +91,10 @@ export function reviewMediaIdea(data: MediaData, actor: TeamMember, ideaId: stri
   if (idea.status !== "review") throw new WorkflowError("يمكن اعتماد الأفكار الموجودة في انتظار المراجعة فقط.", "INVALID_TRANSITION");
   if (idea.ownerId === actor.id) throw new WorkflowError("لا يعتمد صاحب الفكرة فكرته. يعتمدها مدير آخر.", "SELF_APPROVAL", 403);
   if (decision !== "approved" && !feedback.trim()) throw new WorkflowError(decision === "rejected" ? "اكتب سبب رفض الفكرة ليصل إلى صاحبها." : "أضف ملاحظات واضحة للفريق قبل إعادة الفكرة للتعديل.", "FEEDBACK_REQUIRED");
-  if (decision === "rejected") return commitIdea(data, actor, idea, { ...idea, status: "rejected", managerFeedback: feedback.trim() }, "rejected", feedback.trim(), ctx, { recipients: [idea.ownerId], type: "feedback", title: "رُفضت الفكرة", body: feedback.trim() });
+  if (decision === "rejected") return commitIdea(data, actor, idea, { ...idea, status: "rejected", managerFeedback: feedback.trim() }, "rejected", feedback.trim(), ctx, { recipients: [idea.ownerId], type: "feedback", title: "رُفضت الفكرة", body: `${idea.title} · ${feedback.trim()}` });
   if (decision === "approved") approvalReady(idea);
   const next: Idea = { ...idea, status: decision, managerFeedback: feedback.trim(), ...(decision === "approved" ? { approvedAt: now(ctx) } : {}) };
-  return commitIdea(data, actor, idea, next, decision === "approved" ? "approved" : "changes_requested", decision === "approved" ? "تم اعتماد الفكرة وإحالتها تلقائياً إلى فريق التصميم" : feedback.trim(), ctx, { recipients: decision === "approved" ? [idea.ownerId, ...data.members.filter((member) => member.role === "designer").map((member) => member.id)] : [idea.ownerId], type: decision === "approved" ? "assignment" : "feedback", title: decision === "approved" ? "فكرة معتمدة جاهزة للجدولة" : "الفكرة تحتاج تعديلاً", body: decision === "approved" ? idea.title : feedback.trim() });
+  return commitIdea(data, actor, idea, next, decision === "approved" ? "approved" : "changes_requested", decision === "approved" ? "تم اعتماد الفكرة وإحالتها تلقائياً إلى فريق التصميم" : feedback.trim(), ctx, { recipients: decision === "approved" ? [idea.ownerId, ...data.members.filter((member) => member.role === "designer").map((member) => member.id)] : [idea.ownerId], type: decision === "approved" ? "assignment" : "feedback", title: decision === "approved" ? "فكرة معتمدة جاهزة للجدولة" : "الفكرة تحتاج تعديلاً", body: decision === "approved" ? idea.title : `${idea.title} · ${feedback.trim()}` });
 }
 export function scheduleMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, input: ScheduleInput, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertDesign(data, actor, idea);
@@ -197,9 +197,6 @@ export function addMediaComment(data: MediaData, actor: TeamMember, ideaId: stri
   if (!isAdministrator(actor) && actor.role !== "manager" && actor.id !== idea.ownerId && actor.id !== idea.designerId) throw new WorkflowError("التعليق متاح للأعضاء المعنيين بهذه الفكرة.", "FORBIDDEN", 403);
   if (!text.trim() || text.length > 4000) throw new WorkflowError("أدخل تعليقاً واضحاً لا يتجاوز ٤٠٠٠ حرف.");
   return commitIdea(data, actor, idea, idea, "comment", text.trim(), ctx, { recipients: [idea.ownerId, idea.designerId].filter((memberId) => memberId && memberId !== actor.id), type: "comment", title: "تعليق جديد على الفكرة", body: `${actor.name}: ${text.trim()}` });
-}
-export function markMediaNotificationsRead(data: MediaData, actor: TeamMember, ids?: string[]): MediaData {
-  requireActor(data, actor); return { ...data, notifications: data.notifications.map((item) => item.recipientId === actor.id && (!ids || ids.includes(item.id)) ? { ...item, read: true } : item) };
 }
 export function updateMediaSettings(data: MediaData, actor: TeamMember, patch: Partial<SystemSettings>): MediaData {
   requireRole(data, actor, ["admin"]); const result = { ...data, settings: { ...data.settings, ...patch } }; validateMediaData(result); return result;
@@ -316,73 +313,4 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
   for (const notice of value.notifications) { keys(notice, ["id", "recipientId", "ideaId", "title", "body", "type", "createdAt", "read"]); textFields(notice, ["id", "recipientId", "ideaId", "title", "body", "type"]); if (!memberIds.has(notice.recipientId as string) || !ideaIds.has(notice.ideaId as string) || !["approval", "feedback", "assignment", "quotation", "delivery", "comment", "archive", "reminder"].includes(notice.type as string) || !dateTime(notice.createdAt) || typeof notice.read !== "boolean") fail(); }
 }
 
-function canonical(value: unknown): string {
-  function sort(item: unknown): unknown { if (Array.isArray(item)) return item.map(sort); if (plain(item)) return Object.fromEntries(Object.keys(item).filter((key) => item[key] !== undefined).sort().map((key) => [key, sort(item[key])])); return item; }
-  return JSON.stringify(sort(value));
-}
-function assertSame(expected: unknown, actual: unknown) { if (canonical(expected) !== canonical(actual)) throw new WorkflowError("رُفض التحديث لأنه يتضمن تغييرات غير مسموحة. أعد تحميل البيانات وحاول مرة أخرى.", "FORBIDDEN_MUTATION", 403); }
-function normalizeGenerated(data: MediaData, previous: MediaData): MediaData {
-  return { ...data, ideas: data.ideas.map((idea) => ({ ...idea, history: idea.history.map((event, index) => index >= (previous.ideas.find((old) => old.id === idea.id)?.history.length ?? 0) ? { ...event, id: "generated" } : event) })), notifications: data.notifications.map((notice) => previous.notifications.some((old) => old.id === notice.id) ? notice : { ...notice, id: "generated" }) };
-}
 
-/** Replays one authorized operation, including its expected audit event and notifications. */
-export function validateMediaMutation(previous: MediaData, next: MediaData, actor: TeamMember): void {
-  validateMediaData(next); requireActor(previous, actor);
-  const changedIdeas = next.ideas.filter((idea) => canonical(idea) !== canonical(previous.ideas.find((old) => old.id === idea.id)));
-  if (previous.ideas.some((idea) => !next.ideas.some((item) => item.id === idea.id)) || changedIdeas.length > 1) throw new WorkflowError("أرسل تحديثاً واحداً في كل مرة دون حذف الأفكار المؤرشفة.", "FORBIDDEN_MUTATION", 403);
-  if (changedIdeas.length === 0) {
-    const changedSections = (["companies", "categories", "members", "settings", "notifications"] as const).filter((key) => canonical(previous[key]) !== canonical(next[key]));
-    if (!changedSections.length) { assertSame(previous, next); return; }
-    if (changedSections.length !== 1) throw new WorkflowError("أرسل تغييراً واحداً في كل مرة.", "FORBIDDEN_MUTATION", 403);
-    const section = changedSections[0];
-    if (section === "notifications") {
-      if (next.notifications.length !== previous.notifications.length) throw new WorkflowError("لا يمكن إنشاء الإشعارات أو حذفها مباشرة.", "FORBIDDEN_MUTATION", 403);
-      for (const notice of next.notifications) { const old = previous.notifications.find((item) => item.id === notice.id); if (!old) fail(); assertSame({ ...old, read: old.recipientId === actor.id ? notice.read : old.read }, notice); if (old.read && !notice.read) throw new WorkflowError("لا يمكن إلغاء قراءة الإشعار.", "FORBIDDEN_MUTATION", 403); }
-      return;
-    }
-    requireRole(previous, actor, ["admin"]);
-    if (section === "settings") { assertSame({ ...previous, settings: next.settings }, next); return; }
-    if (section === "members") {
-      if (next.members.length === previous.members.length + 1) {
-        const added = next.members.at(-1)!;
-        assertSame(addMediaMember(previous, actor, { name: added.name, title: added.title, role: added.role as NewMemberInput["role"] }, { id: () => added.id }), next); return;
-      }
-      const modified = next.members.filter((member) => canonical(member) !== canonical(previous.members.find((old) => old.id === member.id)));
-      if (next.members.length !== previous.members.length || modified.length !== 1) throw new WorkflowError("يمكن تعديل عضو واحد دون حذف أعضاء الفريق.", "FORBIDDEN_MUTATION", 403);
-      const member = modified[0];
-      const oldMember = previous.members.find((item) => item.id === member.id)!;
-      const patch = Object.fromEntries((["name", "title", "active", "role"] as const).filter((key) => member[key] !== oldMember[key]).map((key) => [key, member[key]])) as MemberPatch;
-      assertSame(updateMediaMember(previous, actor, member.id, patch), next); return;
-    }
-    const oldItems = previous[section], newItems = next[section];
-    if (newItems.length !== oldItems.length + 1 || canonical(oldItems) !== canonical(newItems.slice(0, -1))) throw new WorkflowError("يمكن إضافة الشركات والتصنيفات دون حذف السجلات المستخدمة.", "FORBIDDEN_MUTATION", 403);
-    return;
-  }
-  const changed = changedIdeas[0], old = previous.ideas.find((idea) => idea.id === changed.id);
-  if (!old) {
-    if (changed.history.length !== 1) fail(); const event = changed.history[0];
-    if (event.actorId !== actor.id || event.action !== "created" || !dateTime(event.at) || Math.abs(new Date(event.at).getTime() - Date.now()) > 5 * 60 * 1000) throw new WorkflowError("سجل إنشاء الفكرة غير صحيح.", "FORBIDDEN_MUTATION", 403);
-    const input = Object.fromEntries(patchKeys.map((key) => [key, changed[key]])) as NewIdeaInput;
-    let count = 0; const expected = createMediaIdea(previous, actor, input, { now: event.at, id: () => count++ === 0 ? changed.id : event.id }); assertSame(expected, next); return;
-  }
-  if (changed.history.length !== old.history.length + 1 || canonical(changed.history.slice(0, -1)) !== canonical(old.history)) throw new WorkflowError("لا يمكن تغيير سجل النشاط السابق.", "FORBIDDEN_MUTATION", 403);
-  const event = changed.history.at(-1)!;
-  if (event.actorId !== actor.id || !dateTime(event.at) || Math.abs(new Date(event.at).getTime() - Date.now()) > 5 * 60 * 1000) throw new WorkflowError("هوية إجراء التحديث أو توقيته غير صحيح.", "FORBIDDEN_MUTATION", 403);
-  const ctx = { now: event.at };
-  let expected: MediaData;
-  switch (event.action) {
-    case "edited": expected = patchMediaIdea(previous, actor, old.id, Object.fromEntries(patchKeys.filter((key) => canonical(old[key]) !== canonical(changed[key])).map((key) => [key, changed[key]])) as IdeaPatch, ctx); break;
-    case "submitted": expected = submitMediaIdea(previous, actor, old.id, ctx); break;
-    case "approved": expected = reviewMediaIdea(previous, actor, old.id, "approved", changed.managerFeedback, ctx); break;
-    case "changes_requested": expected = reviewMediaIdea(previous, actor, old.id, "changes", changed.managerFeedback, ctx); break;
-    case "scheduled": expected = scheduleMediaIdea(previous, actor, old.id, { designerId: changed.designerId, scheduledAt: changed.scheduledAt, dueDate: changed.dueDate, priority: changed.priority }, ctx); break;
-    case "design_started": case "design_review": case "delivered": expected = changeMediaDesignStatus(previous, actor, old.id, event.action === "design_started" ? "designing" : event.action === "design_review" ? "design_review" : "delivered", ctx); break;
-    case "attachments_added": expected = addMediaAttachments(previous, actor, old.id, changed.attachments.filter((file) => !old.attachments.some((item) => item.id === file.id)), ctx); break;
-    case "attachment_removed": { const removed = old.attachments.filter((file) => !changed.attachments.some((item) => item.id === file.id)); if (removed.length !== 1) fail(); expected = removeMediaAttachment(previous, actor, old.id, removed[0].id, ctx); break; }
-    case "quotation_added": { const added = changed.quotations.filter((quote) => !old.quotations.some((item) => item.id === quote.id)); if (added.length !== 1) fail(); expected = addMediaQuotation(previous, actor, old.id, added[0], ctx); break; }
-    case "quotation_removed": { const removed = old.quotations.filter((quote) => !changed.quotations.some((item) => item.id === quote.id)); if (removed.length !== 1) fail(); expected = removeMediaQuotation(previous, actor, old.id, removed[0].id, ctx); break; }
-    case "comment": expected = addMediaComment(previous, actor, old.id, event.note, ctx); break;
-    default: throw new WorkflowError("إجراء غير مسموح في سجل النشاط.", "FORBIDDEN_MUTATION", 403);
-  }
-  assertSame(normalizeGenerated(expected, previous), normalizeGenerated(next, previous));
-}
