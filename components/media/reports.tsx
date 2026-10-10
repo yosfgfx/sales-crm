@@ -114,9 +114,10 @@ export function Reports({ data, onOpenIdea }: Props) {
             disabled={!!exporting}
           >
             <Icon name="report" className="size-4" />
-            {exporting === "pdf" ? "جارٍ التجهيز…" : "تصدير PDF"}
+            {exporting === "pdf" ? "جارٍ التجهيز…" : "حفظ PDF"}
           </ActionButton>
         </div>
+        <p className="w-full text-xs text-[var(--soft)]">«حفظ PDF» يفتح نافذة الطباعة بأدق عرض للنص العربي. اختر فيها «حفظ بتنسيق PDF».</p>
       </div>
       {error && (
         <p

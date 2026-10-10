@@ -412,13 +412,13 @@ export async function createMonthlyWorkbook(
     [],
     ["الشركة المستفيدة", "العدد"],
     ...report.companies.map((company) => [
-      spreadsheetText(company.name),
+      company.name,
       company.count,
     ]),
     [],
     ["إدارة الطلب", "العدد"],
     ...report.departments.map((department) => [
-      spreadsheetText(department.name),
+      department.name,
       department.count,
     ]),
     [],
@@ -443,7 +443,7 @@ export async function createMonthlyWorkbook(
   for (const values of reportRows(data, month)) {
     const row = register.addRow(
       values.map((value) =>
-        typeof value === "string" ? spreadsheetText(value) : value,
+        value,
       ),
     );
     for (const column of [7, 8, 9]) {
@@ -485,7 +485,7 @@ export async function createMonthlyWorkbook(
           idea.attachments.find((file) => file.id === quotation.attachmentId)
             ?.name || "",
         ].map((value) =>
-          typeof value === "string" ? spreadsheetText(value) : value,
+          value,
         ),
       );
   quotes.getColumn(4).numFmt = '#,##0.00 "ر.س"';
@@ -1108,11 +1108,15 @@ function safeFilename(value: string): string {
   );
 }
 
+const BUNDLE_LIMIT = 300 * 1024 * 1024;
+
 /** Complete approval package preserves arbitrary original files beside the deck. */
 export async function createApprovalBundle(
   idea: Idea,
   data: MediaData,
 ): Promise<Blob> {
+  const total = idea.attachments.reduce((sum, file) => sum + file.size, 0);
+  if (total > BUNDLE_LIMIT) throw new Error(`حجم المرفقات ${Math.ceil(total / 1024 / 1024)} ميجابايت أكبر من حد الحزمة (${BUNDLE_LIMIT / 1024 / 1024} ميجابايت). نزّل الملفات الكبيرة من تبويب الملفات، أو افتح مجلد المشروع في Drive من حساب مدير النظام.`);
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   zip.file(
