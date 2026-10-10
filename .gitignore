@@ -42,3 +42,6 @@ next-env.d.ts
 
 /.media-data/
 /tmp/media-tests/
+
+# Google OAuth client secret downloads
+client_secret_*.json
