@@ -156,7 +156,7 @@ export default function Archive({
                           {idea.title}
                         </span>
                       </ActionButton>
-                      <p className="text-xs text-[var(--soft)]">
+                      <div className="text-xs text-[var(--soft)]">
                         <CompanyLogo
                           companyId={idea.companyId}
                           decorative
@@ -168,7 +168,7 @@ export default function Archive({
                               ?.name
                           }
                         </span>
-                      </p>
+                      </div>
                       <div className="flex items-center justify-between gap-2 text-xs text-[var(--soft)]">
                         <span>{formatDate(idea.deliveredAt)}</span>
                         <span>{ARCHIVE_LABELS[idea.archive?.status || "not_started"]}</span>

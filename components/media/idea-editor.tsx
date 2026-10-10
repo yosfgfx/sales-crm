@@ -3,20 +3,17 @@
 import { useState, type FormEvent } from "react";
 import {
   CHANNEL_LABELS,
-  PRIORITY_LABELS,
-  memberDisplayLabel,
-  WORK_TYPE_LABELS,
   type Attachment,
   type Channel,
   type Idea,
   type NewIdeaInput,
-  type Priority,
-  type WorkType,
 } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, Icon, Modal, bytes, errorText, today } from "./ui";
-import { CompanyLogo } from "./company-logo";
 import { isAdministrator } from "@/lib/media-workflow";
+import { RequestSection } from "./idea-editor/request-section";
+import { CoordinationSection } from "./idea-editor/coordination-section";
+
 
 import { uploadFiles } from "@/lib/upload-client";
 
@@ -183,101 +180,7 @@ function EditorForm({
               </p>
             </div>
           )}
-          <section className="space-y-4">
-            <h2>بيانات الطلب</h2>
-            <label className="media-label">
-              عنوان الفكرة <span className="text-[var(--danger)]">*</span>
-              <input
-                name="title"
-                className="media-input mt-2"
-                required
-                maxLength={160}
-                autoFocus
-                value={form.title}
-                placeholder="مثال: حملة الصحة النفسية للموظفين"
-                onChange={(e) => update("title", e.target.value)}
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="media-label">
-                الشركة المعنية بالنشر
-                <select
-                  required
-                  className="media-input mt-2"
-                  value={form.companyId}
-                  onChange={(e) => update("companyId", e.target.value)}
-                >
-                  {store.data.companies.filter((c) => c.active !== false || c.id === form.companyId).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <CompanyLogo
-                  companyId={form.companyId}
-                  decorative
-                  className="mt-2 h-10 w-32"
-                />
-              </label>
-              <label className="media-label">
-                الإدارة المستفيدة أو جهة الطلب
-                <input
-                  name="department"
-                  required
-                  list="departments"
-                  className="media-input mt-2"
-                  maxLength={120}
-                  value={form.department}
-                  placeholder="مثال: إدارة الموارد البشرية"
-                  onChange={(e) => update("department", e.target.value)}
-                />
-                <datalist id="departments">
-                  {[
-                    ...new Set([
-                      "إدارة الموارد البشرية",
-                      "إدارة الصحة والعافية المؤسسية",
-                      "إدارة تقنية المعلومات",
-                      "الإدارة التنفيذية",
-                      "إدارة التطوير المؤسسي",
-                      ...store.data.ideas.map((i) => i.department),
-                    ]),
-                  ].map((d) => (
-                    <option key={d} value={d} />
-                  ))}
-                </datalist>
-              </label>
-              <label className="media-label">
-                تصنيف المحتوى
-                <select
-                  className="media-input mt-2"
-                  value={form.categoryId}
-                  onChange={(e) => update("categoryId", e.target.value)}
-                >
-                  {store.data.categories.filter((c) => c.active !== false || c.id === form.categoryId).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="media-label">
-                نوع العمل
-                <select
-                  className="media-input mt-2"
-                  value={form.workType}
-                  onChange={(e) =>
-                    update("workType", e.target.value as WorkType)
-                  }
-                >
-                  {Object.entries(WORK_TYPE_LABELS).map(([id, label]) => (
-                    <option key={id} value={id}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </section>
+          <RequestSection form={form} update={update} store={store} />
           <section className="space-y-4 border-t border-[var(--border)] pt-6">
             <h2>الفكرة والمحتوى</h2>
             <label className="media-label">
@@ -357,85 +260,7 @@ function EditorForm({
               </div>
             </fieldset>
           </section>
-          <section className="space-y-4 border-t border-[var(--border)] pt-6">
-            <h2>التنسيق والمواعيد</h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="media-label">
-                مسؤول المحتوى والتنسيق
-                <select
-                  className="media-input mt-2"
-                  value={form.ownerId}
-                  disabled={!isAdministrator(store.currentUser)}
-                  onChange={(e) => update("ownerId", e.target.value)}
-                >
-                  {store.data.members
-                    .filter(
-                      (m) =>
-                        (m.role === "content" || isAdministrator(m)) &&
-                        m.active,
-                    )
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} · {memberDisplayLabel(m)}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="media-label">
-                الأولوية
-                <select
-                  className="media-input mt-2"
-                  value={form.priority}
-                  onChange={(e) =>
-                    update("priority", e.target.value as Priority)
-                  }
-                >
-                  {Object.entries(PRIORITY_LABELS).map(([id, label]) => (
-                    <option key={id} value={id}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="media-label">
-                تاريخ الطلب
-                <input
-                  type="date"
-                  required
-                  className="media-input mt-2"
-                  value={form.requestedAt}
-                  onChange={(e) => update("requestedAt", e.target.value)}
-                />
-              </label>
-              <label className="media-label">
-                موعد التسليم المطلوب
-                <input
-                  type="date"
-                  required
-                  min={form.requestedAt}
-                  className="media-input mt-2"
-                  value={form.dueDate}
-                  onChange={(e) => update("dueDate", e.target.value)}
-                />
-              </label>
-            </div>
-            <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-[var(--background)] p-4">
-              <input
-                type="checkbox"
-                className="mt-1 size-4 accent-[var(--primary)]"
-                checked={form.needsQuotes}
-                onChange={(e) => update("needsQuotes", e.target.checked)}
-              />
-              <span>
-                <span className="block font-medium">
-                  يتطلب عروض أسعار من جهة خارجية
-                </span>
-                <span className="mt-1 block text-xs leading-relaxed text-[var(--soft)]">
-                  تُجمع العروض ومرفقاتها داخل الفكرة قبل إرسالها للاعتماد.
-                </span>
-              </span>
-            </label>
-          </section>
+          <CoordinationSection form={form} update={update} store={store} />
           <section className="space-y-3 border-t border-[var(--border)] pt-6">
             <h2>مرفقات الفكرة</h2>
             <label className="block cursor-pointer rounded-xl border border-dashed border-[#c6bcdf] bg-[var(--background)] p-6 text-center">
