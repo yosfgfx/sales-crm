@@ -17,7 +17,8 @@ interface OperationResult {
 export interface MediaState {
   data: MediaData; version: number; currentUser: TeamMember | null; loading: boolean; saving: boolean;
   error: string | null; initialized: boolean; demo: boolean; configured: boolean; mfa: { enabled: boolean; required: boolean } | null;
-  accounts: AccountSummary[]; accountsLoaded: boolean;
+  accounts: AccountSummary[]; accountsLoaded: boolean; lastFailed: (() => Promise<unknown>) | null;
+  retryLast: () => Promise<void>;
   initialize: () => Promise<void>; refresh: () => Promise<void>;
   setCurrentUser: (memberId: string, password?: string, code?: string) => Promise<void>;
   createIdea: (input: NewIdeaInput) => Promise<Idea>;
@@ -125,6 +126,7 @@ function mutateAccount<T = void>(operation: Record<string, unknown>, select?: (n
 }
 
 function operate<T = void>(operation: Record<string, unknown>, select?: (result: OperationResult) => T): Promise<T> {
+  useMediaStore.setState({ lastFailed: null });
   return enqueue(async () => {
     if (refreshPromise) await refreshPromise;
     const { currentUser, initialized } = useMediaStore.getState();
@@ -143,6 +145,7 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
       return select ? select(result) : undefined as T;
     } catch (error) {
       if (error instanceof WorkflowError && error.status === 401) signedOut();
+      else if (!(error instanceof WorkflowError) || error.status === 0 || error.status >= 500) useMediaStore.setState({ lastFailed: (): Promise<unknown> => operate(operation, select) });
       throw error;
     }
   });
@@ -151,7 +154,14 @@ function operate<T = void>(operation: Record<string, unknown>, select?: (result:
 export const useMediaStore = create<MediaState>(() => ({
   data: emptyData(), version: 0, currentUser: null, loading: true, saving: false, error: null,
   initialized: false, demo: false, configured: true, mfa: null,
-  accounts: [], accountsLoaded: false,
+  accounts: [], accountsLoaded: false, lastFailed: null,
+  retryLast: async (): Promise<void> => {
+    const state: MediaState = useMediaStore.getState();
+    const action = state.lastFailed;
+    if (!action) return state.refresh();
+    useMediaStore.setState({ lastFailed: null });
+    await action();
+  },
   initialize: () => {
     if (useMediaStore.getState().initialized) return Promise.resolve();
     if (!initialization) initialization = (async () => {

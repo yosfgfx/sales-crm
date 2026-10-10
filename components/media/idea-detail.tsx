@@ -10,6 +10,7 @@ import {
   type Idea,
   type Priority,
 } from "@/data/media";
+import { postJson } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import {
   ActionButton,
@@ -628,9 +629,7 @@ export default function IdeaDetail({
                         disabled={busy}
                         onClick={() =>
                           void run(async () => {
-                            const response = await fetch("/api/integrations/google", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "retryArchive", ideaId: idea.id }) });
-                            const result = await response.json().catch(() => ({}));
-                            if (!response.ok) throw new Error(result.error || "تعذّرت إعادة محاولة الأرشفة.");
+                            await postJson("/api/integrations/google", { action: "retryArchive", ideaId: idea.id });
                             await useMediaStore.getState().refresh();
                           }, "أُعيدت محاولة الأرشفة.")
                         }

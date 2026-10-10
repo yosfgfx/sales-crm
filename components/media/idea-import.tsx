@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CHANNEL_LABELS, WORK_TYPE_LABELS, type Channel, type WorkType } from "@/data/media";
 import { IMPORT_HEADERS, OPTIONAL_HEADERS } from "@/lib/idea-import";
+import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, Icon, errorText } from "./ui";
 
@@ -13,13 +14,7 @@ interface Preview {
 }
 const CONFIRMATION = "حذف البيانات التجريبية";
 
-async function send<T>(input: string, init: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  let payload: T & { error?: string };
-  try { payload = await response.json(); } catch { throw new Error("تعذّر الوصول إلى النظام الآن. أعد المحاولة بعد قليل."); }
-  if (!response.ok) throw new Error(payload.error || "تعذّر تنفيذ الطلب.");
-  return payload;
-}
+const send = <T,>(input: string, init: RequestInit) => apiRequest<T>(input, init);
 
 export default function IdeaImport() {
   const { data } = useMediaStore();

@@ -137,3 +137,17 @@ test("a relogin response or expired session clears private data", async () => {
   assert.equal(second.store.getState().currentUser, null);
   assert.equal(second.store.getState().data.ideas.length, 0);
 });
+
+test("retry repeats the action that failed on the network (M11)", async () => {
+  const { store, remote, handlers } = fixture();
+  await store.getState().initialize();
+  const bodies = [];
+  let fail = true;
+  handlers["/api/ops"] = (body) => { bodies.push(body); if (fail) throw new TypeError("Failed to fetch"); return Response.json({ idea: remote.ideas[0], notifications: [] }); };
+  await assert.rejects(store.getState().addComment("idea-001", "تعليق مهم"));
+  assert.ok(store.getState().lastFailed);
+  fail = false;
+  await store.getState().retryLast();
+  assert.deepEqual(bodies.map((body) => body.text), ["تعليق مهم", "تعليق مهم"]);
+  assert.equal(store.getState().lastFailed, null);
+});

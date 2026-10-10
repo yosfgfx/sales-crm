@@ -1,10 +1,8 @@
 import type { Attachment, Channel } from "@/data/media";
+import { apiRequest, postJson } from "@/lib/api-client";
+import { WorkflowError } from "@/lib/media-workflow";
 
 type Progress = (sent: number, total: number) => void;
-
-async function json<T>(response: Response): Promise<T & { error?: string; code?: string; current?: { received?: number } }> {
-  try { return await response.json(); } catch { throw new Error(response.ok ? "تعذّر قراءة استجابة النظام." : "تعذّر الوصول إلى النظام الآن. أعد المحاولة بعد قليل."); }
-}
 
 async function legacyUpload(files: File[], ideaId: string, kind: Attachment["kind"], channel?: Channel): Promise<Attachment[]> {
   const form = new FormData();
@@ -12,37 +10,34 @@ async function legacyUpload(files: File[], ideaId: string, kind: Attachment["kin
   form.set("ideaId", ideaId);
   form.set("kind", kind);
   if (channel) form.set("channel", channel);
-  const response = await fetch("/api/files", { method: "POST", body: form });
-  const result = await json<{ files: Attachment[] }>(response);
-  if (!response.ok) throw new Error(result.error || "تعذّر رفع الملفات. أعد المحاولة.");
-  return result.files;
+  return (await apiRequest<{ files: Attachment[] }>("/api/files", { method: "POST", body: form })).files;
 }
 
-async function sendWithRetry(url: string, body: Blob) {
+async function sendChunk(url: string, body: Blob) {
   for (let attempt = 1; ; attempt++) {
-    try {
-      const response = await fetch(url, { method: "PUT", body, headers: { "Content-Type": "application/octet-stream" } });
-      if (response.status >= 500 && attempt < 4) throw new Error("retry");
-      return response;
-    } catch (error) {
-      if (attempt >= 4) throw error instanceof Error && error.message !== "retry" ? new Error("انقطع الاتصال أثناء رفع الملف. أعد المحاولة لاستكماله.") : new Error("تعذّر رفع الملف الآن. أعد المحاولة.");
+    try { return await apiRequest<{ done: boolean; received?: number; attachment?: Attachment }>(url, { method: "PUT", body, headers: { "Content-Type": "application/octet-stream" } }); }
+    catch (error) {
+      const retryable = error instanceof WorkflowError && (error.status === 0 || error.status >= 500);
+      if (!retryable || attempt >= 4) throw error;
       await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
     }
   }
 }
 
 async function chunkedUpload(file: File, ideaId: string, kind: Attachment["kind"], channel: Channel | undefined, onProgress?: Progress): Promise<Attachment | "fallback"> {
-  const start = await fetch("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ideaId, kind, channel, name: file.name, size: file.size, mime: file.type || "application/octet-stream" }) });
-  const session = await json<{ uploadId: string; chunkSize: number; received: number }>(start);
-  if (start.status === 409 && session.code === "DRIVE_NOT_CONNECTED") return "fallback";
-  if (!start.ok) throw new Error(session.error || "تعذّر بدء رفع الملف.");
+  let session: { uploadId: string; chunkSize: number; received: number };
+  try { session = await postJson("/api/uploads", { ideaId, kind, channel, name: file.name, size: file.size, mime: file.type || "application/octet-stream" }); }
+  catch (error) { if (error instanceof WorkflowError && error.code === "DRIVE_NOT_CONNECTED") return "fallback"; throw error; }
   let offset = session.received;
   for (;;) {
     const end = Math.min(offset + session.chunkSize, file.size);
-    const response = await sendWithRetry(`/api/uploads/${session.uploadId}?offset=${offset}`, file.slice(offset, end));
-    const result = await json<{ done: boolean; received?: number; attachment?: Attachment }>(response);
-    if (response.status === 409 && result.code === "UPLOAD_OFFSET" && typeof result.current?.received === "number") { offset = result.current.received; continue; }
-    if (!response.ok) throw new Error(result.error || "تعذّر رفع جزء من الملف.");
+    let result: { done: boolean; received?: number; attachment?: Attachment };
+    try { result = await sendChunk(`/api/uploads/${session.uploadId}?offset=${offset}`, file.slice(offset, end)); }
+    catch (error) {
+      const current = (error as { current?: { received?: number } }).current;
+      if (error instanceof WorkflowError && error.code === "UPLOAD_OFFSET" && typeof current?.received === "number") { offset = current.received; continue; }
+      throw error;
+    }
     if (result.done && result.attachment) { onProgress?.(file.size, file.size); return result.attachment; }
     offset = result.received ?? end;
     onProgress?.(offset, file.size);

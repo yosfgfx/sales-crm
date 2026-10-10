@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import TeamSettings from "./team-settings";
 import Asset from "@/components/_ui/asset";
@@ -53,10 +54,7 @@ export default function Administration({
         const form = new FormData();
         form.append("files", logoFile);
         form.set("kind", "logo");
-        const res = await fetch("/api/files", { method: "POST", body: form });
-        const json = await res.json();
-        if (!res.ok)
-          throw new Error(json.error || "تعذر رفع الشعار. أعد المحاولة.");
+        const json = await apiRequest<{ files: { url: string }[] }>("/api/files", { method: "POST", body: form });
         logoUrl = json.files[0].url;
         setSettings((prev) => ({ ...prev, logoUrl }));
         setLogoFile(null);

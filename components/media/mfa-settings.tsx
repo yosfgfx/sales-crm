@@ -2,16 +2,11 @@
 
 import Asset from "@/components/_ui/asset";
 import { useState } from "react";
+import { postJson } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, errorText } from "./ui";
 
-async function call<T>(body: Record<string, unknown>): Promise<T> {
-  const response = await fetch("/api/account/mfa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  let payload: T & { error?: string };
-  try { payload = await response.json(); } catch { throw new Error("تعذّر الوصول إلى النظام الآن. أعد المحاولة بعد قليل."); }
-  if (!response.ok) throw new Error(payload.error || "تعذّر تنفيذ الطلب.");
-  return payload;
-}
+const call = <T,>(body: Record<string, unknown>) => postJson<T>("/api/account/mfa", body);
 
 export default function MfaSettings() {
   const mfa = useMediaStore((store) => store.mfa);

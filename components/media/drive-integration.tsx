@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { apiRequest, postJson } from "@/lib/api-client";
 import { formatMediaDate } from "@/lib/media-workflow";
 import { ActionButton, Icon, errorText } from "./ui";
 
@@ -19,13 +20,7 @@ declare global {
   }
 }
 
-async function call<T>(body?: Record<string, unknown>): Promise<T> {
-  const response = await fetch("/api/integrations/google", body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
-  let payload: T & { error?: string };
-  try { payload = await response.json(); } catch { throw new Error("تعذّر الوصول إلى النظام الآن. أعد المحاولة بعد قليل."); }
-  if (!response.ok) throw new Error(payload.error || "تعذّر تنفيذ الطلب.");
-  return payload;
-}
+const call = <T,>(body?: Record<string, unknown>) => (body ? postJson<T>("/api/integrations/google", body) : apiRequest<T>("/api/integrations/google"));
 
 let pickerReady: Promise<void> | null = null;
 function loadPicker() {

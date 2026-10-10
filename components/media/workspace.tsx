@@ -512,7 +512,7 @@ export default function MediaWorkspace() {
               <span>{notice || error}</span>
               <div className="flex gap-2">
                 {error && (
-                  <ActionButton onClick={() => void run(() => store.refresh())}>
+                  <ActionButton onClick={() => void run(() => store.retryLast(), store.lastFailed ? "أُعيد تنفيذ الإجراء." : undefined)}>
                     <Icon name="refresh" className="size-4" />
                     إعادة المحاولة
                   </ActionButton>
