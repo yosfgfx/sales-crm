@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import { useState } from "react";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, errorText } from "./ui";
@@ -42,7 +42,7 @@ export default function MfaSettings() {
       ) : setup ? (
         <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); void run(async () => { await call({ action: "confirm", code }); setSetup(null); setCode(""); await useMediaStore.getState().refresh(); setMessage("فُعّل التحقق بخطوتين."); }); }}>
           <p className="text-sm">امسح الرمز بتطبيق Google Authenticator أو Microsoft Authenticator، ثم اكتب الرمز المكوّن من 6 أرقام.</p>
-          <Image unoptimized src={setup.qr} alt="رمز QR لإضافة حساب وصل إلى تطبيق المصادقة" width={180} height={180} className="rounded-lg border border-[var(--border)]" />
+          <Asset type="image" src={setup.qr} alt="رمز QR لإضافة حساب وصل إلى تطبيق المصادقة" width={1} height={1} fit="contain" className="max-w-44 rounded-lg border border-[var(--border)]" />
           <p className="text-xs text-[var(--soft)]">أو أدخل المفتاح يدوياً: <bdi dir="ltr" className="font-mono select-all">{setup.secret}</bdi></p>
           <label className="media-label">الرمز من التطبيق
             <input className="media-input mt-2 !w-36 text-center" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value)} dir="ltr" />

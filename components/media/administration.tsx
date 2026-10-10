@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useMediaStore } from "@/stores/media-store";
 import TeamSettings from "./team-settings";
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import { ActionButton, Icon, errorText } from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
@@ -298,13 +298,15 @@ export default function Administration({
               </label>
               <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-5">
                 {settings.logoUrl && (
-                  <Image
-                    unoptimized
-                    width={400}
-                    height={120}
+                  <Asset
+                    type="image"
+                    width={10}
+                    height={3}
+                    fit="contain"
+                    sizes="320px"
                     src={settings.logoUrl}
                     alt="شعار الإدارة الحالي"
-                    className="mb-5 h-24 max-w-full object-contain"
+                    className="mb-5 max-w-80"
                   />
                 )}
                 <label className="media-label">

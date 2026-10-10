@@ -115,8 +115,7 @@ export default function TeamSettings() {
                   )}
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-[var(--soft)]">
-                  {memberDisplayLabel(member) === "قسم التصميم والإنتاج" ||
-                  member.role === "designer"
+                  {member.role === "designer"
                     ? "يجدول الأعمال المعتمدة وينفذها ويسلّم النسخ النهائية ويؤرشفها."
                     : member.role === "superadmin"
                       ? "يتابع أعمال الفريق من الفكرة حتى التسليم والأرشفة."

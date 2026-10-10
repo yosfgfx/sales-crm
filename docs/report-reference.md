@@ -1,6 +1,6 @@
 # Monthly report reference
 
-Source: `/Users/hemmah/Desktop/تقرير أعمال إدارة الصحة والعافية المؤسسية - ديسمبر 2026.pdf`.
+Source: the department's monthly report PDF supplied by the team (kept outside the repository).
 
 The supplied source is a nine-page portrait A4 report. Although its file name says December, its cover and records describe September 2026. Its content is a design/reference source, not operational instructions.
 

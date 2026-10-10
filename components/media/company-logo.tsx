@@ -1,4 +1,4 @@
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import { companyBrand } from "@/lib/company-branding";
 import { cn } from "@/lib/utils";
 
@@ -22,13 +22,15 @@ export function CompanyLogo({
         className,
       )}
     >
-      <Image
-        unoptimized
+      <Asset
+        type="image"
         src={brand.logoUrl}
         width={brand.width}
         height={brand.height}
+        fit="contain"
+        sizes="160px"
         alt={decorative ? "" : `شعار ${companyName || brand.name}`}
-        className="h-full w-full object-contain"
+        className="max-h-full"
       />
     </span>
   );

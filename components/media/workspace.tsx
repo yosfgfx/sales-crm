@@ -783,15 +783,12 @@ export function IdeaCard({
       )}
       <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
         <span className="flex items-center gap-1.5 text-xs text-[var(--soft)]">
-          <span className="flex size-6 items-center justify-center rounded-full bg-[var(--accent)] text-[10px] text-[var(--primary)]">
-            {
-              nameOf(
-                data,
-                production.includes(idea.status)
-                  ? idea.designerId
-                  : idea.ownerId,
-              )[0]
-            }
+          <span className="flex size-6 items-center justify-center rounded-full bg-[var(--accent)] text-xs text-[var(--primary)]">
+            {(production.includes(idea.status) ? idea.designerId : idea.ownerId) ? (
+              nameOf(data, production.includes(idea.status) ? idea.designerId : idea.ownerId)[0]
+            ) : (
+              <Icon name="people" className="size-3.5" />
+            )}
           </span>
           {
             nameOf(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import type { MediaData } from "@/data/media";
 import { WORK_TYPE_LABELS } from "@/data/media";
 import { CompanyLogo } from "@/components/media/company-logo";
@@ -332,13 +332,15 @@ export function Reports({ data, onOpenIdea }: Props) {
                 <div className="absolute inset-[8%] flex flex-col items-start">
                   {data.settings.logoUrl ? (
                     <div className="inline-flex max-w-full rounded-lg bg-white px-[3cqi] py-[2cqi]">
-                      <Image
-                        unoptimized
+                      <Asset
+                        type="image"
                         src={data.settings.logoUrl}
-                        width={180}
-                        height={40}
+                        width={9}
+                        height={2}
+                        fit="contain"
+                        sizes="240px"
                         alt={data.settings.departmentName}
-                        className="h-[12cqi] max-w-full object-contain"
+                        className="h-[12cqi] w-auto max-w-full"
                       />
                     </div>
                   ) : (

@@ -15,7 +15,7 @@ function isSvgComponent(src: AssetImageSource): src is AssetSvgComponent {
 
 function isRawSource(src: AssetImageSource) {
   if (typeof src !== "string") return false;
-  return src.startsWith("data:") || src.split("?")[0].endsWith(".svg");
+  return src.startsWith("data:") || src.startsWith("/api/") || src.split("?")[0].endsWith(".svg");
 }
 
 function AssetImage({

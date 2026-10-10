@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, pageMetadata } from "@/lib/seo";
 import ScrollToTop from "@/components/_common/scroll-to-top";
-import { SIDEBAR_WIDTH_SCRIPT } from "@/lib/sidebar";
 import "./globals.css";
 
 const thmanyahSans = localFont({
@@ -128,7 +127,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `history.scrollRestoration="manual";${LOCALE_SCRIPT}${SIDEBAR_WIDTH_SCRIPT}`,
+            __html: `history.scrollRestoration="manual";${LOCALE_SCRIPT}`,
           }}
         />
       </head>

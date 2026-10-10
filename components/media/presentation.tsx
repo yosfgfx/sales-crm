@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import type { Idea, MediaData } from "@/data/media";
 import {
   composeApprovalSlides,
@@ -76,13 +76,14 @@ export function PresentationPreview({
           />
           {data.settings.logoUrl && (
             <span className="flex h-12 w-36 items-center justify-center rounded-lg bg-white p-2">
-              <Image
-                unoptimized
+              <Asset
+                type="image"
                 src={data.settings.logoUrl}
-                width={180}
-                height={55}
+                width={36}
+                height={11}
+                fit="contain"
+                sizes="144px"
                 alt={data.settings.departmentName}
-                className="h-full w-full object-contain"
               />
             </span>
           )}
@@ -103,16 +104,16 @@ export function PresentationPreview({
             ))}
           </div>
           {slide.attachment?.mime.startsWith("image/") && (
-            <div className="relative h-40 w-full rounded-lg bg-white">
-              <Image
-                unoptimized
-                fill
-                sizes="(max-width: 640px) 90vw, 400px"
-                src={slide.attachment.url}
-                alt={slide.attachment.name}
-                className="rounded-lg object-contain"
-              />
-            </div>
+            <Asset
+              type="image"
+              width={5}
+              height={2}
+              fit="contain"
+              sizes="(max-width: 640px) 90vw, 400px"
+              src={slide.attachment.url}
+              alt={slide.attachment.name}
+              className="rounded-lg bg-white"
+            />
           )}
         </div>
       </div>

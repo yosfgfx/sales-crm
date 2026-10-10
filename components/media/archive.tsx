@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import Asset from "@/components/_ui/asset";
 import { WORK_TYPE_LABELS, type MediaData } from "@/data/media";
 import { CompanyLogo } from "./company-logo";
 import {
@@ -119,13 +119,13 @@ export default function Archive({
                       className="relative !flex aspect-[16/9] h-auto w-full !rounded-none !bg-[#e8eaf3] !p-0 !shadow-none"
                     >
                       {file?.mime.startsWith("image/") ? (
-                        <Image
-                          unoptimized
-                          width={640}
-                          height={360}
+                        <Asset
+                          type="image"
+                          width={16}
+                          height={9}
+                          sizes="(max-width: 768px) 100vw, 33vw"
                           alt={`معاينة ${idea.title}`}
                           src={file.url}
-                          className="h-full w-full object-cover"
                         />
                       ) : (
                         <div className="flex flex-col items-center gap-3 text-[var(--soft)]">

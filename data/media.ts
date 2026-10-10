@@ -53,7 +53,6 @@ export const ROLE_LABELS: Record<MemberRole, string> = { superadmin: "إدارة
 export function memberDisplayLabel(member: Pick<TeamMember, "title" | "role">): string {
   return member.title.trim() || ROLE_LABELS[member.role];
 }
-export const MEDIA_TODAY = "2026-10-08";
 
 export const MEDIA_COMPANIES: Company[] = [
   { id: "mawaredcom", name: "مواردكم لحلول الأعمال", shortName: "مواردكم", initials: "م", color: "#E0784A" },
