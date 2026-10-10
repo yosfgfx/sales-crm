@@ -13,7 +13,9 @@
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node scripts/test-media-server.cjs",
     "test:accounts": "node scripts/test-media-accounts.cjs",
-    "verify": "tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:accounts && next build"
+    "verify": "tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:accounts && npm run test:db && next build",
+    "test:db": "node --test tests/db-import.test.mjs",
+    "db": "node scripts/db.mjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.31.0",
@@ -27,6 +29,7 @@
     "lottie-react": "^2.4.1",
     "motion": "^12.23.22",
     "next": "^16.3.0",
+    "pg": "^8.13.1",
     "photoswipe": "^5.4.4",
     "pptxgenjs": "^4.0.1",
     "radix-ui": "^1.6.7",
@@ -38,9 +41,11 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.11.10",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "eslint": "^9",
