@@ -11,7 +11,7 @@ export interface TeamMember { id: string; name: string; role: MemberRole; title:
 export interface Attachment { id: string; name: string; size: number; mime: string; url: string; kind: "brief" | "quotation" | "final"; channel?: Channel; createdAt?: string }
 export interface Quotation { id: string; vendor: string; amount: number; scope: string; days: number; attachmentId?: string; recommended: boolean }
 export interface HistoryEvent { id: string; at: string; actorId: string; action: HistoryAction; note: string; from?: IdeaStatus; to?: IdeaStatus }
-export interface SourceProposal { batchId: string; row: number; proposerName: string; funding: string; originalGoal: string; originalConcept: string; sourceApproval: string; reviewNote?: string }
+export interface SourceProposal { batchId: string; row: number; proposerName: string; funding: string; originalGoal: string; originalConcept: string; sourceApproval: string; reviewNote?: string; contentType?: string; platform?: string; reference?: string; fileName?: string }
 export interface Idea {
   id: string; code: string; title: string; companyId: string; department: string; categoryId: string; workType: WorkType;
   description: string; content: string; executionPlan: string; channels: Channel[]; ownerId: string; designerId: string;

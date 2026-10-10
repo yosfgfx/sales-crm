@@ -12,10 +12,11 @@
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node --test tests/server.test.cjs",
-    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:db && next build",
+    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:db && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs",
-    "test:drive": "node --test tests/drive.test.cjs"
+    "test:drive": "node --test tests/drive.test.cjs",
+    "test:import": "node --test tests/import.test.cjs"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.31.0",

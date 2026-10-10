@@ -9,6 +9,7 @@ import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
 import DriveIntegration from "./drive-integration";
+import IdeaImport from "./idea-import";
 
 export default function Administration({
   onOpenIdea,
@@ -78,6 +79,7 @@ export default function Administration({
           { id: "team", label: "الفريق والصلاحيات" },
           { id: "identity", label: "هوية التقارير" },
           { id: "drive", label: "أرشيف Google Drive" },
+          { id: "import", label: "استيراد الأفكار" },
         ].map((t) => (
           <ActionButton
             key={t.id}
@@ -239,6 +241,7 @@ export default function Administration({
       )}
       {tab === "team" && <TeamSettings />}
       {tab === "drive" && <DriveIntegration notice={driveNotice} />}
+      {tab === "import" && <IdeaImport />}
       {tab === "identity" && (
         <form
           onSubmit={saveSettings}

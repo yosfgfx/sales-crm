@@ -36,7 +36,7 @@ async function createHarness() {
   data.members.push({ id: "root", name: "مالك النظام", role: "superadmin", title: "", initials: "م", color: "#4338ca", active: true });
   const accounts = [];
   for (const [memberId, password] of Object.entries(PASSWORDS)) accounts.push({ memberId, username: memberId, passwordHash: await auth.hashPassword(password), authVersion: 1 });
-  await importState(raw, { version: 1, data, authentication: { schema: 1, secret: "x".repeat(64), accounts } });
+  await importState(raw, { version: 1, data, authentication: { schema: 1, secret: "x".repeat(64), accounts } }, { demoIdeaIds: data.ideas.map((idea) => idea.id) });
   const database = { query: (text, params) => pg.query(text, params), transaction: (operation) => pg.transaction((tx) => operation({ query: (text, params) => tx.query(text, params) })) };
   useDatabaseForTests(database);
   const jsonRequest = (url, value, { cookie = "", origin = ORIGIN, ip = "10.0.0.1", method = "POST" } = {}) => new Request(`${ORIGIN}${url}`, { method, headers: { "content-type": "application/json", cookie, origin, "x-forwarded-for": ip }, body: JSON.stringify(value) });
