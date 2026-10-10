@@ -11,7 +11,7 @@ const textArray = (value: unknown): string[] => (Array.isArray(value) ? value.ma
 
 export function attachmentUrl(row: Row) {
   if (row.storage === "external") return text(row.external_url);
-  if (row.storage === "drive") return `/api/files/${row.id}${row.inline_mime ? "?inline=1" : ""}`;
+  if (row.storage === "drive" || row.storage === "supabase") return `/api/files/${row.id}${row.inline_mime ? "?inline=1" : ""}`;
   return `/api/files/${row.id}${row.inline_mime ? "?inline=1" : ""}`;
 }
 

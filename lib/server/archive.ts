@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { CHANNEL_LABELS, PRIORITY_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
 import { database, type Queryable } from "./db";
-import { dataDirectory } from "./files";
+import { readBlob } from "./blob-store";
 import { createFolder, createGoogleDocFromHtml, deleteFile, DriveError, exportPdf, getFile, loadIntegration, moveFile, uploadWhole, type DriveFile } from "./google";
 import { MediaServerError } from "./http";
 import { insertNotifications, loadIdeas, loadReference } from "./repository";
@@ -95,11 +93,11 @@ ${files ? `<h2>الملفات</h2><ul>${files}</ul>` : ""}
 }
 
 async function uploadLocalAttachments(ideaId: string, subfolders: Record<keyof typeof SUBFOLDERS, string>, q: Queryable) {
-  const rows = await q.query<{ id: string; name: string; mime: string; kind: keyof typeof SUBFOLDERS; local_path: string }>("select id, name, mime, kind::text as kind, local_path from wasl.attachments where idea_id = $1 and removed_at is null and storage = 'local'", [ideaId]);
+  const rows = await q.query<{ id: string; name: string; mime: string; kind: keyof typeof SUBFOLDERS; local_path: string; storage: string }>("select id, name, mime, kind::text as kind, local_path, storage::text as storage from wasl.attachments where idea_id = $1 and removed_at is null and storage in ('local', 'supabase')", [ideaId]);
   for (const row of rows.rows) {
-    const bytes = new Uint8Array(await readFile(path.join(dataDirectory(), "files", path.basename(row.local_path))));
+    const bytes = await readBlob(row.storage, row.local_path);
     const file = await uploadWhole({ name: row.name, parentId: subfolders[row.kind], mime: row.mime, bytes, appProperties: { waslAttachmentId: row.id } }, q);
-    await q.query("update wasl.attachments set storage = 'drive', drive_file_id = $2, drive_parent_id = $3 where id = $1 and storage = 'local'", [row.id, file.id, subfolders[row.kind]]);
+    await q.query("update wasl.attachments set storage = 'drive', drive_file_id = $2, drive_parent_id = $3 where id = $1 and storage in ('local', 'supabase')", [row.id, file.id, subfolders[row.kind]]);
   }
   return rows.rows.length;
 }
