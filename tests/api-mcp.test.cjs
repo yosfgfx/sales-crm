@@ -83,12 +83,18 @@ test("MCP: unauthenticated calls get an OAuth challenge, tools list covers the s
   assert.equal(commented.history.at(-1).action, "comment");
   const refused = await callTool(adminToken, "delete_idea", { ideaId: created.id });
   assert.equal(refused.isError, true);
+  const wrongCode = await callTool(adminToken, "delete_idea", { ideaId: created.id, authenticatorCode: "000000" });
+  assert.match(wrongCode.content[0].text, /INVALID_MFA/);
+  const noCode = await callTool(adminToken, "manage_account", { action: "update", memberId: "sara", active: false });
+  assert.equal(noCode.isError, true);
   const report = toolJson(await callTool(adminToken, "monthly_report", { month: "2026-10" }));
   assert.ok("byCompany" in report);
-  const denied = await callTool(adminToken, "upload_attachment", { ideaId: created.id, kind: "brief", sourceUrl: "https://127.0.0.1/secret" });
-  assert.equal(denied.isError, true);
-  const audited = (await h.pg.query("select count(*)::int as n from wasl.api_audit where channel = 'mcp' and member_id = 'admin'")).rows[0].n;
-  assert.ok(audited >= 8);
+  for (const sourceUrl of ["https://127.0.0.1/secret", "https://[::ffff:10.0.0.1]/x", "https://[::]/x", "https://localhost/x", "http://example.com/x"]) {
+    const denied = await callTool(adminToken, "upload_attachment", { ideaId: created.id, kind: "brief", sourceUrl });
+    assert.equal(denied.isError, true, sourceUrl);
+  }
+  const audited = (await h.pg.query("select action from wasl.api_audit where channel = 'mcp' and member_id = 'admin'")).rows.map((row) => row.action);
+  assert.ok(audited.includes("tools/list") && audited.includes("initialize") && audited.includes("create_idea"));
 });
 
 test("OAuth 2.1: discovery, dynamic registration, consent with an authenticator code, PKCE, refresh rotation and reuse detection", async () => {
@@ -115,14 +121,23 @@ test("OAuth 2.1: discovery, dynamic registration, consent with an authenticator 
   const goodCode = new URL(second.redirect).searchParams.get("code");
   const issued = await (await token({ grant_type: "authorization_code", code: goodCode, redirect_uri: consent.redirect_uri, client_id: registered.client_id, code_verifier: verifier })).json();
   assert.equal(issued.token_type, "Bearer");
-  assert.equal((await token({ grant_type: "authorization_code", code: goodCode, redirect_uri: consent.redirect_uri, client_id: registered.client_id, code_verifier: verifier })).status, 400);
   assert.equal(toolJson(await callTool(issued.access_token, "wasl_overview")).viewer.id, "admin");
+  const auth = require(path.join(h.root, "lib/server/auth.ts"));
+  await assert.rejects(auth.requireUser(bearer(issued.access_token, "/api/accounts")), (error) => error.code === "OAUTH_MCP_ONLY");
   const rotated = await (await token({ grant_type: "refresh_token", refresh_token: issued.refresh_token, client_id: registered.client_id })).json();
   assert.ok(rotated.access_token && rotated.access_token !== issued.access_token);
   assert.equal((await rpc(issued.access_token, "tools/list")).status, 401);
   const reuse = await token({ grant_type: "refresh_token", refresh_token: issued.refresh_token, client_id: registered.client_id });
   assert.equal(reuse.status, 400);
   assert.equal((await rpc(rotated.access_token, "tools/list")).status, 401);
+  await h.pg.query("update wasl.accounts set totp_last_step = null where member_id = 'admin'");
+  const fourth = await oauth.approveAuthorization(h.jsonRequest("/api/oauth/authorize", { ...consent, code: totp.codeAt(secret, step()) }, { cookie: h.cookies.admin }));
+  {
+    const replayCode = new URL(fourth.redirect).searchParams.get("code");
+    const replayIssued = await (await token({ grant_type: "authorization_code", code: replayCode, redirect_uri: consent.redirect_uri, client_id: registered.client_id, code_verifier: verifier })).json();
+    assert.equal((await token({ grant_type: "authorization_code", code: replayCode, redirect_uri: consent.redirect_uri, client_id: registered.client_id, code_verifier: verifier })).status, 400);
+    assert.equal((await rpc(replayIssued.access_token, "tools/list")).status, 401);
+  }
 });
 
 test("opening access to everyone gives members their own rights only, and closing it revokes their keys", async () => {
@@ -139,3 +154,25 @@ test("opening access to everyone gives members their own rights only, and closin
   await accessAction("admin", { action: "revoke", id: (await h.pg.query("select id from wasl.api_keys where kind = 'key' and member_id = 'admin'")).rows[0].id });
   assert.equal((await rpc(adminToken, "tools/list")).status, 401);
 });
+
+test("authenticator codes are rate limited and single-use when creating keys", async () => {
+  await h.pg.query("update wasl.accounts set totp_last_step = null where member_id = 'admin'");
+  await h.pg.query("delete from wasl.login_attempts where key = 'mfa:admin'");
+  const good = totp.codeAt(secret, step());
+  await accessAction("admin", { action: "create", name: "مرة واحدة", days: 30, code: good });
+  await assert.rejects(accessAction("admin", { action: "create", name: "إعادة", days: 30, code: good }), (error) => error.code === "INVALID_MFA");
+  for (let n = 0; n < 4; n++) await assert.rejects(accessAction("admin", { action: "create", name: "تخمين", days: 30, code: "000000" }), (error) => error.code === "INVALID_MFA");
+  await assert.rejects(accessAction("admin", { action: "create", name: "تخمين", days: 30, code: "000000" }), (error) => error.code === "MFA_RATE_LIMIT");
+});
+
+test("changing a member's password revokes their keys and app connections", async () => {
+  await h.pg.query("delete from wasl.login_attempts where key = 'mfa:admin'");
+  await h.pg.query("update wasl.accounts set totp_last_step = null where member_id = 'admin'");
+  await accessAction("admin", { action: "policy", policy: "admins" });
+  const created = await accessAction("admin", { action: "create", name: "قبل تغيير كلمة المرور", days: 30, code: totp.codeAt(secret, step()) });
+  assert.equal((await rpc(created.token, "tools/list")).status, 200);
+  const auth = require(path.join(h.root, "lib/server/auth.ts"));
+  await auth.mutateAccounts(h.jsonRequest("/api/accounts", { operation: "update", memberId: "admin", patch: {}, password: "Qz7!marigold-Harbor-91" }, { cookie: h.cookies.root }));
+  assert.equal((await rpc(created.token, "tools/list")).status, 401);
+});
+

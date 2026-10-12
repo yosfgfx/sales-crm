@@ -8,7 +8,7 @@ type Params = Record<"response_type" | "client_id" | "redirect_uri" | "code_chal
 type Session = { user: { id: string; name: string; role: string } | null; mfa: { enabled: boolean } | null };
 
 export default function AuthorizeConsent({ params }: { params: Params }) {
-  const [client, setClient] = useState<{ name: string; redirectHost: string } | null>(null);
+  const [client, setClient] = useState<{ name: string; redirectHost: string; known: boolean } | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,7 @@ export default function AuthorizeConsent({ params }: { params: Params }) {
   useEffect(() => {
     let active = true;
     const query = new URLSearchParams({ client_id: params.client_id, redirect_uri: params.redirect_uri });
-    Promise.all([apiRequest<{ name: string; redirectHost: string }>(`/api/oauth/authorize?${query}`), apiRequest<Session>("/api/session")])
+    Promise.all([apiRequest<{ name: string; redirectHost: string; known: boolean }>(`/api/oauth/authorize?${query}`), apiRequest<Session>("/api/session")])
       .then(([info, current]) => { if (active) { setClient(info); setSession(current); } })
       .catch((reason) => { if (active) setError(errorText(reason)); });
     return () => { active = false; };
@@ -72,11 +72,16 @@ export default function AuthorizeConsent({ params }: { params: Params }) {
       ) : (
         <div className="space-y-4">
           <p>
-            يطلب <b><bdi>{client.name}</bdi></b> الوصول إلى نظام وصل باسم <b>{session.user.name}</b>، وبالصلاحيات نفسها التي يملكها حسابك.
+            يطلب تطبيق يسمّي نفسه <b><bdi>{client.name}</bdi></b> الوصول إلى نظام وصل باسم <b>{session.user.name}</b>، وبالصلاحيات نفسها التي يملكها حسابك.
           </p>
+          <p className="text-sm">تُرسل نتيجة الربط إلى: <b><bdi dir="ltr">{client.redirectHost}</bdi></b></p>
+          {!client.known && (
+            <p role="alert" className="rounded-lg border border-[#f2b8b5] bg-[#fdecea] p-3 text-sm text-[#8a1c14]">
+              هذا العنوان ليس من تطبيقات الربط المعروفة (Claude وChatGPT والأجهزة المحلية). لا توافق إلا إذا بدأت الربط بنفسك من هذا التطبيق الآن.
+            </p>
+          )}
           <ul className="list-disc space-y-1 ps-6 text-sm text-[var(--soft)]">
             <li>يستطيع قراءة الأفكار والملفات وتنفيذ الإجراءات المسموحة لحسابك.</li>
-            <li>تعود النتائج إلى: <bdi dir="ltr">{client.redirectHost}</bdi></li>
             <li>تلغي الربط في أي وقت من «إدارة النظام» ← «API وMCP».</li>
           </ul>
           <label className="media-label">رمز جديد من تطبيق المصادقة

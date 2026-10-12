@@ -7,6 +7,8 @@ import { assertSameOrigin, clientAddress, limitedBody, MediaServerError, readJso
 
 const ACCESS_SECONDS = 60 * 60;
 const REFRESH_DAYS = 30;
+const GRANT_DAYS = 90;
+const KNOWN_HOSTS = ["claude.ai", "claude.com", "chatgpt.com", "chat.openai.com", "localhost", "127.0.0.1", "[::1]"];
 const CODE_SECONDS = 5 * 60;
 const BLOCKED_SCHEMES = /^(javascript|data|file|vbscript|blob|about):/i;
 
@@ -74,10 +76,11 @@ export async function registerClient(request: Request) {
   if (!uris.length || uris.length > 10 || !uris.every(validRedirect)) return oauthError("invalid_redirect_uri", "Use https redirect URIs, a localhost URI, or an app scheme.");
   const method = typeof body.token_endpoint_auth_method === "string" ? body.token_endpoint_auth_method : "none";
   if (method !== "none") return oauthError("invalid_client_metadata", "Only public clients (token_endpoint_auth_method=none) are supported.");
-  const address = clientAddress(request);
+  const raw = clientAddress(request);
+  const address = raw.includes(":") ? `${raw.split(":").slice(0, 4).join(":")}::/64` : raw;
   const recent = Number((await db.query<{ n: string }>("select count(*) as n from wasl.api_audit where channel = 'oauth' and action = 'register' and target = $1 and at > now() - interval '1 hour'", [address])).rows[0].n);
-  const total = Number((await db.query<{ n: string }>("select count(*) as n from wasl.oauth_clients")).rows[0].n);
-  if (recent >= 20 || total >= 2000) return oauthError("temporarily_unavailable", "Too many client registrations. Try again later.", 429);
+  const hourly = Number((await db.query<{ n: string }>("select count(*) as n from wasl.oauth_clients where created_at > now() - interval '1 hour'")).rows[0].n);
+  if (recent >= 20 || hourly >= 300) return oauthError("temporarily_unavailable", "Too many client registrations. Try again later.", 429);
   const name = (typeof body.client_name === "string" && body.client_name.trim() ? body.client_name.trim() : "تطبيق خارجي").slice(0, 120);
   const clientId = `wasl-client-${randomUUID()}`;
   await db.query("insert into wasl.oauth_clients (client_id, client_name, redirect_uris) values ($1, $2, $3)", [clientId, name, uris]);
@@ -94,7 +97,10 @@ export async function describeClient(request: Request) {
   const client = await loadClient(database(), params.get("client_id") || "");
   const redirect = params.get("redirect_uri") || "";
   if (!client || !client.redirect_uris.includes(redirect)) throw new MediaServerError("طلب الربط غير صالح. ابدأ الربط من التطبيق مجدداً.", 400, "INVALID_CLIENT");
-  return { name: client.client_name, redirectHost: new URL(redirect).host || new URL(redirect).protocol };
+  const url = new URL(redirect);
+  const host = url.host || url.protocol;
+  const known = url.protocol === "https:" || url.protocol === "http:" ? KNOWN_HOSTS.includes(url.hostname) : true;
+  return { name: client.client_name, redirectHost: host, known };
 }
 
 export async function approveAuthorization(request: Request) {
@@ -127,12 +133,12 @@ export async function approveAuthorization(request: Request) {
   return { redirect: target.toString() };
 }
 
-async function issueTokens(q: Queryable, memberId: string, client: { client_id: string; client_name: string }) {
+async function issueTokens(q: Queryable, memberId: string, client: { client_id: string; client_name: string }, grant: { grantedAt?: Date; codeHash?: string } = {}) {
   const access = newToken("wasl_");
   const refresh = newToken("waslr_");
-  await q.query(`insert into wasl.api_keys (id, member_id, kind, name, prefix, token_hash, refresh_hash, client_id, expires_at, refresh_expires_at)
-    values ($1, $2, 'oauth', $3, $4, $5, $6, $7, now() + ($8 || ' seconds')::interval, now() + ($9 || ' days')::interval)`,
-  [randomUUID(), memberId, client.client_name, tokenPrefix(access), hashToken(access), hashToken(refresh), client.client_id, String(ACCESS_SECONDS), String(REFRESH_DAYS)]);
+  await q.query(`insert into wasl.api_keys (id, member_id, kind, name, prefix, token_hash, refresh_hash, client_id, expires_at, refresh_expires_at, granted_at, code_hash)
+    values ($1, $2, 'oauth', $3, $4, $5, $6, $7, now() + ($8 || ' seconds')::interval, least(now() + ($9 || ' days')::interval, coalesce($10::timestamptz, now()) + ($11 || ' days')::interval), coalesce($10::timestamptz, now()), $12)`,
+  [randomUUID(), memberId, client.client_name, tokenPrefix(access), hashToken(access), hashToken(refresh), client.client_id, String(ACCESS_SECONDS), String(REFRESH_DAYS), grant.grantedAt || null, String(GRANT_DAYS), grant.codeHash || null]);
   await q.query("update wasl.oauth_clients set last_used_at = now() where client_id = $1", [client.client_id]);
   return { access_token: access, token_type: "Bearer", expires_in: ACCESS_SECONDS, refresh_token: refresh, scope: "wasl" };
 }
@@ -153,28 +159,36 @@ export async function tokenEndpoint(request: Request) {
   if (!client) return oauthError("invalid_client", "Unknown client.", 401);
   if (params.grant_type === "authorization_code") {
     if (!params.code || !params.code_verifier || !/^[A-Za-z0-9._~-]{43,128}$/.test(params.code_verifier)) return oauthError("invalid_request", "code and a valid code_verifier are required.");
+    const codeHash = hashToken(params.code);
     const used = (await db.query<{ member_id: string; redirect_uri: string; code_challenge: string; client_id: string }>(
-      "update wasl.oauth_codes set used_at = now() where code_hash = $1 and used_at is null and expires_at > now() returning member_id, redirect_uri, code_challenge, client_id", [hashToken(params.code)])).rows[0];
-    if (!used || used.client_id !== client.client_id || used.redirect_uri !== params.redirect_uri) return oauthError("invalid_grant", "The code is invalid, expired or already used.");
+      "update wasl.oauth_codes set used_at = now() where code_hash = $1 and used_at is null and expires_at > now() returning member_id, redirect_uri, code_challenge, client_id", [codeHash])).rows[0];
+    if (!used) {
+      const replayed = (await db.query("update wasl.api_keys set revoked_at = now() where code_hash = $1 and revoked_at is null returning member_id", [codeHash])).rows.length;
+      await audit(db, { channel: "oauth", action: replayed ? "code_replay_revoked" : "token_rejected", target: client.client_name, status: 400 });
+      return oauthError("invalid_grant", "The code is invalid, expired or already used.");
+    }
+    if (used.client_id !== client.client_id || used.redirect_uri !== params.redirect_uri) return oauthError("invalid_grant", "The code does not match this client or redirect URI.");
     const challenge = createHash("sha256").update(params.code_verifier).digest("base64url");
-    if (challenge !== used.code_challenge) return oauthError("invalid_grant", "PKCE verification failed.");
+    if (challenge !== used.code_challenge) { await audit(db, { memberId: used.member_id, channel: "oauth", action: "pkce_failed", target: client.client_name, status: 400 }); return oauthError("invalid_grant", "PKCE verification failed."); }
     if (!(await memberStillAllowed(db, used.member_id))) return oauthError("invalid_grant", "This account may no longer use programmatic access.");
     await audit(db, { memberId: used.member_id, channel: "oauth", action: "token", target: client.client_name });
-    return oauthJson(await issueTokens(db, used.member_id, client));
+    return oauthJson(await issueTokens(db, used.member_id, client, { codeHash }));
   }
   if (params.grant_type === "refresh_token") {
     if (!params.refresh_token) return oauthError("invalid_request", "refresh_token is required.");
     const hash = hashToken(params.refresh_token);
     return db.transaction(async (tx) => {
-      const row = (await tx.query<{ id: string; member_id: string; revoked_at: Date | null; refresh_expires_at: Date }>("select id, member_id, revoked_at, refresh_expires_at from wasl.api_keys where refresh_hash = $1 and client_id = $2 for update", [hash, client.client_id])).rows[0];
+      const row = (await tx.query<{ id: string; member_id: string; revoked_at: Date | null; refresh_expires_at: Date; granted_at: Date; code_hash: string | null }>("select id, member_id, revoked_at, refresh_expires_at, granted_at, code_hash from wasl.api_keys where refresh_hash = $1 and client_id = $2 for update", [hash, client.client_id])).rows[0];
       if (!row) return oauthError("invalid_grant", "Unknown refresh token.");
       if (row.revoked_at) {
         await tx.query("update wasl.api_keys set revoked_at = now() where member_id = $1 and client_id = $2 and revoked_at is null", [row.member_id, client.client_id]);
+        await audit(tx, { memberId: row.member_id, channel: "oauth", action: "refresh_reuse_revoked", target: client.client_name, status: 400 });
         return oauthError("invalid_grant", "Refresh token reuse detected; the connection was revoked.");
       }
       if (new Date(row.refresh_expires_at).getTime() < Date.now() || !(await memberStillAllowed(tx, row.member_id))) return oauthError("invalid_grant", "The refresh token has expired or access was withdrawn.");
       await tx.query("update wasl.api_keys set revoked_at = now() where id = $1", [row.id]);
-      return oauthJson(await issueTokens(tx, row.member_id, client));
+      await audit(tx, { memberId: row.member_id, channel: "oauth", action: "refresh", target: client.client_name });
+      return oauthJson(await issueTokens(tx, row.member_id, client, { grantedAt: row.granted_at, codeHash: row.code_hash || undefined }));
     });
   }
   return oauthError("unsupported_grant_type", "Use authorization_code or refresh_token.");
@@ -185,7 +199,8 @@ export async function revokeEndpoint(request: Request) {
   try { params = await readParams(request); } catch { return oauthJson({}); }
   if (params.token) {
     const hash = hashToken(params.token);
-    await database().query("update wasl.api_keys set revoked_at = now() where kind = 'oauth' and revoked_at is null and (token_hash = $1 or refresh_hash = $1)", [hash]);
+    const revoked = (await database().query<{ member_id: string }>("update wasl.api_keys set revoked_at = now() where kind = 'oauth' and revoked_at is null and (token_hash = $1 or refresh_hash = $1) returning member_id", [hash])).rows[0];
+    if (revoked) await audit(database(), { memberId: revoked.member_id, channel: "oauth", action: "revoke" });
   }
   return oauthJson({});
 }

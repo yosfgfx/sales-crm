@@ -1,7 +1,8 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { bearerToken } from "@/lib/server/api-access";
+import { audit, bearerToken } from "@/lib/server/api-access";
 import { appOrigin } from "@/lib/server/api-keys";
-import { internalRequests, sessionUser } from "@/lib/server/auth";
+import { apiCaller, internalRequests, sessionUser } from "@/lib/server/auth";
+import { database } from "@/lib/server/db";
 import { MediaServerError } from "@/lib/server/http";
 import { createWaslServer } from "@/lib/server/mcp/server";
 import { corsHeaders } from "@/lib/server/oauth";
@@ -28,11 +29,14 @@ async function handle(request: Request) {
     throw error;
   }
   if (!member) return withCors(Response.json({ error: "invalid_token", error_description: "The token is invalid, expired or revoked." }, { status: 401 }), { ...challenge, "WWW-Authenticate": `${challenge["WWW-Authenticate"]}, error="invalid_token"` });
+  const payload = request.method === "POST" ? await request.clone().json().catch(() => null) : null;
+  const methods = (Array.isArray(payload) ? payload : [payload]).map((message) => (message && typeof message === "object" ? String((message as { method?: unknown }).method || "") : "")).filter((method) => method && method !== "tools/call" && !method.startsWith("notifications/"));
+  const caller = apiCaller(member);
+  for (const method of methods) await audit(database(), { keyId: caller?.keyId, memberId: member.id, channel: "mcp", action: method });
   const server = createWaslServer({ member, token, origin });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
-  try { return withCors(await transport.handleRequest(request)); }
-  finally { void server.close(); }
+  return withCors(await transport.handleRequest(request));
 }
 
 export const GET = handle;

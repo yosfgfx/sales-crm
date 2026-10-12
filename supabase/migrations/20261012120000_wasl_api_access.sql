@@ -20,6 +20,8 @@ create table wasl.api_keys (
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   refresh_expires_at timestamptz,
+  granted_at timestamptz not null default now(),
+  code_hash text,
   last_used_at timestamptz,
   last_used_ip text,
   revoked_at timestamptz
@@ -48,6 +50,7 @@ create table wasl.api_audit (
   at timestamptz not null default now()
 );
 create index api_audit_key_at_idx on wasl.api_audit (key_id, at desc);
+create index api_audit_oauth_register_idx on wasl.api_audit (target, at) where channel = 'oauth' and action = 'register';
 
 do $$
 declare t text;

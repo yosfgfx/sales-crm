@@ -78,6 +78,7 @@ async function bearerUser(request: Request, q: Queryable): Promise<TeamMember | 
   if (!row) return null;
   const [member, account] = await Promise.all([memberById(q, row.member_id), accountFor(q, row.member_id)]);
   if (!member?.active || !account) return null;
+  if (row.kind === "oauth" && !internalRequests.has(request) && new URL(request.url).pathname !== "/api/mcp") throw new MediaServerError("رموز التطبيقات المربوطة تعمل مع خادم MCP فقط. استخدم مفتاح API للواجهة البرمجية.", 403, "OAUTH_MCP_ONLY");
   if (!isAdministrator(member) && (await apiAccessPolicy(q)) !== "everyone") throw new MediaServerError("الوصول البرمجي متاح لمدير النظام فقط.", 403, "API_DISABLED");
   if (isAdministrator(member) && adminMfaRequired() && !account.totp_secret_enc) throw new MediaServerError("فعّل التحقق بخطوتين لحساب المدير قبل استخدام الوصول البرمجي.", 403, "MFA_SETUP_REQUIRED");
   if (await rateLimited(q, row.id)) throw new MediaServerError("طلبات كثيرة عبر الوصول البرمجي. انتظر دقيقة ثم أعد المحاولة.", 429, "API_RATE_LIMIT");
@@ -265,6 +266,7 @@ export async function mutateAccounts(request: Request): Promise<Response> {
       } else {
         const identityChanged = passwordHash || account.username !== username || (["name", "title", "role", "active"] as const).some((key) => previous[key] !== updated[key]);
         await tx.query("update wasl.accounts set username = $2, password_hash = coalesce($3, password_hash), auth_version = auth_version + $4, updated_at = now() where member_id = $1", [targetId, username, passwordHash || null, identityChanged ? 1 : 0]);
+        if (passwordHash || account.username !== username || previous.role !== updated.role || previous.active !== updated.active) await revokeProgrammaticAccess(tx, targetId);
       }
     }
     return { targetId };
@@ -296,6 +298,7 @@ async function runMfa(request: Request): Promise<{ data: Record<string, unknown>
     const step = verifyCode(decryptSecret(pending), code);
     if (step === null) throw new MediaServerError("الرمز غير صحيح. تأكد من ضبط وقت الجوال وأعد المحاولة.", 422, "INVALID_MFA");
     await db.query("update wasl.accounts set totp_secret_enc = totp_pending_enc, totp_pending_enc = null, totp_enabled_at = now(), totp_last_step = $2, auth_version = auth_version + 1, updated_at = now() where member_id = $1", [user.id, step]);
+    await revokeProgrammaticAccess(db, user.id);
     return { data: { enabled: true }, cookie: await reissue(request, db, user) };
   }
   if (body?.action === "disable") {
@@ -304,6 +307,7 @@ async function runMfa(request: Request): Promise<{ data: Record<string, unknown>
     const lastStep = account.totp_last_step === null ? null : Number(account.totp_last_step);
     if (verifyCode(decryptSecret(account.totp_secret_enc), code, Date.now(), lastStep) === null) throw new MediaServerError("أدخل رمزاً صحيحاً لم يُستخدم من قبل لإيقاف التحقق بخطوتين.", 422, "INVALID_MFA");
     await db.query("update wasl.accounts set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null, auth_version = auth_version + 1, updated_at = now() where member_id = $1", [user.id]);
+    await revokeProgrammaticAccess(db, user.id);
     return { data: { enabled: false }, cookie: await reissue(request, db, user) };
   }
   throw new MediaServerError("إجراء غير معروف.");
@@ -323,12 +327,21 @@ export async function mfaResponse(request: Request) {
   return Response.json(data, { headers: { ...responseHeaders, ...(cookie ? { "Set-Cookie": cookie } : {}) } });
 }
 
+export async function revokeProgrammaticAccess(q: Queryable, memberId: string) {
+  await q.query("update wasl.api_keys set revoked_at = now() where member_id = $1 and revoked_at is null", [memberId]);
+}
+
 export async function confirmWithAuthenticator(memberId: string, code: string, q: Queryable = database()) {
   const account = await accountFor(q, memberId);
   if (!account?.totp_secret_enc) throw new MediaServerError("فعّل التحقق بخطوتين من «حسابي» أولاً. لا تُنشأ مفاتيح الوصول البرمجي من دونه.", 403, "MFA_REQUIRED_FOR_KEYS");
+  const keys = [`mfa:${memberId}`];
+  const limited = () => new MediaServerError("محاولات رمز تحقق خاطئة كثيرة. انتظر قليلاً ثم أعد المحاولة.", 429, "MFA_RATE_LIMIT");
+  if (await loginDelay(q, keys)) throw limited();
+  if (await reserveAttempt(q, keys)) throw limited();
   const lastStep = account.totp_last_step === null ? null : Number(account.totp_last_step);
   const step = verifyCode(decryptSecret(account.totp_secret_enc), String(code || "").replace(/\s/g, ""), Date.now(), lastStep);
   if (step === null) throw new MediaServerError("رمز التحقق غير صحيح أو استُخدم من قبل.", 422, "INVALID_MFA");
-  await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1", [memberId, step]);
+  const claimed = (await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1 and (totp_last_step is null or totp_last_step < $2) returning 1", [memberId, step])).rows.length;
+  if (!claimed) throw new MediaServerError("رمز التحقق استُخدم للتو. انتظر الرمز التالي.", 422, "INVALID_MFA");
+  await q.query("delete from wasl.login_attempts where key = any($1::text[])", [keys]);
 }
-

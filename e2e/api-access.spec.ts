@@ -15,6 +15,13 @@ function code(secret: string, offset = 0) {
   return String(value).padStart(6, "0");
 }
 
+test.afterAll(async () => {
+  const db = new Client({ connectionString: E2E_DB_URL });
+  await db.connect();
+  await db.query("update wasl.accounts set totp_secret_enc = null, totp_last_step = null where member_id = 'admin'");
+  await db.end();
+});
+
 test("an administrator creates a key and approves an MCP app through the sign-in page; members never see it", async ({ browser, request }, info) => {
   test.skip(info.project.name !== "desktop", "Shares one authenticator step sequence across the run.");
   const noura = await pageAs(browser, "noura");

@@ -1,5 +1,7 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { lookup as dnsLookup } from "node:dns/promises";
+import type { IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { BlockList, isIP } from "node:net";
 import { CHANNEL_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, type Idea, type MediaData, type TeamMember } from "@/data/media";
 import { audit } from "../api-access";
 import { apiCaller, internalRequests } from "../auth";
@@ -70,41 +72,49 @@ export function detail(idea: Idea, data: MediaData, origin: string) {
   };
 }
 
-const PRIVATE_V4 = [/^10\./, /^127\./, /^169\.254\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^0\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./];
-const privateAddress = (address: string) => isIP(address) === 6 ? /^(::1|fc|fd|fe80|::ffff:(10|127|169\.254|192\.168))/i.test(address) : PRIVATE_V4.some((pattern) => pattern.test(address));
+const blocked = new BlockList();
+for (const [network, prefix] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4]] as const) blocked.addSubnet(network, prefix, "ipv4");
+for (const [network, prefix] of [["::", 128], ["::1", 128], ["::ffff:0:0", 96], ["64:ff9b::", 96], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]] as const) blocked.addSubnet(network, prefix, "ipv6");
+const isBlocked = (address: string) => blocked.check(address, isIP(address) === 6 ? "ipv6" : "ipv4");
 
-async function assertPublic(url: URL) {
-  if (url.protocol !== "https:" || url.username || url.password) throw new MediaServerError("يُقبل رابط https عام فقط.");
-  const addresses = isIP(url.hostname) ? [url.hostname] : (await lookup(url.hostname, { all: true }).catch(() => [])).map((entry) => entry.address);
-  if (!addresses.length || addresses.some(privateAddress) || url.hostname === "localhost") throw new MediaServerError("لا يمكن جلب ملف من عنوان داخلي.");
+function pinnedLookup(hostname: string, _options: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) {
+  dnsLookup(hostname, { all: true }).then((entries) => {
+    const safe = entries.find((entry) => !isBlocked(entry.address));
+    if (!entries.length || entries.some((entry) => isBlocked(entry.address)) || !safe) callback(Object.assign(new Error("blocked address"), { code: "EBLOCKED" }), "", 4);
+    else callback(null, safe.address, safe.family);
+  }, (error) => callback(error, "", 4));
+}
+
+function request(url: URL): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    if (url.protocol !== "https:" || url.username || url.password || url.hostname === "localhost" || (isIP(url.hostname.replace(/^\[|\]$/g, "")) && isBlocked(url.hostname.replace(/^\[|\]$/g, "")))) { reject(new MediaServerError("يُقبل رابط https عام فقط، ولا يُجلب ملف من عنوان داخلي.")); return; }
+    const outgoing = httpsRequest(url, { method: "GET", lookup: pinnedLookup as never, timeout: 15_000, headers: { "user-agent": "Wasl/1.0" } }, resolve);
+    outgoing.on("timeout", () => outgoing.destroy(new MediaServerError("انتهت مهلة تنزيل الملف من الرابط.", 504, "FETCH_TIMEOUT")));
+    outgoing.on("error", (error) => reject((error as NodeJS.ErrnoException).code === "EBLOCKED" ? new MediaServerError("لا يمكن جلب ملف من عنوان داخلي.") : error instanceof MediaServerError ? error : new MediaServerError("تعذّر تنزيل الملف من الرابط.")));
+    outgoing.end();
+  });
 }
 
 export async function fetchPublicFile(source: string, limit: number) {
   let url: URL;
   try { url = new URL(source); } catch { throw new MediaServerError("رابط الملف غير صالح."); }
-  let response: Response | null = null;
+  let response: IncomingMessage | null = null;
   for (let hop = 0; hop < 4; hop++) {
-    await assertPublic(url);
-    response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
-    const location = response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
+    response = await request(url);
+    const location = response.statusCode && response.statusCode >= 300 && response.statusCode < 400 ? response.headers.location : undefined;
     if (!location) break;
+    response.resume();
     url = new URL(location, url);
     response = null;
   }
-  if (!response?.ok || !response.body) throw new MediaServerError(`تعذّر تنزيل الملف من الرابط (${response?.status ?? "تحويلات كثيرة"}).`);
-  if (Number(response.headers.get("content-length") || 0) > limit) throw new MediaServerError("الملف أكبر من الحد المسموح للجلب عبر الرابط.", 413, "FILE_TOO_LARGE");
-  const reader = response.body.getReader();
-  const parts: Uint8Array[] = [];
+  if (!response || !response.statusCode || response.statusCode >= 400) { response?.resume(); throw new MediaServerError(`تعذّر تنزيل الملف من الرابط (${response?.statusCode ?? "تحويلات كثيرة"}).`); }
+  if (Number(response.headers["content-length"] || 0) > limit) { response.destroy(); throw new MediaServerError("الملف أكبر من الحد المسموح للجلب عبر الرابط.", 413, "FILE_TOO_LARGE"); }
+  const parts: Buffer[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > limit) { await reader.cancel(); throw new MediaServerError("الملف أكبر من الحد المسموح للجلب عبر الرابط.", 413, "FILE_TOO_LARGE"); }
-    parts.push(value);
+  for await (const chunk of response) {
+    total += (chunk as Buffer).length;
+    if (total > limit) { response.destroy(); throw new MediaServerError("الملف أكبر من الحد المسموح للجلب عبر الرابط.", 413, "FILE_TOO_LARGE"); }
+    parts.push(chunk as Buffer);
   }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
-  return { bytes, mime: response.headers.get("content-type")?.split(";")[0] || "application/octet-stream", name: decodeURIComponent(url.pathname.split("/").pop() || "file") };
+  return { bytes: new Uint8Array(Buffer.concat(parts)), mime: String(response.headers["content-type"] || "application/octet-stream").split(";")[0], name: decodeURIComponent(url.pathname.split("/").pop() || "file") };
 }

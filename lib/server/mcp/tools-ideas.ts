@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { STATUS_LABELS, type IdeaStatus, type MediaData } from "@/data/media";
+import { confirmWithAuthenticator } from "../auth";
 import { database } from "../db";
 import { MediaServerError } from "../http";
 import { runOperation } from "../ops";
@@ -132,7 +133,10 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
   server.registerTool("reopen_idea", { title: "إعادة فتح", description: "Administrator: reopen a cancelled, rejected or delivered idea. A reason is required.", inputSchema: { ideaId: z.string(), reason: z.string().min(1) }, annotations: write },
     tool(ctx, "reopen_idea", async ({ ideaId, reason }: { ideaId: string; reason: string }) => operate(ctx, { type: "reopenIdea", ideaId, reason })));
   server.registerTool("delete_idea", {
-    title: "حذف فكرة نهائياً", description: "Permanently delete an idea, its history and stored files (an audit copy is kept). Irreversible: always ask the user first, then pass confirm=true.",
-    inputSchema: { ideaId: z.string(), reason: z.string().optional(), confirm: z.literal(true) }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-  }, tool(ctx, "delete_idea", async ({ ideaId, reason }: { ideaId: string; reason?: string }) => operate(ctx, { type: "deleteIdea", ideaId, reason })));
+    title: "حذف فكرة نهائياً", description: "Permanently delete an idea, its history and stored files (an audit copy is kept). Irreversible: ask the user, who must give you a fresh 6-digit code from their authenticator app.",
+    inputSchema: { ideaId: z.string(), reason: z.string().optional(), authenticatorCode: z.string().regex(/^\d{6}$/).describe("Fresh code from the user's authenticator app") }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  }, tool(ctx, "delete_idea", async ({ ideaId, reason, authenticatorCode }: { ideaId: string; reason?: string; authenticatorCode: string }) => {
+    await confirmWithAuthenticator(ctx.member.id, authenticatorCode);
+    return operate(ctx, { type: "deleteIdea", ideaId, reason });
+  }));
 }
