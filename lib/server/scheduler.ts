@@ -40,6 +40,10 @@ export async function runDailyJobs(q: Queryable = database(), today = riyadhDate
   await insertNotifications(q, notices);
   const cleaned = await cleanupFiles(q);
   await q.query("delete from wasl.notifications where read_at < now() - interval '90 days'");
+  await q.query("delete from wasl.oauth_codes where expires_at < now() - interval '1 day'");
+  await q.query("delete from wasl.api_keys where greatest(expires_at, coalesce(refresh_expires_at, expires_at), coalesce(revoked_at, expires_at)) < now() - interval '30 days'");
+  await q.query("delete from wasl.oauth_clients c where c.last_used_at is null and c.created_at < now() - interval '7 days' and not exists (select 1 from wasl.api_keys k where k.client_id = c.client_id)");
+  await q.query("delete from wasl.api_audit where at < now() - interval '180 days'");
   return { ran: true, reminders: notices.length, cleaned };
 }
 

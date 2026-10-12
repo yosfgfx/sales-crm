@@ -2,7 +2,8 @@ import { expect, test, type Browser, type BrowserContextOptions, type Page } fro
 import accounts from "./accounts.json";
 
 export type Who = keyof typeof accounts;
-export const ORIGIN = "http://localhost:3200";
+export const ORIGIN = `http://localhost:${process.env.WASL_E2E_PORT || 3200}`;
+export const E2E_DB_URL = process.env.WASL_E2E_DB_URL || "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e";
 
 export async function signIn(page: Page, who: Who, ip = "198.51.100.10") {
   await page.context().setExtraHTTPHeaders({ "x-nf-client-connection-ip": ip });

@@ -1,7 +1,8 @@
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3200;
+const PORT = Number(process.env.WASL_E2E_PORT || 3200);
+const DATABASE_URL = process.env.WASL_E2E_DB_URL || "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e";
 const ORIGIN = `http://localhost:${PORT}`;
 
 export default defineConfig({
@@ -24,7 +25,8 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
-      DATABASE_URL: "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e",
+      DATABASE_URL,
+      WASL_E2E_DB_URL: DATABASE_URL,
       WASL_DB_SSL: "disable",
       SUPABASE_URL: "",
       SUPABASE_DB_PASSWORD: "",

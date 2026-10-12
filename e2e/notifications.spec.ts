@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { Client } from "pg";
-import { navigate, pageAs } from "./helpers";
+import { E2E_DB_URL, navigate, pageAs } from "./helpers";
 
 test("older notifications load on demand and the guide is one click away (P1.5)", async ({ browser }, info) => {
-  const db = new Client({ connectionString: "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e" });
+  const db = new Client({ connectionString: E2E_DB_URL });
   await db.connect();
   const prefix = `paged-${info.project.name}`;
   await db.query("delete from wasl.notifications where recipient_id = 'sara'");

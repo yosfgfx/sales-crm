@@ -6,7 +6,7 @@ const { execFileSync } = require("node:child_process");
 require("./helpers/harness.cjs");
 const { createFakeDrive } = require("./helpers/fake-drive.cjs");
 
-const URL = "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e";
+const URL = process.env.WASL_E2E_DB_URL || "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e";
 const root = path.resolve(__dirname, "..");
 let available = true, fake, archive, pg;
 const realFetch = global.fetch;

@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, scrypt as nodeScrypt, timingSafeEq
 import { promisify } from "node:util";
 import type { AccountSummary, MediaData, TeamMember } from "@/data/media";
 import { addMediaMember, updateMediaMember } from "@/lib/media-workflow";
+import { apiAccessPolicy, audit, bearerToken, findActiveToken, hasBearer, rateLimited, touchToken } from "./api-access";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, clientAddress, MediaServerError, readJson, responseHeaders } from "./http";
 import { loadIdeas, loadReference } from "./repository";
@@ -19,6 +20,9 @@ const ROLES = ["admin", "manager", "content", "designer"] as const;
 type Account = { member_id: string; username: string; password_hash: string; auth_version: number; totp_secret_enc: string | null; totp_last_step: string | number | null };
 const ACCOUNT_COLUMNS = "member_id, username, password_hash, auth_version, totp_secret_enc, totp_last_step";
 const mfaMissing = new WeakSet<TeamMember>();
+const bearerContext = new WeakMap<TeamMember, { keyId: string; kind: "key" | "oauth" }>();
+export const internalRequests = new WeakSet<Request>();
+export const apiCaller = (member: TeamMember) => bearerContext.get(member) || null;
 export const adminMfaRequired = () => process.env.WASL_REQUIRE_ADMIN_MFA === "true" || (process.env.NODE_ENV === "production" && process.env.WASL_REQUIRE_ADMIN_MFA !== "false");
 
 export const isAdministrator = (member: Pick<TeamMember, "role"> | null | undefined) => member?.role === "admin" || member?.role === "superadmin";
@@ -68,7 +72,23 @@ async function memberById(q: Queryable, id: string) {
   return (await q.query<TeamMember>("select id, name, role::text as role, title, initials, color, active from wasl.members where id = $1", [id])).rows[0] || null;
 }
 
+async function bearerUser(request: Request, q: Queryable): Promise<TeamMember | null> {
+  const token = bearerToken(request);
+  const row = token ? await findActiveToken(q, token) : null;
+  if (!row) return null;
+  const [member, account] = await Promise.all([memberById(q, row.member_id), accountFor(q, row.member_id)]);
+  if (!member?.active || !account) return null;
+  if (!isAdministrator(member) && (await apiAccessPolicy(q)) !== "everyone") throw new MediaServerError("الوصول البرمجي متاح لمدير النظام فقط.", 403, "API_DISABLED");
+  if (isAdministrator(member) && adminMfaRequired() && !account.totp_secret_enc) throw new MediaServerError("فعّل التحقق بخطوتين لحساب المدير قبل استخدام الوصول البرمجي.", 403, "MFA_SETUP_REQUIRED");
+  if (await rateLimited(q, row.id)) throw new MediaServerError("طلبات كثيرة عبر الوصول البرمجي. انتظر دقيقة ثم أعد المحاولة.", 429, "API_RATE_LIMIT");
+  bearerContext.set(member, { keyId: row.id, kind: row.kind });
+  await touchToken(q, row, clientAddress(request));
+  if (!internalRequests.has(request)) await audit(q, { keyId: row.id, memberId: member.id, channel: "api", action: `${request.method} ${new URL(request.url).pathname}` });
+  return member;
+}
+
 export async function sessionUser(request: Request, q: Queryable = database()): Promise<TeamMember | null> {
+  if (hasBearer(request)) return bearerUser(request, q);
   const token = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   if (!token || token.length > 1024) return null;
   const [payload, signature, extra] = token.split(".");
@@ -302,3 +322,13 @@ export async function mfaResponse(request: Request) {
   const { data, cookie } = await runMfa(request);
   return Response.json(data, { headers: { ...responseHeaders, ...(cookie ? { "Set-Cookie": cookie } : {}) } });
 }
+
+export async function confirmWithAuthenticator(memberId: string, code: string, q: Queryable = database()) {
+  const account = await accountFor(q, memberId);
+  if (!account?.totp_secret_enc) throw new MediaServerError("فعّل التحقق بخطوتين من «حسابي» أولاً. لا تُنشأ مفاتيح الوصول البرمجي من دونه.", 403, "MFA_REQUIRED_FOR_KEYS");
+  const lastStep = account.totp_last_step === null ? null : Number(account.totp_last_step);
+  const step = verifyCode(decryptSecret(account.totp_secret_enc), String(code || "").replace(/\s/g, ""), Date.now(), lastStep);
+  if (step === null) throw new MediaServerError("رمز التحقق غير صحيح أو استُخدم من قبل.", 422, "INVALID_MFA");
+  await q.query("update wasl.accounts set totp_last_step = $2 where member_id = $1", [memberId, step]);
+}
+

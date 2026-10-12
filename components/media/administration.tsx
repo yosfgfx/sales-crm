@@ -11,6 +11,7 @@ import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
 import DriveIntegration from "./drive-integration";
 import IdeaImport from "./idea-import";
+import ApiAccess from "./api-access";
 
 export default function Administration({
   onOpenIdea,
@@ -83,9 +84,11 @@ export default function Administration({
           { id: "identity", label: "هوية التقارير" },
           { id: "drive", label: "أرشيف Google Drive" },
           { id: "import", label: "استيراد الأفكار" },
+          { id: "api", label: "API وMCP" },
         ]}
       />
       <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`} className="contents">
+      {tab === "api" && <ApiAccess />}
       {tab === "approvals" && (
         <Approvals
           data={data}
