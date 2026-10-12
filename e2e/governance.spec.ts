@@ -23,15 +23,18 @@ test("content cannot approve, the manager rejects with a reason, and the owner i
   await expect(noura.getByRole("dialog", { name: "إشعارات الفريق" }).getByText(new RegExp(title.split(" ").at(-1)!)).first()).toBeVisible();
 });
 
-test("the owner deletes a draft, an administrator cancels and reopens with an audit trail (H3)", async ({ browser }, info) => {
+test("an administrator moves a draft to the trash, cancels and reopens with an audit trail (H3)", async ({ browser }, info) => {
   const draft = unique(`مسودة للحذف ${info.project.name}`);
   const noura = await pageAs(browser, "noura");
   let idea = await createIdea(noura, draft);
+  await expect(idea.getByRole("button", { name: "حذف الفكرة" })).toHaveCount(0);
+  const trashAdmin = await pageAs(browser, "admin");
+  idea = await openIdea(trashAdmin, draft);
   await idea.getByRole("button", { name: "حذف الفكرة" }).click();
-  const remove = noura.getByRole("dialog", { name: "حذف الفكرة نهائياً" });
+  const remove = trashAdmin.getByRole("dialog", { name: "نقل العمل إلى سلة المحذوفات" });
   await remove.getByLabel("سبب الحذف (اختياري)").fill("أُدخلت بالخطأ.");
-  await remove.getByRole("button", { name: "حذف الفكرة نهائياً" }).click();
-  await expect(noura.getByRole("dialog", { name: draft })).toBeHidden();
+  await remove.getByRole("button", { name: "نقل إلى سلة المحذوفات" }).click();
+  await expect(trashAdmin.getByRole("dialog", { name: draft })).toBeHidden();
 
   const kept = unique(`فكرة للإلغاء ${info.project.name}`);
   idea = await createIdea(noura, kept);

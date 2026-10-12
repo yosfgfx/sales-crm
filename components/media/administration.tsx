@@ -20,6 +20,7 @@ import Approvals from "./approvals";
 import DriveIntegration from "./drive-integration";
 import IdeaImport from "./idea-import";
 import AdminWorkspace from "./admin-workspace";
+import ApiAccess from "./api-access";
 import type { DiscussionTarget } from "./discussion-shortcuts";
 
 export default function Administration({
@@ -119,6 +120,7 @@ export default function Administration({
           { id: "identity", label: "هوية التقارير" },
           { id: "drive", label: "أرشيف Google Drive" },
           { id: "import", label: "استيراد الأفكار" },
+          { id: "api", label: "API وMCP" },
         ]}
       />
       <div
@@ -127,6 +129,7 @@ export default function Administration({
         aria-labelledby={`admin-tab-${tab}`}
         className="contents"
       >
+        {tab === "api" && <ApiAccess />}
         {tab === "workspace" && (
           <AdminWorkspace
             onOpenIdea={onOpenIdea}

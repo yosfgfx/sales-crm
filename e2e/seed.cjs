@@ -5,8 +5,9 @@ require("../tests/helpers/harness.cjs");
 const { Client } = require("pg");
 
 const root = path.resolve(__dirname, "..");
-const ADMIN_URL = process.env.WASL_E2E_ADMIN_URL || "postgres://postgres:wasl-e2e-local@localhost:54329/postgres";
-const DATABASE = "wasl_e2e";
+const TARGET = new URL(process.env.WASL_E2E_DB_URL || "postgres://postgres:wasl-e2e-local@localhost:54329/wasl_e2e");
+const DATABASE = TARGET.pathname.slice(1);
+const ADMIN_URL = Object.assign(new URL(TARGET.href), { pathname: "/postgres" }).href;
 const PASSWORDS = require("./accounts.json");
 
 async function main() {

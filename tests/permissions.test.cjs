@@ -21,6 +21,7 @@ const CASES = [
   { name: "GET /api/notifications", allowed: ROLES, call: (who) => route("notifications").GET(h.getRequest(`/api/notifications?before=${encodeURIComponent(new Date().toISOString())}`, h.cookies[who])) },
   { name: "GET /api/ideas/[id]", allowed: ROLES, call: (who) => route("ideas/[id]").GET(h.getRequest("/api/ideas/idea-001", h.cookies[who]), { params: Promise.resolve({ id: "idea-001" }) }) },
   { name: "GET /api/integrations/google", allowed: ROLES, call: (who) => route("integrations/google").GET(h.getRequest("/api/integrations/google", h.cookies[who])) },
+  { name: "GET /api/api-access", allowed: ADMINS, call: (who) => route("api-access").GET(h.getRequest("/api/api-access", h.cookies[who])) },
   { name: "GET /api/accounts", allowed: ADMINS, call: (who) => route("accounts").GET(h.getRequest("/api/accounts", h.cookies[who])) },
   { name: "GET /api/admin/demo-data", allowed: ADMINS, call: (who) => route("admin/demo-data").GET(h.getRequest("/api/admin/demo-data", h.cookies[who])) },
   { name: "POST /api/import/ideas", allowed: ADMINS, call: (who) => route("import/ideas").POST(h.jsonRequest("/api/import/ideas", {}, { cookie: h.cookies[who] })) },

@@ -8,6 +8,7 @@ import {
   type MediaNotification,
   type TeamMember,
 } from "@/data/media";
+import ApiAccess from "../api-access";
 import MfaSettings from "../mfa-settings";
 import { ActionButton, EmptyState, Icon, Modal, formatDate } from "../ui";
 import { Avatar } from "./avatar";
@@ -143,6 +144,7 @@ export function AccountDialog({
     >
       <div className="space-y-5 p-6">
         <MfaSettings />
+        {currentUser.role !== "admin" && currentUser.role !== "superadmin" && <ApiAccess compact />}
         <div className="flex items-center gap-3">
           <Avatar name={currentUser.name} />
           <div>

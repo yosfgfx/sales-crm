@@ -12,7 +12,7 @@
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node --test tests/server.test.cjs",
-    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:permissions && npm run test:db && npm run test:social && npm run test:activity && next build",
+    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:permissions && npm run test:api && npm run test:db && npm run test:social && npm run test:activity && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs",
     "test:drive": "node --test tests/drive.test.cjs",
@@ -24,9 +24,11 @@
     "test:e2e": "next build && npm run test:locks && playwright test",
     "test:locks": "node --test tests/postgres-locks.test.cjs",
     "test:social": "node --test tests/social.test.cjs",
-    "test:activity": "node --test tests/workspace-activity.test.cjs"
+    "test:activity": "node --test tests/workspace-activity.test.cjs",
+    "test:api": "node --test tests/api-mcp.test.cjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "@rive-app/canvas": "^2.31.0",
     "@rive-app/react-canvas": "^4.31.0",
     "class-variance-authority": "^0.7.1",
@@ -49,7 +51,8 @@
     "react-use-measure": "^2.1.7",
     "swiper": "^12.0.2",
     "tailwind-merge": "^3.3.1",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.0",

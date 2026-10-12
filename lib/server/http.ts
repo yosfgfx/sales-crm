@@ -12,6 +12,7 @@ export function apiError(error: unknown): Response {
 }
 
 export function assertSameOrigin(request: Request) {
+  if (/^Bearer\s+wasl_[A-Za-z0-9_-]{20,120}$/.test(request.headers.get("authorization")?.trim() || "")) return;
   const origin = request.headers.get("origin");
   let expected = new URL(request.url).origin;
   if (process.env.MEDIA_APP_ORIGIN) {
