@@ -135,7 +135,7 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
   server.registerTool("reopen_idea", { title: "إعادة فتح", description: "Administrator: reopen a cancelled, rejected or delivered idea. A reason is required.", inputSchema: { ideaId: z.string(), reason: z.string().min(1) }, annotations: write },
     tool(ctx, "reopen_idea", async ({ ideaId, reason }: { ideaId: string; reason: string }) => operate(ctx, { type: "reopenIdea", ideaId, reason })));
   server.registerTool("delete_idea", {
-    title: "نقل فكرة إلى سلة المحذوفات", description: "Administrator: move an idea to the trash (restorable with restore_idea; files and history are kept). Ask the user first; it needs a fresh 6-digit code from their authenticator app.",
+    title: "نقل فكرة إلى سلة المحذوفات", description: "System administrator or department manager: move an idea to the trash (an administrator can restore it with restore_idea; files and history are kept). Ask the user first; it needs a fresh 6-digit code from their authenticator app.",
     inputSchema: { ideaId: z.string(), reason: z.string().optional(), authenticatorCode: z.string().regex(/^\d{6}$/).describe("Fresh code from the user's authenticator app") }, annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
   }, tool(ctx, "delete_idea", async ({ ideaId, reason, authenticatorCode }: { ideaId: string; reason?: string; authenticatorCode: string }) => {
     await confirmWithAuthenticator(ctx.member.id, authenticatorCode);

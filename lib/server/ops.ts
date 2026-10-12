@@ -140,7 +140,7 @@ export async function runOperation(request: Request): Promise<OperationResult> {
         return { ...safeCached, ...(current ? { idea: projectIdea(actor, current) } : cached.idea ? { deletedIdeaId: cached.idea.id } : {}), ...(references && cached.companies ? { companies: references.companies } : {}), ...(references && cached.categories ? { categories: references.categories } : {}), ...(references && cached.settings ? { settings: references.settings } : {}), notifications: await loadNotifications(tx, actor.id) };
       }
     }
-    if (["updateSettings", "addCompany", "addCategory", "updateCompany", "updateCategory", "reassignIdea", "reopenIdea", "deleteIdea", "restoreIdea", "removeCompany", "removeCategory"].includes(op.type)) requireAdministrator(actor);
+    if (["updateSettings", "addCompany", "addCategory", "updateCompany", "updateCategory", "reassignIdea", "reopenIdea", "restoreIdea", "removeCompany", "removeCategory"].includes(op.type)) requireAdministrator(actor);
     if (["updateSettings", "addCompany", "addCategory", "updateCompany", "updateCategory", "removeCompany", "removeCategory"].includes(op.type)) await tx.query("select pg_advisory_xact_lock(hashtext('wasl.references'))");
     const done = async (extra: Omit<OperationResult, "notifications">): Promise<OperationResult> => ({ ...extra, notifications: await loadNotifications(tx, actor.id) });
     const execute = async (): Promise<OperationResult> => {
@@ -211,7 +211,7 @@ export async function runOperation(request: Request): Promise<OperationResult> {
       }
       default: {
         const idea = await ideaOperation(tx, actor, op);
-        return done({ idea: projectIdea(actor, idea) });
+        return done(idea ? { idea: projectIdea(actor, idea) } : { deletedIdeaId: op.ideaId });
       }
     }
     };

@@ -45,9 +45,10 @@ test("cancel is limited to owners before approval and to administrators before d
   assert.equal(reopened.idea.status, "draft");
 });
 
-test("delete and restore: administrator only, preserving the original files and audited work", async () => {
+test("delete: system administrator or department manager; restore: administrator only, preserving the original files and audited work", async () => {
   await assert.rejects(h.op("noura", { type: "deleteIdea", ideaId: "idea-001" }), expectStatus(403));
   await assert.rejects(h.op("noura", { type: "deleteIdea", ideaId: "idea-003" }), expectStatus(403));
+  await assert.rejects(h.op("faisal", { type: "deleteIdea", ideaId: "idea-003" }), expectStatus(403));
   const fs = require("node:fs");
   fs.mkdirSync(path.join(h.temporary, "files"), { recursive: true });
   const blob = path.join(h.temporary, "files", "orphan-check"); fs.writeFileSync(blob, "abc");
@@ -60,6 +61,11 @@ test("delete and restore: administrator only, preserving the original files and 
   await assert.rejects(h.op("noura", { type: "restoreIdea", ideaId: "idea-003" }), expectStatus(403));
   const restored = await h.op("admin", { type: "restoreIdea", ideaId: "idea-003" }); assert.equal(restored.idea.deletedAt, undefined);
   assert.equal(restored.idea.attachments.length, 1); assert.equal(fs.existsSync(blob), true);
+  const byManager = await h.op("manager", { type: "deleteIdea", ideaId: "idea-003", reason: "قرار المدير" });
+  assert.equal(byManager.deletedIdeaId, "idea-003");
+  assert.equal((await h.pg.query("select deleted_by from wasl.ideas where id = 'idea-003'")).rows[0].deleted_by, "manager");
+  await assert.rejects(h.op("manager", { type: "restoreIdea", ideaId: "idea-003" }), expectStatus(403));
+  await h.op("admin", { type: "restoreIdea", ideaId: "idea-003" });
 });
 
 test("work can be reassigned at any open stage so members can be deactivated (H4)", async () => {

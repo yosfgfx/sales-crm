@@ -103,14 +103,29 @@ export default function TeamRealtime({
       }
     });
     let source: EventSource | undefined;
-    if (typeof EventSource !== "undefined") {
+    let live: { stop: () => void } | undefined;
+    let lastSignal = 0;
+    let pendingSignal: ReturnType<typeof setTimeout> | undefined;
+    const signal = (detail: unknown = {}) => {
+      window.dispatchEvent(new CustomEvent("wasl:realtime", { detail }));
+      const wait = 1500 - (Date.now() - lastSignal);
+      if (wait <= 0) {
+        lastSignal = Date.now();
+        refresh();
+      } else if (!pendingSignal) {
+        pendingSignal = setTimeout(() => {
+          pendingSignal = undefined;
+          lastSignal = Date.now();
+          refresh();
+        }, wait);
+      }
+    };
+    const openEventSource = () => {
+      if (ended || typeof EventSource === "undefined") return;
       source = new EventSource("/api/events");
       source.onopen = () => updateConnection(true);
       source.onerror = () => updateConnection(false);
-      source.addEventListener("ready", () => {
-        window.dispatchEvent(new CustomEvent("wasl:realtime"));
-        refresh();
-      });
+      source.addEventListener("ready", () => signal());
       source.addEventListener("update", (event) => {
         let detail: unknown = {};
         try {
@@ -118,23 +133,51 @@ export default function TeamRealtime({
         } catch {
           detail = {};
         }
-        window.dispatchEvent(new CustomEvent("wasl:realtime", { detail }));
-        refresh();
+        signal(detail);
       });
       source.addEventListener("auth", () => {
         source?.close();
         updateConnection(false);
         refresh();
       });
-    }
+    };
+    void fetch("/api/realtime", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : { enabled: false }))
+      .catch(() => ({ enabled: false }))
+      .then(async (config: { enabled: boolean; url?: string; key?: string; topic?: string }) => {
+        if (ended) return;
+        if (!config.enabled || !config.url || !config.key || !config.topic) {
+          openEventSource();
+          return;
+        }
+        const { RealtimeClient } = await import("@supabase/realtime-js");
+        if (ended) return;
+        const client = new RealtimeClient(config.url, { params: { apikey: config.key }, timeout: 20_000 });
+        const channel = client.channel(config.topic, { config: { private: false, broadcast: { self: false } } });
+        channel.on("broadcast", { event: "update" }, (message) => signal(message.payload ?? {}));
+        channel.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            updateConnection(true);
+            signal();
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") updateConnection(false);
+        });
+        live = {
+          stop: () => {
+            void client.removeAllChannels();
+            client.disconnect();
+          },
+        };
+      });
     const fallback = setInterval(() => {
       if (!document.hidden && !useTeamPresence.getState().connected) refresh();
-    }, 5000);
+    }, 15_000);
     const focus = () => refresh();
     window.addEventListener("focus", focus);
     return () => {
       ended = true;
       source?.close();
+      live?.stop();
+      if (pendingSignal) clearTimeout(pendingSignal);
       unsubscribe();
       clearInterval(fallback);
       if (refreshTimer) clearTimeout(refreshTimer);

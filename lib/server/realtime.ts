@@ -108,3 +108,16 @@ export async function openEventStream(
     },
   });
 }
+
+/** Supabase Realtime broadcasts the same change signal from the database; the topic is only given to signed-in members. */
+export async function realtimeConfig(request: Request) {
+  const db = database();
+  await requireUser(request, db);
+  const url = process.env.SUPABASE_URL || "";
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!url || !key || process.env.WASL_REALTIME === "off") return { enabled: false as const };
+  const topic = (await db.query<{ realtime_topic: string | null }>("select realtime_topic from wasl.settings where id")).rows[0]?.realtime_topic;
+  if (!topic) return { enabled: false as const };
+  return { enabled: true as const, url: `${url.replace(/\/$/, "")}/realtime/v1`, key, topic };
+}
+

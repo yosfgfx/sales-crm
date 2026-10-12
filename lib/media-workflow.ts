@@ -174,10 +174,10 @@ const ownerStages: IdeaStatus[] = ["draft", "quotations", "review", "changes"];
 const finalStatuses: IdeaStatus[] = ["delivered", "cancelled", "rejected"];
 export function canWithdrawIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !idea.deletedAt && idea.status === "review" && (isAdministrator(actor) || idea.ownerId === actor.id); }
 export function canCancelIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !idea.deletedAt && !finalStatuses.includes(idea.status) && (isAdministrator(actor) || (idea.ownerId === actor.id && ownerStages.includes(idea.status))); }
-export function canDeleteIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && !idea.deletedAt; }
+export function canDeleteIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && (isAdministrator(actor) || actor.role === "manager") && !idea.deletedAt; }
 export function canRestoreIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && !!idea.deletedAt; }
 export function deleteMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, reason = "", ctx?: WorkflowContext): MediaData {
-  requireRole(data, actor, ["admin"]); const idea = findIdea(data, ideaId, true);
+  requireRole(data, actor, ["admin", "manager"]); const idea = findIdea(data, ideaId, true);
   if (idea.deletedAt) return data;
   if (typeof reason !== "string" || reason.length > 4000) throw new WorkflowError("اكتب سبباً لا يتجاوز ٤٠٠٠ حرف.");
   const at = now(ctx);

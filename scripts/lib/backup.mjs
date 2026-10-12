@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders", "job_runs", "social_voices", "social_messages", "social_reactions", "social_rate_limits", "operation_receipts", "change_cursor"];
+export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders", "job_runs", "social_voices", "social_messages", "social_reactions", "social_rate_limits", "operation_receipts", "change_cursor", "oauth_clients", "api_keys", "api_audit"];
 const RESTORE_ORDER = [...BACKUP_TABLES.filter((table) => table !== "settings"), "settings"];
 const MAGIC = Buffer.from("WASLBK1\0", "latin1");
 
@@ -80,6 +80,7 @@ export async function restoreBackup(db, compressed) {
         await db.query(`insert into wasl.${table} (${names}) select ${names} from jsonb_populate_record(null::wasl.${table}, $1::jsonb)${singleton}`, [JSON.stringify(row)]);
       }
     }
+    await db.query("select setval('wasl.api_audit_id_seq', coalesce((select max(id) from wasl.api_audit), 0) + 1, false)");
     await db.query("commit");
   } catch (error) {
     await db.query("rollback");

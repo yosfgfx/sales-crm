@@ -186,6 +186,24 @@ test("MCP covers the team chat, item discussions and the trash", async () => {
   assert.equal(restored.id, "idea-001");
 });
 
+test("live updates use a secret Supabase Realtime topic given only to signed-in members", async () => {
+  const realtime = require(path.join(h.root, "lib/server/realtime.ts"));
+  const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_PUBLISHABLE_KEY };
+  delete process.env.SUPABASE_URL; delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  assert.deepEqual(await realtime.realtimeConfig(h.getRequest("/api/realtime", h.cookies.noura)), { enabled: false });
+  Object.assign(process.env, { SUPABASE_URL: "https://example.supabase.co", SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test" });
+  const config = await realtime.realtimeConfig(h.getRequest("/api/realtime", h.cookies.noura));
+  assert.equal(config.enabled, true);
+  assert.equal(config.url, "https://example.supabase.co/realtime/v1");
+  assert.match(config.topic, /^wasl-[a-f0-9]{32}$/);
+  await assert.rejects(realtime.realtimeConfig(h.getRequest("/api/realtime")), (error) => error.status === 401);
+  const before = (await h.pg.query("select version from wasl.change_cursor")).rows[0].version;
+  await h.op("noura", { type: "addComment", ideaId: "idea-003", text: "تحديث فوري" });
+  assert.ok(Number((await h.pg.query("select version from wasl.change_cursor")).rows[0].version) > Number(before));
+  if (saved.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = saved.url;
+  if (saved.key === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY; else process.env.SUPABASE_PUBLISHABLE_KEY = saved.key;
+});
+
 test("changing a member's password revokes their keys and app connections", async () => {
   await h.pg.query("delete from wasl.login_attempts where key = 'mfa:admin'");
   await h.pg.query("update wasl.accounts set totp_last_step = null where member_id = 'admin'");
