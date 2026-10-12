@@ -3,7 +3,12 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Idea, TeamMember } from "@/data/media";
 import type { MediaState } from "@/stores/media-store";
-import { canCancelIdea, canDeleteIdea, canReopenIdea, canWithdrawIdea } from "@/lib/media-workflow";
+import {
+  canCancelIdea,
+  canDeleteIdea,
+  canReopenIdea,
+  canWithdrawIdea,
+} from "@/lib/media-workflow";
 import { ActionButton, Icon, formatDate } from "../ui";
 import type { LifecycleDraft } from "./constants";
 
@@ -44,49 +49,92 @@ export function ActionsBar({
       </span>
       <div className="flex flex-wrap gap-3">
         {canDeleteIdea(idea, currentUser) && (
-          <ActionButton className="!text-[var(--danger)]" disabled={busy} onClick={() => setLifecycle({ kind: "delete", text: "" })}>حذف الفكرة</ActionButton>
+          <ActionButton
+            className="!text-[var(--danger)]"
+            disabled={busy}
+            onClick={() => setLifecycle({ kind: "delete", text: "" })}
+          >
+            حذف الفكرة
+          </ActionButton>
         )}
         {canCancelIdea(idea, currentUser) && (
-          <ActionButton disabled={busy} onClick={() => setLifecycle({ kind: "cancel", text: "" })}>إلغاء الفكرة</ActionButton>
+          <ActionButton
+            disabled={busy}
+            onClick={() => setLifecycle({ kind: "cancel", text: "" })}
+          >
+            إلغاء الفكرة
+          </ActionButton>
         )}
         {canReopenIdea(idea, currentUser) && (
-          <ActionButton disabled={busy} onClick={() => setLifecycle({ kind: "reopen", text: "" })}>إعادة فتح</ActionButton>
-        )}
-        {admin && !["delivered", "cancelled", "rejected"].includes(idea.status) && (
-          <ActionButton disabled={busy} onClick={() => setReassign({ ownerId: idea.ownerId, designerId: idea.designerId })}>إعادة الإسناد</ActionButton>
-        )}
-        {canWithdrawIdea(idea, currentUser) && (
-          <ActionButton disabled={busy} onClick={() => void run(() => store.withdrawIdea(idea.id), "سُحبت الفكرة من الاعتماد. عدّلها ثم أعد إرسالها.")}>سحب من الاعتماد</ActionButton>
-        )}
-        {(admin || currentUser?.role === "manager") && idea.status === "review" && idea.ownerId === currentUser?.id && (
-          <span className="text-xs text-[var(--soft)]">يعتمد هذه الفكرة مدير آخر لأنك صاحبها.</span>
-        )}
-        {canEdit && (
           <ActionButton
-            primary
+            disabled={busy}
+            onClick={() => setLifecycle({ kind: "reopen", text: "" })}
+          >
+            إعادة فتح
+          </ActionButton>
+        )}
+        {admin &&
+          !["delivered", "cancelled", "rejected"].includes(idea.status) && (
+            <ActionButton
+              disabled={busy}
+              onClick={() =>
+                setReassign({
+                  ownerId: idea.ownerId,
+                  designerId: idea.designerId,
+                })
+              }
+            >
+              إعادة الإسناد
+            </ActionButton>
+          )}
+        {canWithdrawIdea(idea, currentUser) && (
+          <ActionButton
             disabled={busy}
             onClick={() =>
               void run(
-                () => store.submitIdea(idea.id),
-                "أُرسلت الفكرة مع عرضها إلى المدير للمراجعة.",
+                () => store.withdrawIdea(idea.id),
+                "سُحبت الفكرة من الاعتماد. عدّلها ثم أعد إرسالها.",
               )
             }
           >
-            <Icon name="check" className="size-4" />
-            {idea.status === "changes"
-              ? "إعادة الإرسال للاعتماد"
-              : "إرسال للاعتماد"}
+            سحب من الاعتماد
           </ActionButton>
         )}
+        {(admin || currentUser?.role === "manager") &&
+          idea.status === "review" &&
+          idea.ownerId === currentUser?.id && (
+            <span className="text-xs text-[var(--soft)]">
+              يعتمد هذه الفكرة مدير آخر لأنك صاحبها.
+            </span>
+          )}
+        {canEdit &&
+          ["draft", "quotations", "changes"].includes(idea.status) && (
+            <ActionButton
+              primary
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () => store.submitIdea(idea.id),
+                  "أُرسلت الفكرة مع عرضها إلى المدير للمراجعة.",
+                )
+              }
+            >
+              <Icon name="check" className="size-4" />
+              {idea.status === "changes"
+                ? "إعادة الإرسال للاعتماد"
+                : "إرسال للاعتماد"}
+            </ActionButton>
+          )}
         {canReview && (
           <>
-            <ActionButton className="!text-[var(--danger)]" onClick={() => setLifecycle({ kind: "reject", text: "" })} disabled={busy}>
-              رفض نهائي
-            </ActionButton>
             <ActionButton
-              onClick={() => setReturnDialog(true)}
+              className="!text-[var(--danger)]"
+              onClick={() => setLifecycle({ kind: "reject", text: "" })}
               disabled={busy}
             >
+              رفض نهائي
+            </ActionButton>
+            <ActionButton onClick={() => setReturnDialog(true)} disabled={busy}>
               إعادة للتعديل
             </ActionButton>
             <ActionButton
@@ -94,8 +142,7 @@ export function ActionsBar({
               disabled={busy}
               onClick={() =>
                 void run(
-                  () =>
-                    store.reviewIdea(idea.id, "approved", ""),
+                  () => store.reviewIdea(idea.id, "approved", ""),
                   "اعتُمدت الفكرة وانتقلت تلقائيًا إلى استوديو التصميم.",
                 )
               }

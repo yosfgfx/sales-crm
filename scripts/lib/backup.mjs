@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders"];
+export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders", "job_runs", "social_voices", "social_messages", "social_reactions", "social_rate_limits", "operation_receipts", "change_cursor"];
 const RESTORE_ORDER = [...BACKUP_TABLES.filter((table) => table !== "settings"), "settings"];
 const MAGIC = Buffer.from("WASLBK1\0", "latin1");
 
@@ -32,9 +32,20 @@ function open(sealed) {
 
 export const BACKUP_EXTENSION = ".json.gz.enc";
 
-export async function createBackup(db) {
+async function readTables(db) {
   const tables = {};
-  for (const table of BACKUP_TABLES) tables[table] = (await db.query(`select to_jsonb(t) as row from wasl.${table} t`)).rows.map((row) => row.row);
+  for (const table of BACKUP_TABLES) {
+    const exists = (await db.query("select to_regclass($1) as relation", [`wasl.${table}`])).rows[0]?.relation;
+    if (exists) tables[table] = (await db.query(`select to_jsonb(t) as row from wasl.${table} t`)).rows.map((row) => row.row);
+  }
+  return tables;
+}
+
+export async function createBackup(db) {
+  const tables = typeof db.transaction === "function" ? await db.transaction(async (tx) => {
+    await tx.query("set transaction isolation level repeatable read, read only");
+    return readTables(tx);
+  }) : await readTables(db);
   const payload = { format: "wasl-backup", version: 1, createdAt: new Date().toISOString(), tables };
   return seal(gzipSync(Buffer.from(JSON.stringify(payload))));
 }
@@ -47,8 +58,27 @@ export async function restoreBackup(db, compressed) {
   await db.query("begin");
   try {
     for (const table of RESTORE_ORDER) {
-      const rows = payload.tables[table] || [];
-      for (const row of rows) await db.query(`insert into wasl.${table} select * from jsonb_populate_record(null::wasl.${table}, $1::jsonb)`, [JSON.stringify(row)]);
+      let rows = payload.tables[table] || [];
+      if (!Array.isArray(rows)) throw new Error("بيانات النسخة الاحتياطية غير صالحة.");
+      if (!rows.length) continue;
+      const columns = new Set((await db.query("select column_name from information_schema.columns where table_schema='wasl' and table_name=$1", [table])).rows.map((column) => column.column_name));
+      if (!columns.size) throw new Error(`طبّق ترقيات قاعدة البيانات قبل استعادة الجدول ${table}.`);
+      if (table === "social_messages") {
+        const pending = new Map(rows.map((row) => [row.id, row])), ordered = [];
+        while (pending.size) {
+          const ready = [...pending.values()].filter((row) => !row.parent_id || !pending.has(row.parent_id));
+          if (!ready.length) throw new Error("ترابط ردود الدردشة في النسخة الاحتياطية غير صالح.");
+          for (const row of ready) { ordered.push(row); pending.delete(row.id); }
+        }
+        rows = ordered;
+      }
+      for (const row of rows) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("سجل النسخة الاحتياطية غير صالح.");
+        const names = Object.keys(row).filter((column) => columns.has(column)).map((column) => `"${column.replaceAll('"', '""')}"`).join(",");
+        if (!names) throw new Error("سجل النسخة الاحتياطية فارغ.");
+        const singleton = table === "change_cursor" ? " on conflict(id) do update set version=greatest(wasl.change_cursor.version,excluded.version)+1,last_changed_at=now()" : "";
+        await db.query(`insert into wasl.${table} (${names}) select ${names} from jsonb_populate_record(null::wasl.${table}, $1::jsonb)${singleton}`, [JSON.stringify(row)]);
+      }
     }
     await db.query("commit");
   } catch (error) {

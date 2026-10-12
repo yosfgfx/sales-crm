@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { applyMigrations } from "../scripts/lib/migrations.mjs";
+import { applyMigrations, migrationFiles } from "../scripts/lib/migrations.mjs";
 import { importState, verifyImport } from "../scripts/lib/import-state.mjs";
 import { createInitialMediaData, MEDIA_CATEGORIES, MEDIA_COMPANIES } from "../data/media.ts";
 import { bootstrapRoot } from "../scripts/lib/bootstrap.mjs";
@@ -116,4 +116,47 @@ test("attachments stored in Supabase Storage satisfy the storage check (N1)", as
   await importState(db, sampleDocument());
   await db.query("insert into wasl.attachments (id, kind, name, size, mime, storage, local_path, owner_id) values ('s1', 'brief', 'a.txt', 3, 'text/plain', 'supabase', 'files/s1', 'root')");
   await assert.rejects(db.query("insert into wasl.attachments (id, kind, name, size, mime, storage, owner_id) values ('s2', 'brief', 'a.txt', 3, 'text/plain', 'supabase', 'root')"));
+});
+
+test("social backups preserve voice metadata, reversed thread rows, reactions, receipts and the singleton cursor", async () => {
+  const { createBackup, restoreBackup } = await import("../scripts/lib/backup.mjs");
+  const source = await freshDatabase();
+  await applyMigrations(source.db);
+  await importState(source.db, sampleDocument());
+  const parent = "10000000-0000-4000-8000-000000000001", reply = "10000000-0000-4000-8000-000000000002", voice = "10000000-0000-4000-8000-000000000003";
+  await source.db.query("insert into wasl.social_voices(id,owner_id,mime,size,duration_seconds,storage,storage_key,sha256,linked_at) values($1,'root','audio/webm',200,2,'local','social/test.webm',$2,now())", [voice, "a".repeat(64)]);
+  await source.db.query("insert into wasl.social_messages(id,scope,scope_id,author_id,body) values($1,'team','main','root','رسالة أصلية')", [parent]);
+  await source.db.query("insert into wasl.social_messages(id,scope,scope_id,author_id,body,parent_id,voice_id) values($1,'team','main','root','رد صوتي',$2,$3)", [reply, parent, voice]);
+  await source.db.query("insert into wasl.social_reactions(message_id,member_id,emoji) values($1,'root','🎉')", [reply]);
+  await source.db.query("insert into wasl.operation_receipts(request_id,actor_id,request_hash,result) values($1,'root','test-hash','{}')", ["10000000-0000-4000-8000-000000000004"]);
+  const unordered = { query: async (sql, params) => { const result = await source.db.query(sql, params); return sql.includes("wasl.social_messages t") ? { ...result, rows: result.rows.reverse() } : result; } };
+  const archive = await createBackup(unordered);
+  const target = await freshDatabase();
+  await applyMigrations(target.db);
+  const counts = await restoreBackup(target.db, archive);
+  assert.equal(counts.social_messages, 2);
+  const restored = (await target.db.query("select parent_id,voice_id from wasl.social_messages where id=$1", [reply])).rows[0];
+  assert.equal(restored.parent_id, parent); assert.equal(restored.voice_id, voice);
+  assert.equal((await target.db.query("select emoji from wasl.social_reactions")).rows[0].emoji, "🎉");
+  assert.equal((await target.db.query("select count(*)::int as n from wasl.operation_receipts")).rows[0].n, 1);
+  assert.equal((await target.db.query("select count(*)::int as n from wasl.change_cursor")).rows[0].n, 1);
+  assert.ok(Number((await target.db.query("select version from wasl.change_cursor")).rows[0].version) > 0);
+  await source.pg.close(); await target.pg.close();
+});
+
+test("pre-social encrypted backups restore into upgraded tables with new column defaults", async () => {
+  const { createBackup, restoreBackup } = await import("../scripts/lib/backup.mjs");
+  const source = await freshDatabase();
+  await applyMigrations(source.db, migrationFiles().filter((file) => file.name !== "wasl_social"));
+  const document = sampleDocument();
+  await importState(source.db, document);
+  const archive = await createBackup(source.db);
+  const target = await freshDatabase();
+  await applyMigrations(target.db);
+  const restored = await restoreBackup(target.db, archive);
+  assert.equal(restored.ideas, document.data.ideas.length);
+  assert.equal((await target.db.query("select count(*)::int as n from wasl.ideas where deletion_reason='' and deleted_at is null")).rows[0].n, document.data.ideas.length);
+  assert.equal((await target.db.query("select count(*)::int as n from wasl.social_messages")).rows[0].n, 0);
+  assert.equal((await target.db.query("select count(*)::int as n from wasl.change_cursor")).rows[0].n, 1);
+  await source.pg.close(); await target.pg.close();
 });

@@ -4,6 +4,8 @@ import { WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
 import { CompanyLogo } from "../company-logo";
 import { ActionButton, EmptyState, StatusBadge, formatDate } from "../ui";
 import { companyOf, nameOf, production } from "./shared";
+import { Icon } from "../ui";
+import { useTeamPresence } from "@/stores/team-presence";
 
 export function IdeaList({
   ideas,
@@ -14,6 +16,7 @@ export function IdeaList({
   data: MediaData;
   onOpen: (id: string) => void;
 }) {
+  const completed = useTeamPresence((state) => state.completed);
   if (!ideas.length)
     return (
       <EmptyState
@@ -35,7 +38,7 @@ export function IdeaList({
           <ActionButton
             key={idea.id}
             onClick={() => onOpen(idea.id)}
-            className="grid h-auto w-full grid-cols-1 items-center gap-3 !rounded-none px-6 py-5 text-start !whitespace-normal !shadow-none md:grid-cols-[1.7fr_1fr_1fr_.8fr_.7fr]"
+            className={`grid h-auto w-full grid-cols-1 items-center gap-3 !rounded-none px-6 py-5 text-start !whitespace-normal !shadow-none md:grid-cols-[1.7fr_1fr_1fr_.8fr_.7fr] ${idea.status === "delivered" ? "!bg-[#eff9f3]" : ""} ${completed[idea.id] ? "media-completion-new" : ""}`}
           >
             <span>
               <span className="block text-xs text-[var(--soft)]">
@@ -44,6 +47,12 @@ export function IdeaList({
               <span className="mt-1 block leading-relaxed font-bold">
                 {idea.title}
               </span>
+              {idea.status === "delivered" && (
+                <span className="mt-1 flex items-center gap-1.5 text-xs text-[#197254]">
+                  <Icon name="trophy" className="size-3.5" />
+                  إنجاز مكتمل
+                </span>
+              )}
               {idea.sourceProposal && (
                 <span className="mt-1 block text-xs text-[var(--primary)]">
                   مقدم الفكرة: {idea.sourceProposal.proposerName}
@@ -65,8 +74,8 @@ export function IdeaList({
             <span className="text-xs text-[var(--soft)]">
               {nameOf(
                 data,
-                production.includes(idea.status)
-                  ? idea.designerId
+                production.includes(idea.status) || idea.status === "delivered"
+                  ? idea.designerId || idea.ownerId
                   : idea.ownerId,
               )}
             </span>

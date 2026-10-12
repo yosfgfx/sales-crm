@@ -1,4 +1,5 @@
-import type { Attachment, Company, ContentCategory, HistoryEvent, Idea, MediaData, MediaNotification, Quotation, SystemSettings, TeamMember } from "@/data/media";
+import { randomUUID } from "node:crypto";
+import type { NotificationEntity, Attachment, Company, ContentCategory, HistoryEvent, Idea, MediaData, MediaNotification, Quotation, SystemSettings, TeamMember } from "@/data/media";
 import type { Queryable } from "./db";
 
 export const DEFAULT_LOGO_URL = "/assets/media/department-logo.png";
@@ -42,10 +43,11 @@ export async function loadReference(q: Queryable): Promise<Pick<MediaData, "memb
 
 const IDEA_COLUMNS = `id, code, title, company_id, department, category_id, work_type::text as work_type, description, content, execution_plan, channels::text[] as channels,
   owner_id, coalesce(designer_id, '') as designer_id, requested_at::text as requested_at, due_date::text as due_date, coalesce(scheduled_at::text, '') as scheduled_at,
-  approved_at, delivered_at::text as delivered_at, priority::text as priority, status::text as status, needs_quotes, manager_feedback, source_proposal, created_at, updated_at, archive_status::text as archive_status, archived_at, drive_folder_id`;
+  approved_at, delivered_at::text as delivered_at, priority::text as priority, status::text as status, needs_quotes, manager_feedback, source_proposal, created_at, updated_at, archive_status::text as archive_status, archived_at, drive_folder_id, deleted_at, deleted_by, deletion_reason`;
 
-export async function loadIdeas(q: Queryable, filter: { ids?: string[] } = {}): Promise<Idea[]> {
-  const where = filter.ids ? "where id = any($1::text[])" : "";
+export async function loadIdeas(q: Queryable, filter: { ids?: string[]; includeDeleted?: boolean } = {}): Promise<Idea[]> {
+  const clauses = [...(filter.ids ? ["id = any($1::text[])"] : []), ...(filter.includeDeleted ? [] : ["deleted_at is null"])];
+  const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
   const params = filter.ids ? [filter.ids] : [];
   const ideas = await q.query(`select ${IDEA_COLUMNS} from wasl.ideas ${where} order by created_at desc, id`, params);
   if (!ideas.rows.length) return [];
@@ -68,6 +70,7 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[] } = {}): 
       quotations: quotations.get(id) || [], attachments: attachments.get(id) || [], managerFeedback: text(row.manager_feedback), history: history.get(id) || [], createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
     };
     const deliveredAt = optionalText(row.delivered_at), approvedAt = row.approved_at ? iso(row.approved_at) : undefined;
+    if (row.deleted_at) { idea.deletedAt = iso(row.deleted_at); idea.deletedBy = text(row.deleted_by); idea.deletionReason = text(row.deletion_reason); }
     if (deliveredAt) idea.deliveredAt = deliveredAt;
     if (approvedAt) idea.approvedAt = approvedAt;
     idea.archive = { status: row.archive_status as NonNullable<Idea["archive"]>["status"], ...(row.archived_at ? { archivedAt: iso(row.archived_at) } : {}), ...(row.drive_folder_id ? { folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(text(row.drive_folder_id))}` } : {}) };
@@ -76,10 +79,10 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[] } = {}): 
   });
 }
 
-export async function lockIdea(q: Queryable, id: string) {
-  const locked = await q.query("select id from wasl.ideas where id = $1 for update", [id]);
+export async function lockIdea(q: Queryable, id: string, includeDeleted = false) {
+  const locked = await q.query("select id from wasl.ideas where id = $1 and ($2::boolean or deleted_at is null) for update", [id, includeDeleted]);
   if (!locked.rows.length) return null;
-  return (await loadIdeas(q, { ids: [id] }))[0] || null;
+  return (await loadIdeas(q, { ids: [id], includeDeleted }))[0] || null;
 }
 
 export async function nextIdeaCode(q: Queryable, year: number) {
@@ -99,6 +102,7 @@ export async function persistIdea(q: Queryable, before: Idea | null, after: Idea
       requested_at = $12::date, due_date = $13::date, scheduled_at = $14::date, approved_at = $15::timestamptz, delivered_at = $16::date, priority = $17::wasl.priority, status = $18::wasl.idea_status, needs_quotes = $19, manager_feedback = $20, updated_at = $21::timestamptz,
       approved_by = case when $18::wasl.idea_status = 'approved' and status <> 'approved' then $23 else approved_by end, revision = revision + 1 where id = $22`, [...ideaValues(after), after.id, actorId]);
   }
+  if (before?.deletedAt !== after.deletedAt) await q.query("update wasl.ideas set deleted_at = $2::timestamptz, deleted_by = $3, deletion_reason = $4 where id = $1", [after.id, after.deletedAt || null, after.deletedBy || null, after.deletionReason || ""]);
   const known = new Set((before?.history || []).map((event) => event.id));
   for (const event of after.history.filter((item) => !known.has(item.id))) {
     await q.query("insert into wasl.idea_events (id, idea_id, at, actor_id, action, note, from_status, to_status) values ($1, $2, $3::timestamptz, $4, $5, $6, $7::wasl.idea_status, $8::wasl.idea_status)", [event.id, after.id, event.at, event.actorId, event.action, event.note, event.from || null, event.to || null]);
@@ -119,17 +123,27 @@ export async function persistIdea(q: Queryable, before: Idea | null, after: Idea
 }
 
 export async function insertNotifications(q: Queryable, notices: MediaNotification[]) {
-  for (const notice of notices) await q.query("insert into wasl.notifications (id, recipient_id, idea_id, type, title, body, created_at) values ($1, $2, $3, $4::wasl.notification_type, $5, $6, $7::timestamptz)", [notice.id, notice.recipientId, notice.ideaId || null, notice.type, notice.title, notice.body, notice.createdAt]);
+  // One statement per event's recipients; transaction commit drives the shared realtime cursor.
+  if (!notices.length) return;
+  const unique = [...new Map(notices.map((notice) => [notice.id, notice])).values()];
+  for (const notice of unique) await q.query("insert into wasl.notifications (id, recipient_id, idea_id, type, title, body, created_at, actor_id, actor_name, entity_type, entity_id, action) select $1, $2, $3, $4::wasl.notification_type, $5, $6, $7::timestamptz, $8, $9, $10, $11, $12 where exists (select 1 from wasl.members where id = $2 and active) on conflict (id) do nothing", [notice.id, notice.recipientId, notice.ideaId || null, notice.type, notice.title, notice.body, notice.createdAt, notice.actorId || null, notice.actorName || null, notice.entityType || (notice.ideaId ? "idea" : "workspace"), notice.entityId || notice.ideaId || null, notice.action || null]);
+}
+
+export interface WorkspaceActivityInput { entityType: NotificationEntity; entityId: string; action: string; title: string; body: string; recipients?: string[]; type?: MediaNotification["type"] }
+export async function notifyWorkspaceActivity(q: Queryable, actor: TeamMember, input: WorkspaceActivityInput): Promise<void> {
+  const recipients = await q.query<{ id: string }>("select id from wasl.members where active and (role = 'manager' or id = any($1::text[])) order by id", [input.recipients || []]);
+  const at = new Date().toISOString();
+  await insertNotifications(q, recipients.rows.map(({ id }) => ({ id: randomUUID(), recipientId: id, ideaId: input.entityType === "idea" ? input.entityId : "", type: input.type || "activity", title: input.title, body: `${actor.name} · ${input.body}`, createdAt: at, read: false, actorId: actor.id, actorName: actor.name, entityType: input.entityType, entityId: input.entityId, action: input.action })));
 }
 
 export const NOTIFICATION_PAGE = 50;
 
 export async function loadNotifications(q: Queryable, memberId: string, options: { before?: { createdAt: string; id: string } } = {}): Promise<MediaNotification[]> {
   const rows = options.before
-    ? await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications where recipient_id = $1 and (created_at, id) < ($2::timestamptz, $3) order by created_at desc, id desc limit $4", [memberId, options.before.createdAt, options.before.id, NOTIFICATION_PAGE + 1])
+    ? await q.query("select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at, actor_id, actor_name, entity_type, entity_id, action from wasl.notifications where recipient_id = $1 and (created_at, id) < ($2::timestamptz, $3) order by created_at desc, id desc limit $4", [memberId, options.before.createdAt, options.before.id, NOTIFICATION_PAGE + 1])
     : await q.query(`with latest as (select id from wasl.notifications where recipient_id = $1 order by created_at desc, id desc limit $2)
-        select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at from wasl.notifications n
+        select id, recipient_id, idea_id, type::text as type, title, body, created_at, read_at, actor_id, actor_name, entity_type, entity_id, action from wasl.notifications n
         where recipient_id = $1 and (id in (select id from latest) or read_at is null)
         order by created_at desc, id desc limit 300`, [memberId, NOTIFICATION_PAGE]);
-  return rows.rows.map((row) => ({ id: text(row.id), recipientId: text(row.recipient_id), ideaId: text(row.idea_id), type: row.type as MediaNotification["type"], title: text(row.title), body: text(row.body), createdAt: iso(row.created_at), read: Boolean(row.read_at) }));
+  return rows.rows.map((row) => ({ id: text(row.id), recipientId: text(row.recipient_id), ideaId: text(row.idea_id), type: row.type as MediaNotification["type"], title: text(row.title), body: text(row.body), createdAt: iso(row.created_at), read: Boolean(row.read_at), ...(row.actor_id ? { actorId: text(row.actor_id) } : {}), ...(row.actor_name ? { actorName: text(row.actor_name) } : {}), ...(row.entity_type ? { entityType: row.entity_type as NotificationEntity } : {}), ...(row.entity_id ? { entityId: text(row.entity_id) } : {}), ...(row.action ? { action: text(row.action) } : {}) }));
 }

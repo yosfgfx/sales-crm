@@ -45,23 +45,21 @@ test("cancel is limited to owners before approval and to administrators before d
   assert.equal(reopened.idea.status, "draft");
 });
 
-test("delete: owners before approval, administrators any time, with an audit copy", async () => {
+test("delete and restore: administrator only, preserving the original files and audited work", async () => {
   await assert.rejects(h.op("noura", { type: "deleteIdea", ideaId: "idea-001" }), expectStatus(403));
-  await assert.rejects(h.op("sara", { type: "deleteIdea", ideaId: "idea-003" }), expectStatus(403));
+  await assert.rejects(h.op("noura", { type: "deleteIdea", ideaId: "idea-003" }), expectStatus(403));
   const fs = require("node:fs");
   fs.mkdirSync(path.join(h.temporary, "files"), { recursive: true });
-  const blob = path.join(h.temporary, "files", "orphan-check");
-  fs.writeFileSync(blob, "abc");
+  const blob = path.join(h.temporary, "files", "orphan-check"); fs.writeFileSync(blob, "abc");
   await h.pg.query("insert into wasl.attachments (id, kind, name, size, mime, storage, local_path, owner_id, idea_id) values ('00000000-0000-4000-8000-00000000beef', 'brief', 'a.txt', 3, 'text/plain', 'local', 'files/orphan-check', 'noura', 'idea-003')");
-  const own = await h.op("noura", { type: "deleteIdea", ideaId: "idea-003", reason: "لم تعد مطلوبة" });
-  assert.equal(own.deletedIdeaId, "idea-003");
-  assert.equal(fs.existsSync(blob), false);
-  assert.equal(await statusOf("idea-003"), undefined);
-  const byAdmin = await h.op("admin", { type: "deleteIdea", ideaId: "idea-001" });
-  assert.equal(byAdmin.deletedIdeaId, "idea-001");
-  const audit = (await h.pg.query("select id, deleted_by, reason, snapshot->>'title' as title from wasl.deleted_ideas order by deleted_at")).rows;
-  assert.deepEqual(audit.map((row) => [row.id, row.deleted_by]), [["idea-003", "noura"], ["idea-001", "admin"]]);
-  assert.ok(audit[1].title);
+  const removed = await h.op("admin", { type: "deleteIdea", ideaId: "idea-003", reason: "لم تعد مطلوبة" });
+  assert.ok(removed.idea.deletedAt); assert.equal(removed.idea.deletedBy, "admin");
+  assert.equal(fs.existsSync(blob), true); assert.equal(await statusOf("idea-003"), "draft");
+  assert.equal((await h.pg.query("select count(*)::int as n from wasl.attachments where idea_id = 'idea-003' and removed_at is null")).rows[0].n, 1);
+  assert.equal((await h.pg.query("select action from wasl.idea_events where idea_id='idea-003' order by at desc,id desc limit 1")).rows[0].action, "deleted");
+  await assert.rejects(h.op("noura", { type: "restoreIdea", ideaId: "idea-003" }), expectStatus(403));
+  const restored = await h.op("admin", { type: "restoreIdea", ideaId: "idea-003" }); assert.equal(restored.idea.deletedAt, undefined);
+  assert.equal(restored.idea.attachments.length, 1); assert.equal(fs.existsSync(blob), true);
 });
 
 test("work can be reassigned at any open stage so members can be deactivated (H4)", async () => {

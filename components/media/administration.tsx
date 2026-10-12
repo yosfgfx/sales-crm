@@ -5,33 +5,62 @@ import { apiRequest } from "@/lib/api-client";
 import { useMediaStore } from "@/stores/media-store";
 import TeamSettings from "./team-settings";
 import Asset from "@/components/_ui/asset";
-import { ActionButton, Icon, TabList, countText, errorText, formatCount } from "./ui";
+import {
+  ActionButton,
+  Icon,
+  Modal,
+  TabList,
+  countText,
+  errorText,
+  formatCount,
+} from "./ui";
 import { CompanyLogo } from "./company-logo";
 import { companyBrand } from "@/lib/company-branding";
 import Approvals from "./approvals";
 import DriveIntegration from "./drive-integration";
 import IdeaImport from "./idea-import";
+import AdminWorkspace from "./admin-workspace";
+import type { DiscussionTarget } from "./discussion-shortcuts";
 
 export default function Administration({
   onOpenIdea,
+  onEditIdea,
+  onCreateIdea,
+  onDiscussion,
   onNotice,
   initialTab,
   driveNotice,
 }: {
   onOpenIdea: (id: string) => void;
+  onEditIdea: (id: string) => void;
+  onCreateIdea: () => void;
+  onDiscussion: (target: DiscussionTarget) => void;
   onNotice?: (message: string) => void;
   initialTab?: string;
   driveNotice?: string;
 }) {
   const store = useMediaStore(),
     { data } = store;
-  const [tab, setTab] = useState(initialTab === "integrations" ? "drive" : initialTab || "companies"),
+  const [tab, setTab] = useState(
+      initialTab === "integrations" ? "drive" : initialTab || "companies",
+    ),
     [company, setCompany] = useState(""),
     [category, setCategory] = useState("");
   const [settings, setSettings] = useState(data.settings),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
-  const [editing, setEditing] = useState<{ kind: "company" | "category"; id: string; value: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    kind: "company" | "category";
+    id: string;
+    value: string;
+    shortName?: string;
+    targetPerMonth?: number;
+  } | null>(null);
+  const [removing, setRemoving] = useState<{
+    kind: "company" | "category";
+    id: string;
+    name: string;
+  } | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null),
     [baseline, setBaseline] = useState(data.settings);
   const run = async (action: () => Promise<unknown>, success: string) => {
@@ -54,7 +83,10 @@ export default function Administration({
         const form = new FormData();
         form.append("files", logoFile);
         form.set("kind", "logo");
-        const json = await apiRequest<{ files: { url: string }[] }>("/api/files", { method: "POST", body: form });
+        const json = await apiRequest<{ files: { url: string }[] }>(
+          "/api/files",
+          { method: "POST", body: form },
+        );
         logoUrl = json.files[0].url;
         setSettings((prev) => ({ ...prev, logoUrl }));
         setLogoFile(null);
@@ -74,8 +106,12 @@ export default function Administration({
         label="أقسام إدارة النظام"
         idPrefix="admin"
         value={tab}
-        onChange={(id) => { setTab(id); setMessage(""); }}
+        onChange={(id) => {
+          setTab(id);
+          setMessage("");
+        }}
         items={[
+          { id: "workspace", label: "تحرير لوحة العمل" },
           { id: "approvals", label: "الاعتمادات" },
           { id: "companies", label: "الشركات" },
           { id: "categories", label: "تصنيفات المحتوى" },
@@ -85,237 +121,481 @@ export default function Administration({
           { id: "import", label: "استيراد الأفكار" },
         ]}
       />
-      <div role="tabpanel" id="admin-panel" aria-labelledby={`admin-tab-${tab}`} className="contents">
-      {tab === "approvals" && (
-        <Approvals
-          data={data}
-          onOpen={onOpenIdea}
-          onNotice={onNotice}
-          administration
-        />
-      )}
-      {tab === "companies" && (
-        <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
-          <section className="media-card p-6">
-            <h2>الجهات المعنية بالنشر</h2>
-            <p className="mt-2 text-[var(--soft)]">
-              تظهر هذه الشركات في كل فكرة، وفي التصفية والتقارير.
-            </p>
-            <div className="mt-6 divide-y divide-[var(--border)]">
-              {data.companies.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex flex-col items-start justify-between gap-3 py-4 sm:flex-row sm:items-center"
-                >
-                  <div className="flex w-full min-w-0 flex-1 flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center">
-                    {companyBrand(c.id) ? (
-                      <CompanyLogo
-                        companyId={c.id}
-                        companyName={c.name}
-                        decorative
-                        className="h-12 w-36"
-                      />
-                    ) : (
+      <div
+        role="tabpanel"
+        id="admin-panel"
+        aria-labelledby={`admin-tab-${tab}`}
+        className="contents"
+      >
+        {tab === "workspace" && (
+          <AdminWorkspace
+            onOpenIdea={onOpenIdea}
+            onEditIdea={onEditIdea}
+            onCreateIdea={onCreateIdea}
+          />
+        )}
+        {tab === "approvals" && (
+          <Approvals
+            data={data}
+            onOpen={onOpenIdea}
+            onNotice={onNotice}
+            administration
+          />
+        )}
+        {tab === "companies" && (
+          <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
+            <section className="media-card p-6">
+              <h2>الجهات المعنية بالنشر</h2>
+              <p className="mt-2 text-[var(--soft)]">
+                تظهر هذه الشركات في كل فكرة، وفي التصفية والتقارير.
+              </p>
+              <div className="mt-6 divide-y divide-[var(--border)]">
+                {data.companies.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex flex-col items-start justify-between gap-3 py-4 sm:flex-row sm:items-center"
+                  >
+                    <div className="flex w-full min-w-0 flex-1 flex-col items-start gap-3 sm:w-auto sm:flex-row sm:items-center">
+                      {companyBrand(c.id) ? (
+                        <CompanyLogo
+                          companyId={c.id}
+                          companyName={c.name}
+                          decorative
+                          className="h-12 w-36"
+                        />
+                      ) : (
+                        <span
+                          className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[var(--background)] text-lg font-bold"
+                          style={{ color: c.color }}
+                        >
+                          {c.initials}
+                        </span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        {editing?.kind === "company" && editing.id === c.id ? (
+                          <form
+                            className="flex flex-wrap gap-2"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void run(async () => {
+                                await store.updateCompany(c.id, {
+                                  name: editing.value,
+                                  shortName: editing.shortName || editing.value,
+                                });
+                                setEditing(null);
+                              }, "حُفظت بيانات الشركة.");
+                            }}
+                          >
+                            <input
+                              aria-label="اسم الشركة الجديد"
+                              required
+                              maxLength={150}
+                              className="media-input !w-auto flex-1"
+                              value={editing.value}
+                              onChange={(e) =>
+                                setEditing({
+                                  ...editing,
+                                  value: e.target.value,
+                                })
+                              }
+                            />
+                            <input
+                              aria-label="الاسم المختصر للشركة"
+                              required
+                              maxLength={150}
+                              className="media-input !w-auto flex-1"
+                              value={editing.shortName || ""}
+                              onChange={(e) =>
+                                setEditing({
+                                  ...editing,
+                                  shortName: e.target.value,
+                                })
+                              }
+                              placeholder="الاسم المختصر"
+                            />
+                            <ActionButton type="submit" disabled={busy}>
+                              حفظ
+                            </ActionButton>
+                            <ActionButton
+                              type="button"
+                              onClick={() => setEditing(null)}
+                            >
+                              إلغاء
+                            </ActionButton>
+                          </form>
+                        ) : (
+                          <span className="block font-medium">{c.name}</span>
+                        )}
+                        <span className="text-xs text-[var(--soft)]">
+                          الأعمال المرتبطة:{" "}
+                          {formatCount(
+                            data.ideas.filter(
+                              (i) => !i.deletedAt && i.companyId === c.id,
+                            ).length,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[var(--background)] text-lg font-bold"
-                        style={{ color: c.color }}
+                        className={`media-badge ${c.active === false ? "" : "media-badge-success"}`}
                       >
-                        {c.initials}
+                        {c.active === false ? "موقوفة" : "متاحة للنشر"}
                       </span>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      {editing?.kind === "company" && editing.id === c.id ? (
-                        <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.updateCompany(c.id, { name: editing.value }); setEditing(null); }, "حُفظ اسم الشركة."); }}>
-                          <input aria-label="اسم الشركة الجديد" required maxLength={150} className="media-input !w-auto flex-1" value={editing.value} onChange={(e) => setEditing({ ...editing, value: e.target.value })} />
-                          <ActionButton type="submit" disabled={busy}>حفظ</ActionButton>
-                          <ActionButton type="button" onClick={() => setEditing(null)}>إلغاء</ActionButton>
-                        </form>
-                      ) : <span className="block font-medium">{c.name}</span>}
-                      <span className="text-xs text-[var(--soft)]">
-                        الأعمال المرتبطة: {formatCount(data.ideas.filter((i) => i.companyId === c.id).length)}
-                      </span>
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        onClick={() =>
+                          setEditing({
+                            kind: "company",
+                            id: c.id,
+                            value: c.name,
+                            shortName: c.shortName,
+                          })
+                        }
+                      >
+                        تعديل بيانات الشركة
+                      </ActionButton>
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        onClick={() =>
+                          onDiscussion({
+                            kind: "company",
+                            id: c.id,
+                            title: c.name,
+                          })
+                        }
+                      >
+                        <Icon name="chat" className="size-3.5" />
+                        التعليقات
+                      </ActionButton>
+                      {c.active !== false && (
+                        <ActionButton
+                          aria-label={`حذف الشركة ${c.name} من الاختيارات`}
+                          className="size-10 !px-0 !text-[var(--danger)]"
+                          disabled={busy}
+                          onClick={() =>
+                            setRemoving({
+                              kind: "company",
+                              id: c.id,
+                              name: c.name,
+                            })
+                          }
+                        >
+                          <Icon name="trash" className="size-4" />
+                        </ActionButton>
+                      )}
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(
+                            () =>
+                              store.updateCompany(c.id, {
+                                active: c.active === false,
+                              }),
+                            c.active === false
+                              ? "أُعيد تفعيل الشركة."
+                              : "أُوقفت الشركة، ولن تظهر في الأفكار الجديدة.",
+                          )
+                        }
+                      >
+                        {c.active === false ? "تفعيل" : "إيقاف"}
+                      </ActionButton>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`media-badge ${c.active === false ? "" : "media-badge-success"}`}>
-                      {c.active === false ? "موقوفة" : "متاحة للنشر"}
+                ))}
+              </div>
+            </section>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await store.addCompany(company);
+                  setCompany("");
+                }, "أُضيفت الشركة وأصبحت متاحة لجميع الأفكار.");
+              }}
+              className="media-card space-y-4 p-6"
+            >
+              <h2>إضافة شركة</h2>
+              <label className="media-label">
+                اسم الشركة
+                <input
+                  required
+                  maxLength={150}
+                  className="media-input mt-2"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  placeholder="الاسم الرسمي للشركة"
+                />
+              </label>
+              <ActionButton type="submit" disabled={busy}>
+                <Icon name="plus" className="size-4" />
+                إضافة الشركة
+              </ActionButton>
+              <p className="text-xs text-[var(--soft)]">
+                إدارة الشركات متاحة لمدير النظام فقط.
+              </p>
+            </form>
+          </div>
+        )}
+        {tab === "categories" && (
+          <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
+            <section className="media-card p-6">
+              <h2>تصنيفات المحتوى</h2>
+              <p className="mt-2 text-[var(--soft)]">
+                تصنيف كل فكرة يوضح ما تغطيه خطة النشر وما يحتاج مزيدًا من
+                المحتوى.
+              </p>
+              <div className="mt-5 divide-y divide-[var(--border)]">
+                {data.categories.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 py-4"
+                  >
+                    <span className="flex min-w-0 flex-1 items-center gap-3">
+                      <span
+                        className="size-3 shrink-0 rounded-full"
+                        style={{ background: c.color }}
+                      />
+                      {editing?.kind === "category" && editing.id === c.id ? (
+                        <form
+                          className="flex flex-1 flex-wrap gap-2"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void run(async () => {
+                              await store.updateCategory(c.id, {
+                                name: editing.value,
+                                targetPerMonth: editing.targetPerMonth,
+                              });
+                              setEditing(null);
+                            }, "حُفظت بيانات التصنيف.");
+                          }}
+                        >
+                          <input
+                            aria-label="اسم التصنيف الجديد"
+                            required
+                            maxLength={100}
+                            className="media-input !w-auto flex-1"
+                            value={editing.value}
+                            onChange={(e) =>
+                              setEditing({ ...editing, value: e.target.value })
+                            }
+                          />
+                          <label className="flex items-center gap-2 text-xs">
+                            هدف النشر الشهري
+                            <input
+                              type="number"
+                              required
+                              min={0}
+                              max={1000}
+                              aria-label="هدف النشر الشهري للتصنيف"
+                              className="media-input !w-24"
+                              value={editing.targetPerMonth ?? 0}
+                              onChange={(e) =>
+                                setEditing({
+                                  ...editing,
+                                  targetPerMonth: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <ActionButton type="submit" disabled={busy}>
+                            حفظ
+                          </ActionButton>
+                          <ActionButton
+                            type="button"
+                            onClick={() => setEditing(null)}
+                          >
+                            إلغاء
+                          </ActionButton>
+                        </form>
+                      ) : (
+                        <span
+                          className={
+                            c.active === false ? "text-[var(--soft)]" : ""
+                          }
+                        >
+                          {c.name}
+                          {c.active === false ? " · موقوف" : ""}
+                        </span>
+                      )}
                     </span>
-                    <ActionButton className="!px-3 !text-xs" onClick={() => setEditing({ kind: "company", id: c.id, value: c.name })}>تعديل الاسم</ActionButton>
-                    <ActionButton className="!px-3 !text-xs" disabled={busy} onClick={() => void run(() => store.updateCompany(c.id, { active: c.active === false }), c.active === false ? "أُعيد تفعيل الشركة." : "أُوقفت الشركة، ولن تظهر في الأفكار الجديدة.")}>{c.active === false ? "تفعيل" : "إيقاف"}</ActionButton>
+                    <span className="flex flex-wrap items-center gap-2 text-xs text-[var(--soft)]">
+                      {countText(
+                        data.ideas.filter(
+                          (i) => !i.deletedAt && i.categoryId === c.id,
+                        ).length,
+                        "idea",
+                      )}
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        onClick={() =>
+                          setEditing({
+                            kind: "category",
+                            id: c.id,
+                            value: c.name,
+                            targetPerMonth: c.targetPerMonth,
+                          })
+                        }
+                      >
+                        تعديل
+                      </ActionButton>
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        onClick={() =>
+                          onDiscussion({
+                            kind: "category",
+                            id: c.id,
+                            title: c.name,
+                          })
+                        }
+                      >
+                        <Icon name="chat" className="size-3.5" />
+                        التعليقات
+                      </ActionButton>
+                      {c.active !== false && (
+                        <ActionButton
+                          aria-label={`حذف التصنيف ${c.name} من الاختيارات`}
+                          className="size-10 !px-0 !text-[var(--danger)]"
+                          disabled={busy}
+                          onClick={() =>
+                            setRemoving({
+                              kind: "category",
+                              id: c.id,
+                              name: c.name,
+                            })
+                          }
+                        >
+                          <Icon name="trash" className="size-4" />
+                        </ActionButton>
+                      )}
+                      <ActionButton
+                        className="!px-3 !text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(
+                            () =>
+                              store.updateCategory(c.id, {
+                                active: c.active === false,
+                              }),
+                            c.active === false
+                              ? "أُعيد تفعيل التصنيف."
+                              : "أُوقف التصنيف، ولن يظهر في الأفكار الجديدة.",
+                          )
+                        }
+                      >
+                        {c.active === false ? "تفعيل" : "إيقاف"}
+                      </ActionButton>
+                    </span>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await store.addCompany(company);
-                setCompany("");
-              }, "أُضيفت الشركة وأصبحت متاحة لجميع الأفكار.");
-            }}
-            className="media-card space-y-4 p-6"
-          >
-            <h2>إضافة شركة</h2>
-            <label className="media-label">
-              اسم الشركة
-              <input
-                required
-                maxLength={150}
-                className="media-input mt-2"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="الاسم الرسمي للشركة"
-              />
-            </label>
-            <ActionButton type="submit" disabled={busy}>
-              <Icon name="plus" className="size-4" />
-              إضافة الشركة
-            </ActionButton>
-            <p className="text-xs text-[var(--soft)]">
-              إدارة الشركات متاحة لمدير النظام فقط.
-            </p>
-          </form>
-        </div>
-      )}
-      {tab === "categories" && (
-        <div className="grid items-start gap-6 xl:grid-cols-[1.5fr_1fr]">
-          <section className="media-card p-6">
-            <h2>تصنيفات المحتوى</h2>
-            <p className="mt-2 text-[var(--soft)]">
-              تصنيف كل فكرة يوضح ما تغطيه خطة النشر وما يحتاج مزيدًا من المحتوى.
-            </p>
-            <div className="mt-5 divide-y divide-[var(--border)]">
-              {data.categories.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between gap-3 py-4"
-                >
-                  <span className="flex min-w-0 flex-1 items-center gap-3">
-                    <span
-                      className="size-3 shrink-0 rounded-full"
-                      style={{ background: c.color }}
-                    />
-                    {editing?.kind === "category" && editing.id === c.id ? (
-                      <form className="flex flex-1 flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); void run(async () => { await store.updateCategory(c.id, { name: editing.value }); setEditing(null); }, "حُفظ اسم التصنيف."); }}>
-                        <input aria-label="اسم التصنيف الجديد" required maxLength={100} className="media-input !w-auto flex-1" value={editing.value} onChange={(e) => setEditing({ ...editing, value: e.target.value })} />
-                        <ActionButton type="submit" disabled={busy}>حفظ</ActionButton>
-                        <ActionButton type="button" onClick={() => setEditing(null)}>إلغاء</ActionButton>
-                      </form>
-                    ) : <span className={c.active === false ? "text-[var(--soft)]" : ""}>{c.name}{c.active === false ? " · موقوف" : ""}</span>}
-                  </span>
-                  <span className="flex flex-wrap items-center gap-2 text-xs text-[var(--soft)]">
-                    {countText(data.ideas.filter((i) => i.categoryId === c.id).length, "idea")}
-                    <ActionButton className="!px-3 !text-xs" onClick={() => setEditing({ kind: "category", id: c.id, value: c.name })}>تعديل</ActionButton>
-                    <ActionButton className="!px-3 !text-xs" disabled={busy} onClick={() => void run(() => store.updateCategory(c.id, { active: c.active === false }), c.active === false ? "أُعيد تفعيل التصنيف." : "أُوقف التصنيف، ولن يظهر في الأفكار الجديدة.")}>{c.active === false ? "تفعيل" : "إيقاف"}</ActionButton>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await store.addCategory(category);
-                setCategory("");
-              }, "أُضيف التصنيف وأصبح متاحًا لخطة المحتوى.");
-            }}
-            className="media-card space-y-4 p-6"
-          >
-            <h2>إضافة تصنيف</h2>
-            <label className="media-label">
-              اسم التصنيف
-              <input
-                required
-                maxLength={100}
-                className="media-input mt-2"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="مثال: الاستدامة والمسؤولية"
-              />
-            </label>
-            <ActionButton type="submit" disabled={busy}>
-              <Icon name="plus" className="size-4" />
-              إضافة التصنيف
-            </ActionButton>
-          </form>
-        </div>
-      )}
-      {tab === "team" && <TeamSettings />}
-      {tab === "drive" && <DriveIntegration notice={driveNotice} />}
-      {tab === "import" && <IdeaImport />}
-      {tab === "identity" && (
-        <form
-          onSubmit={saveSettings}
-          className="media-card max-w-[60em] space-y-5 p-6"
-        >
-          {tab === "identity" ? (
-            <>
-              <h2>هوية التقرير الشهري</h2>
+                ))}
+              </div>
+            </section>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await store.addCategory(category);
+                  setCategory("");
+                }, "أُضيف التصنيف وأصبح متاحًا لخطة المحتوى.");
+              }}
+              className="media-card space-y-4 p-6"
+            >
+              <h2>إضافة تصنيف</h2>
               <label className="media-label">
-                اسم الإدارة
+                اسم التصنيف
                 <input
                   required
-                  maxLength={150}
+                  maxLength={100}
                   className="media-input mt-2"
-                  value={settings.departmentName}
-                  onChange={(e) =>
-                    setSettings({ ...settings, departmentName: e.target.value })
-                  }
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="مثال: الاستدامة والمسؤولية"
                 />
               </label>
-              <label className="media-label">
-                اسم المجموعة أو المؤسسة
-                <input
-                  required
-                  maxLength={150}
-                  className="media-input mt-2"
-                  value={settings.organizationName}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      organizationName: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-5">
-                {settings.logoUrl && (
-                  <Asset
-                    type="image"
-                    width={10}
-                    height={3}
-                    fit="contain"
-                    sizes="320px"
-                    src={settings.logoUrl}
-                    alt="شعار الإدارة الحالي"
-                    className="mb-5 max-w-80"
-                  />
-                )}
+              <ActionButton type="submit" disabled={busy}>
+                <Icon name="plus" className="size-4" />
+                إضافة التصنيف
+              </ActionButton>
+            </form>
+          </div>
+        )}
+        {tab === "team" && <TeamSettings />}
+        {tab === "drive" && <DriveIntegration notice={driveNotice} />}
+        {tab === "import" && <IdeaImport />}
+        {tab === "identity" && (
+          <form
+            onSubmit={saveSettings}
+            className="media-card max-w-[60em] space-y-5 p-6"
+          >
+            {tab === "identity" ? (
+              <>
+                <h2>هوية التقرير الشهري</h2>
                 <label className="media-label">
-                  رفع شعار الإدارة
+                  اسم الإدارة
                   <input
+                    required
+                    maxLength={150}
                     className="media-input mt-2"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                    value={settings.departmentName}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        departmentName: e.target.value,
+                      })
+                    }
                   />
                 </label>
-                <p className="mt-2 text-xs text-[var(--soft)]">
-                  صورة PNG أو JPG أو WebP بخلفية واضحة. يظهر الشعار على غلاف
-                  التقرير وصفحاته.
-                </p>
-              </div>
-            </>
-          ) : null}
-          <ActionButton type="submit" disabled={busy}>
-            <Icon name="check" className="size-4" />
-            {busy ? "جارٍ الحفظ…" : "حفظ الإعدادات"}
-          </ActionButton>
-        </form>
-      )}
+                <label className="media-label">
+                  اسم المجموعة أو المؤسسة
+                  <input
+                    required
+                    maxLength={150}
+                    className="media-input mt-2"
+                    value={settings.organizationName}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        organizationName: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-5">
+                  {settings.logoUrl && (
+                    <Asset
+                      type="image"
+                      width={10}
+                      height={3}
+                      fit="contain"
+                      sizes="320px"
+                      src={settings.logoUrl}
+                      alt="شعار الإدارة الحالي"
+                      className="mb-5 max-w-80"
+                    />
+                  )}
+                  <label className="media-label">
+                    رفع شعار الإدارة
+                    <input
+                      className="media-input mt-2"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-[var(--soft)]">
+                    صورة PNG أو JPG أو WebP بخلفية واضحة. يظهر الشعار على غلاف
+                    التقرير وصفحاته.
+                  </p>
+                </div>
+              </>
+            ) : null}
+            <ActionButton type="submit" disabled={busy}>
+              <Icon name="check" className="size-4" />
+              {busy ? "جارٍ الحفظ…" : "حفظ الإعدادات"}
+            </ActionButton>
+          </form>
+        )}
       </div>
       {message && (
         <div
@@ -325,6 +605,47 @@ export default function Administration({
           {message}
         </div>
       )}
+      <Modal
+        open={Boolean(removing)}
+        onClose={() => setRemoving(null)}
+        locked={busy}
+        title={
+          removing?.kind === "company"
+            ? "حذف الشركة من الاختيارات"
+            : "حذف التصنيف من الاختيارات"
+        }
+        description="تبقى الأعمال المرتبطة والتعليقات محفوظة، ويمكن إعادة تفعيل العنصر من هذه الصفحة."
+      >
+        {removing && (
+          <div className="space-y-4 p-6">
+            <p className="font-semibold">{removing.name}</p>
+            <p className="text-sm text-[var(--soft)]">
+              سيختفي هذا العنصر من اختيارات الأعمال الجديدة. تظل الأعمال الحالية
+              مرتبطة به.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <ActionButton disabled={busy} onClick={() => setRemoving(null)}>
+                إلغاء
+              </ActionButton>
+              <ActionButton
+                disabled={busy}
+                className="!text-[var(--danger)]"
+                onClick={() =>
+                  void run(async () => {
+                    if (removing.kind === "company")
+                      await store.removeCompany(removing.id);
+                    else await store.removeCategory(removing.id);
+                    setRemoving(null);
+                  }, "أُزيل العنصر من الاختيارات، وبقيت أعماله محفوظة.")
+                }
+              >
+                <Icon name="trash" className="size-4" />
+                تأكيد الحذف من الاختيارات
+              </ActionButton>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }

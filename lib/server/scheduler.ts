@@ -22,7 +22,7 @@ export async function runDailyJobs(q: Queryable = database(), today = riyadhDate
   if (!claimed.rows.length) return { ran: false, reminders: 0 };
   const managers = (await q.query<{ id: string }>("select id from wasl.members where active and role = 'manager'")).rows.map((row) => row.id);
   const due = (await q.query<{ id: string; title: string; status: string; owner_id: string; designer_id: string | null; due_date: string }>(
-    "select id, title, status::text as status, owner_id, designer_id, due_date::text as due_date from wasl.ideas where status::text = any($1::text[]) and due_date <= $2::date", [ACTIVE, addDays(today, 2)])).rows;
+    "select id, title, status::text as status, owner_id, designer_id, due_date::text as due_date from wasl.ideas where deleted_at is null and status::text = any($1::text[]) and due_date <= $2::date", [ACTIVE, addDays(today, 2)])).rows;
   const notices: MediaNotification[] = [];
   const createdAt = new Date().toISOString();
   for (const idea of due) {

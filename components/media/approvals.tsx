@@ -59,14 +59,15 @@ export default function Approvals({
   const managers = data.members.filter(
     (member) => member.active && member.role === "manager",
   );
-  const ideas = data.ideas.filter((idea) =>
+  const activeIdeas = data.ideas.filter((idea) => !idea.deletedAt);
+  const ideas = activeIdeas.filter((idea) =>
     tab === "review"
       ? idea.status === "review"
       : tab === "changes"
         ? idea.status === "changes"
         : approvedStages.includes(idea.status),
   );
-  const selected = data.ideas.find((idea) => idea.id === decision?.ideaId);
+  const selected = activeIdeas.find((idea) => idea.id === decision?.ideaId);
 
   function startDecision(idea: Idea, value: Decision) {
     setFeedback("");
@@ -87,7 +88,11 @@ export default function Approvals({
     if (!decision || busy || saving) return;
     setError("");
     if (decision.value !== "approved" && !feedback.trim()) {
-      setError(decision.value === "rejected" ? "اكتب سبب الرفض ليصل إلى صاحب الفكرة." : "اكتب ملاحظات واضحة لفريق المحتوى قبل إعادة الفكرة للتعديل.");
+      setError(
+        decision.value === "rejected"
+          ? "اكتب سبب الرفض ليصل إلى صاحب الفكرة."
+          : "اكتب ملاحظات واضحة لفريق المحتوى قبل إعادة الفكرة للتعديل.",
+      );
       feedbackField.current?.focus();
       return;
     }
@@ -160,144 +165,170 @@ export default function Approvals({
         label="تصفية الأفكار حسب الاعتماد"
         idPrefix="approvals"
         value={tab}
-        onChange={(id) => { setTab(id); setNotice(""); }}
+        onChange={(id) => {
+          setTab(id);
+          setNotice("");
+        }}
         items={[
           {
             id: "review",
             label: "بانتظار المراجعة",
-            count: data.ideas.filter((idea) => idea.status === "review").length,
+            count: activeIdeas.filter((idea) => idea.status === "review")
+              .length,
           },
           {
             id: "changes",
             label: "أعيدت للتعديل",
-            count: data.ideas.filter((idea) => idea.status === "changes")
+            count: activeIdeas.filter((idea) => idea.status === "changes")
               .length,
           },
           {
             id: "approved",
             label: "تم اعتمادها",
-            count: data.ideas.filter((idea) =>
+            count: activeIdeas.filter((idea) =>
               approvedStages.includes(idea.status),
             ).length,
           },
-        ].map((item) => ({ id: item.id, label: <>{item.label}<span className="rounded-md bg-[var(--background)] px-1.5 py-0.5 text-xs tabular-nums">{item.count}</span></> }))}
+        ].map((item) => ({
+          id: item.id,
+          label: (
+            <>
+              {item.label}
+              <span className="rounded-md bg-[var(--background)] px-1.5 py-0.5 text-xs tabular-nums">
+                {item.count}
+              </span>
+            </>
+          ),
+        }))}
       />
-      <div role="tabpanel" id="approvals-panel" aria-labelledby={`approvals-tab-${tab}`} className="space-y-5">
-      {notice && (
-        <p
-          role="status"
-          className="rounded-xl border border-[#bce0ce] bg-[#eef8f1] p-4 text-sm text-[#197254]"
-        >
-          {notice}
-        </p>
-      )}
-      {!canReview && (
-        <p className="text-sm text-[var(--soft)]">
-          يمكنك استعراض الأفكار ومتابعتها. يقرر الاعتماد مدير الإدارة أو مدير
-          النظام.
-        </p>
-      )}
-      {ideas.length ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {ideas.map((idea) => (
-            <article
-              key={idea.id}
-              className="media-card flex min-w-0 flex-col p-5"
-            >
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <StatusBadge status={idea.status} />
-                <PriorityBadge priority={idea.priority} />
-              </div>
-              <h2 className="!text-base leading-relaxed">{idea.title}</h2>
-              <CompanyLogo
-                companyId={idea.companyId}
-                decorative
-                className="mt-2 h-9 w-28"
-              />
-              <p className="mt-2 text-xs text-[var(--soft)]">
-                {data.companies.find((company) => company.id === idea.companyId)
-                  ?.name || "شركة"}{" "}
-                · {idea.department}
-              </p>
-              {idea.sourceProposal && (
-                <p className="mt-2 text-xs text-[var(--primary)]">
-                  مقدم الفكرة: {idea.sourceProposal.proposerName}
-                </p>
-              )}
-              <p className="mt-4 line-clamp-3 text-sm text-[var(--soft)]">
-                {idea.description}
-              </p>
-              <div className="mt-4">
-                <Channels channels={idea.channels} />
-              </div>
-              <div className="my-4 flex flex-wrap justify-between gap-2 rounded-xl bg-[var(--background)] p-3 text-xs">
-                <span>{countText(idea.quotations.length, "quote")}</span>
-                <span>
-                  {idea.quotations.length
-                    ? `${Math.min(...idea.quotations.map((quote) => quote.amount)).toLocaleString("ar-SA")} ر.س. · أقل عرض`
-                    : idea.needsQuotes
-                      ? "تحتاج عروض أسعار"
-                      : "تنفيذ داخلي"}
-                </span>
-              </div>
-              {idea.managerFeedback && (
-                <div className="mb-4 rounded-lg bg-[#fff1dc] p-3 text-xs text-[var(--warning)]">
-                  <b className="mb-1 block">ملاحظات المراجعة</b>
-                  <p className="break-words whitespace-pre-wrap">
-                    {idea.managerFeedback}
-                  </p>
+      <div
+        role="tabpanel"
+        id="approvals-panel"
+        aria-labelledby={`approvals-tab-${tab}`}
+        className="space-y-5"
+      >
+        {notice && (
+          <p
+            role="status"
+            className="rounded-xl border border-[#bce0ce] bg-[#eef8f1] p-4 text-sm text-[#197254]"
+          >
+            {notice}
+          </p>
+        )}
+        {!canReview && (
+          <p className="text-sm text-[var(--soft)]">
+            يمكنك استعراض الأفكار ومتابعتها. يقرر الاعتماد مدير الإدارة أو مدير
+            النظام.
+          </p>
+        )}
+        {ideas.length ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {ideas.map((idea) => (
+              <article
+                key={idea.id}
+                className="media-card flex min-w-0 flex-col p-5"
+              >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <StatusBadge status={idea.status} />
+                  <PriorityBadge priority={idea.priority} />
                 </div>
-              )}
-              <div className="mt-auto space-y-2">
-                <ActionButton
-                  onClick={() => onOpen(idea.id)}
-                  className="w-full"
-                >
-                  {tab === "review" ? "مراجعة الفكرة والعرض" : "عرض التفاصيل"}
-                  <Icon name="arrow" className="size-4" />
-                </ActionButton>
-                {canReview && idea.status === "review" && idea.ownerId === currentUser?.id && (
-                  <p className="text-xs text-[var(--soft)]">يعتمد هذه الفكرة مدير آخر لأنك صاحبها.</p>
+                <h2 className="!text-base leading-relaxed">{idea.title}</h2>
+                <CompanyLogo
+                  companyId={idea.companyId}
+                  decorative
+                  className="mt-2 h-9 w-28"
+                />
+                <p className="mt-2 text-xs text-[var(--soft)]">
+                  {data.companies.find(
+                    (company) => company.id === idea.companyId,
+                  )?.name || "شركة"}{" "}
+                  · {idea.department}
+                </p>
+                {idea.sourceProposal && (
+                  <p className="mt-2 text-xs text-[var(--primary)]">
+                    مقدم الفكرة: {idea.sourceProposal.proposerName}
+                  </p>
                 )}
-                {canReview && idea.status === "review" && idea.ownerId !== currentUser?.id && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <ActionButton
-                      primary
-                      onClick={() => startDecision(idea, "approved")}
-                      disabled={busy || saving}
-                    >
-                      <Icon name="check" className="size-4" />
-                      اعتماد
-                    </ActionButton>
-                    <ActionButton
-                      onClick={() => startDecision(idea, "changes")}
-                      disabled={busy || saving}
-                    >
-                      إعادة للتعديل
-                    </ActionButton>
-                    <ActionButton
-                      className="!text-[var(--danger)]"
-                      onClick={() => startDecision(idea, "rejected")}
-                      disabled={busy || saving}
-                    >
-                      رفض
-                    </ActionButton>
+                <p className="mt-4 line-clamp-3 text-sm text-[var(--soft)]">
+                  {idea.description}
+                </p>
+                <div className="mt-4">
+                  <Channels channels={idea.channels} />
+                </div>
+                <div className="my-4 flex flex-wrap justify-between gap-2 rounded-xl bg-[var(--background)] p-3 text-xs">
+                  <span>{countText(idea.quotations.length, "quote")}</span>
+                  <span>
+                    {idea.quotations.length
+                      ? `${Math.min(...idea.quotations.map((quote) => quote.amount)).toLocaleString("ar-SA")} ر.س. · أقل عرض`
+                      : idea.needsQuotes
+                        ? "تحتاج عروض أسعار"
+                        : "تنفيذ داخلي"}
+                  </span>
+                </div>
+                {idea.managerFeedback && (
+                  <div className="mb-4 rounded-lg bg-[#fff1dc] p-3 text-xs text-[var(--warning)]">
+                    <b className="mb-1 block">ملاحظات المراجعة</b>
+                    <p className="break-words whitespace-pre-wrap">
+                      {idea.managerFeedback}
+                    </p>
                   </div>
                 )}
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title={
-            tab === "review"
-              ? "لا توجد أفكار بانتظار الاعتماد"
-              : "لا توجد أفكار في هذا القسم"
-          }
-          description="عندما يرسل فريق المحتوى فكرة للمراجعة، ستظهر هنا مع عرضها وجميع مرفقاتها."
-        />
-      )}
+                <div className="mt-auto space-y-2">
+                  <ActionButton
+                    onClick={() => onOpen(idea.id)}
+                    className="w-full"
+                  >
+                    {tab === "review" ? "مراجعة الفكرة والعرض" : "عرض التفاصيل"}
+                    <Icon name="arrow" className="size-4" />
+                  </ActionButton>
+                  {canReview &&
+                    idea.status === "review" &&
+                    idea.ownerId === currentUser?.id && (
+                      <p className="text-xs text-[var(--soft)]">
+                        يعتمد هذه الفكرة مدير آخر لأنك صاحبها.
+                      </p>
+                    )}
+                  {canReview &&
+                    idea.status === "review" &&
+                    idea.ownerId !== currentUser?.id && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <ActionButton
+                          primary
+                          onClick={() => startDecision(idea, "approved")}
+                          disabled={busy || saving}
+                        >
+                          <Icon name="check" className="size-4" />
+                          اعتماد
+                        </ActionButton>
+                        <ActionButton
+                          onClick={() => startDecision(idea, "changes")}
+                          disabled={busy || saving}
+                        >
+                          إعادة للتعديل
+                        </ActionButton>
+                        <ActionButton
+                          className="!text-[var(--danger)]"
+                          onClick={() => startDecision(idea, "rejected")}
+                          disabled={busy || saving}
+                        >
+                          رفض
+                        </ActionButton>
+                      </div>
+                    )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title={
+              tab === "review"
+                ? "لا توجد أفكار بانتظار الاعتماد"
+                : "لا توجد أفكار في هذا القسم"
+            }
+            description="عندما يرسل فريق المحتوى فكرة للمراجعة، ستظهر هنا مع عرضها وجميع مرفقاتها."
+          />
+        )}
       </div>
       <DecisionDialog
         decision={decision}

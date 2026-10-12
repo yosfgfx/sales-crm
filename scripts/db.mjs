@@ -46,7 +46,11 @@ try {
     console.log(JSON.stringify({ ...result, verification: await verifyImport(db, document) }, null, 2));
   } else if (command === "backup") {
     const file = process.argv[3] && !process.argv[3].startsWith("--") ? process.argv[3] : `wasl-backup-${new Date().toISOString().slice(0, 10)}${BACKUP_EXTENSION}`;
-    writeFileSync(file, await createBackup(db), { mode: 0o600 });
+    await client.query("begin isolation level repeatable read read only");
+    try {
+      writeFileSync(file, await createBackup(db), { mode: 0o600 });
+      await client.query("commit");
+    } catch (error) { await client.query("rollback"); throw error; }
     console.log(JSON.stringify({ file }));
   } else if (command === "restore") {
     if (!process.argv[3]) throw new Error("حدد ملف النسخة الاحتياطية.");

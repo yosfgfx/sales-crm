@@ -42,6 +42,9 @@ async function ownedSession(request: Request, id: string) {
   const actor = await requireUser(request, db);
   const session = (await db.query<Session>("select * from wasl.upload_sessions where id = $1 and expires_at > now()", [id])).rows[0];
   if (!session || session.owner_id !== actor.id) throw new MediaServerError("جلسة الرفع غير موجودة أو انتهت. ابدأ رفع الملف مجدداً.", 404, "UPLOAD_NOT_FOUND");
+  const idea = (await loadIdeas(db, { ids: [session.idea_id] }))[0];
+  if (!idea) throw new MediaServerError("الفكرة غير متاحة أو نُقلت إلى سلة المحذوفات.", 404, "NOT_FOUND");
+  if (session.status !== "done") assertUploadAllowed(actor, session.kind, idea, session.channel);
   return { db, session };
 }
 
@@ -49,6 +52,8 @@ async function finish(id: string, session: Session, file: { id: string; parents?
   const db = database();
   return db.transaction(async (tx) => {
     const existing = (await tx.query<Session>("select * from wasl.upload_sessions where id = $1 for update", [id])).rows[0];
+    const idea = (await loadIdeas(tx, { ids: [existing.idea_id] }))[0];
+    if (!idea) throw new MediaServerError("الفكرة غير متاحة أو نُقلت إلى سلة المحذوفات.", 404, "NOT_FOUND");
     if (existing.attachment_id) {
       const row = (await tx.query("select id, kind::text as kind, channel::text as channel, name, size, mime, storage::text as storage, external_url, inline_mime, created_at from wasl.attachments where id = $1", [existing.attachment_id])).rows[0];
       return toAttachment(row);

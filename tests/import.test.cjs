@@ -57,6 +57,9 @@ test("apply needs an owner for every proposer, creates drafts with source data, 
   assert.equal(rows[0].source_proposal.sourceApproval, "موافق");
   assert.equal(rows[0].source_proposal.reference, "دليل السلامة");
   assert.equal(rows[2].source_proposal.proposerName, "شخص غير موجود");
+  const managerNotices = (await h.pg.query("select actor_id, entity_type, entity_id from wasl.notifications where recipient_id = 'manager' and idea_id = any($1::text[])", [result.created.map((idea) => idea.id)])).rows;
+  assert.equal(managerNotices.length, 3);
+  assert.ok(managerNotices.every((notice) => notice.actor_id === "admin" && notice.entity_type === "idea" && result.created.some((idea) => idea.id === notice.entity_id)));
   const again = await upload("admin", csv(ROWS), "ideas-copy.csv", "apply", { ownerMap });
   assert.equal(again.created.length, 0);
   assert.equal(again.skipped, 3);

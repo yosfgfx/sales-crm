@@ -154,7 +154,7 @@ export async function enqueueArchive(q: Queryable, ideaId: string) {
 
 async function escalateStalled(q: Queryable) {
   const stalled = (await q.query<{ id: string; idea_id: string }>(`update wasl.archive_jobs set status = 'needs_review', locked_until = null, last_error = $2, notified_failure = true, updated_at = now()
-    where status = 'running' and locked_until < now() and attempts >= $1 and not notified_failure returning id, idea_id`, [MAX_ATTEMPTS, STALLED_MESSAGE])).rows;
+    where status = 'running' and locked_until < now() and attempts >= $1 and not notified_failure and exists(select 1 from wasl.ideas i where i.id = wasl.archive_jobs.idea_id and i.deleted_at is null and i.status = 'delivered') returning id, idea_id`, [MAX_ATTEMPTS, STALLED_MESSAGE])).rows;
   for (const job of stalled) {
     await q.query("update wasl.ideas set archive_status = 'needs_review' where id = $1", [job.idea_id]);
     await notifyAdmins(q, job.idea_id, "تعذّرت أرشفة عمل في Google Drive", STALLED_MESSAGE);
@@ -164,32 +164,44 @@ async function escalateStalled(q: Queryable) {
 async function claim(q: Queryable, jobId?: string) {
   await escalateStalled(q);
   const rows = await q.query<{ id: string; idea_id: string; attempts: number }>(`update wasl.archive_jobs set status = 'running', locked_until = now() + interval '5 minutes', attempts = attempts + 1, updated_at = now()
-    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $2 and" : ""} ((status in ('pending', 'failed') and next_run_at <= now()) or (status = 'running' and locked_until < now() and attempts < $1)) and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
+    where id = (select id from wasl.archive_jobs where ${jobId ? "id = $2 and" : ""} exists(select 1 from wasl.ideas i where i.id = wasl.archive_jobs.idea_id and i.deleted_at is null and i.status = 'delivered') and ((status in ('pending', 'failed') and next_run_at <= now()) or (status = 'running' and locked_until < now() and attempts < $1)) and (locked_until is null or locked_until < now()) order by next_run_at limit 1 for update skip locked)
     returning id, idea_id, attempts`, jobId ? [MAX_ATTEMPTS, jobId] : [MAX_ATTEMPTS]);
   return rows.rows[0] || null;
 }
 
 async function notifyAdmins(q: Queryable, ideaId: string, title: string, body: string) {
-  const admins = (await q.query<{ id: string }>("select id from wasl.members where active and role in ('admin', 'superadmin')")).rows;
+  const admins = (await q.query<{ id: string }>("select id from wasl.members where active and role in ('admin', 'superadmin', 'manager')")).rows;
   const now = new Date().toISOString();
-  await insertNotifications(q, admins.map((admin) => ({ id: randomUUID(), recipientId: admin.id, ideaId, type: "archive" as never, title, body, createdAt: now, read: false })));
+  await insertNotifications(q, admins.map((admin) => ({ id: randomUUID(), recipientId: admin.id, ideaId, type: "archive" as never, title, body: `النظام · ${body}`, createdAt: now, read: false, actorName: "النظام", entityType: "idea", entityId: ideaId, action: "archive_failed" })));
 }
 
 export async function runArchiveJob(jobId?: string, q: Queryable = database()) {
   const job = await claim(q, jobId);
   if (!job) return null;
   await q.query("update wasl.ideas set archive_status = 'running' where id = $1", [job.idea_id]);
+  const pauseDeleted = async () => {
+    const record = (await q.query("select deleted_at, status::text as status from wasl.ideas where id=$1", [job.idea_id])).rows[0];
+    if (!record || record.deleted_at || record.status !== "delivered") {
+      await q.query("update wasl.archive_jobs set status='pending', locked_until=null, updated_at=now() where id=$1", [job.id]);
+      return true;
+    }
+    return false;
+  };
   try {
+    if (await pauseDeleted()) return { id: job.id, status: "pending" as const };
     await archiveIdea(job.idea_id, q);
     const [idea] = await loadIdeas(q, { ids: [job.idea_id] });
+    if (!idea || await pauseDeleted()) return { id: job.id, status: "pending" as const };
     const now = new Date().toISOString();
     await q.query("update wasl.archive_jobs set status = 'done', locked_until = null, last_error = null, updated_at = now() where id = $1", [job.id]);
     await q.query("update wasl.ideas set archive_status = 'done', archived_at = now() where id = $1", [job.idea_id]);
     const actor = (await loadIntegration(q))?.connected_by || idea.ownerId;
     await q.query("insert into wasl.idea_events (id, idea_id, at, actor_id, action, note) values ($1, $2, now(), $3, 'archived', 'أُرشف العمل في Google Drive تلقائياً')", [randomUUID(), job.idea_id, actor]);
-    await insertNotifications(q, [...new Set([idea.ownerId, idea.designerId].filter(Boolean))].map((recipientId) => ({ id: randomUUID(), recipientId, ideaId: idea.id, type: "archive" as never, title: "أُرشف العمل في Google Drive", body: idea.title, createdAt: now, read: false })));
+    const managers = (await q.query<{id:string}>("select id from wasl.members where active and role='manager'")).rows.map((member) => member.id);
+    await insertNotifications(q, [...new Set([idea.ownerId, idea.designerId, ...managers].filter(Boolean))].map((recipientId) => ({ id: randomUUID(), recipientId, ideaId: idea.id, type: "archive" as never, title: "أُرشف العمل في Google Drive", body: `النظام · أُرشف ${idea.title} في Google Drive`, createdAt: now, read: false, actorId: actor, actorName: "النظام", entityType: "idea", entityId: idea.id, action: "archived" })));
     return { id: job.id, status: "done" as const };
   } catch (error) {
+    if (await pauseDeleted()) return { id: job.id, status: "pending" as const };
     const message = error instanceof MediaServerError ? error.message : "تعذّرت الأرشفة لسبب غير متوقع.";
     const finalFailure = job.attempts >= MAX_ATTEMPTS || (error instanceof MediaServerError && ["DRIVE_NOT_CONNECTED", "DRIVE_FOLDER_MISSING", "DRIVE_REAUTH_REQUIRED", "DRIVE_STORAGE_QUOTA"].includes(error.code));
     const status = finalFailure ? "needs_review" : "failed";

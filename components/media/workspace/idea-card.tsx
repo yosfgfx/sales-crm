@@ -11,6 +11,7 @@ import {
   today,
 } from "../ui";
 import { companyOf, nameOf, production } from "./shared";
+import { useTeamPresence } from "@/stores/team-presence";
 
 export function IdeaCard({
   idea,
@@ -21,11 +22,21 @@ export function IdeaCard({
   data: MediaData;
   onOpen: (id: string) => void;
 }) {
-  const late = idea.dueDate < today() && !["delivered", "cancelled", "rejected", "draft"].includes(idea.status);
+  const celebrated = useTeamPresence((state) =>
+    Boolean(state.completed[idea.id]),
+  );
+  const delivered = idea.status === "delivered";
+  const responsibleId =
+    production.includes(idea.status) || delivered
+      ? idea.designerId || idea.ownerId
+      : idea.ownerId;
+  const late =
+    idea.dueDate < today() &&
+    !["delivered", "cancelled", "rejected", "draft"].includes(idea.status);
   return (
     <ActionButton
       onClick={() => onOpen(idea.id)}
-      className="media-card !block h-auto w-full !rounded-xl !p-4 text-start !whitespace-normal !shadow-[0_1px_2px_#20273c05,0_0_0_1px_#e5e7ef] hover:!shadow-[0_5px_14px_#20273c0a,0_0_0_1px_#c9c2ed]"
+      className={`media-card !block h-auto w-full !rounded-xl !p-4 text-start !whitespace-normal ${delivered ? "!bg-[#eff9f3] !shadow-[0_1px_2px_#19725405,0_0_0_1px_#b9decd] hover:!shadow-[0_5px_14px_#1972540a,0_0_0_1px_#89c9ae]" : "!shadow-[0_1px_2px_#20273c05,0_0_0_1px_#e5e7ef] hover:!shadow-[0_5px_14px_#20273c0a,0_0_0_1px_#c9c2ed]"} ${celebrated ? "media-completion-new" : ""}`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <span className="text-xs text-[var(--soft)]">
@@ -36,6 +47,12 @@ export function IdeaCard({
       <span className="block text-sm leading-relaxed font-bold">
         {idea.title}
       </span>
+      {delivered && (
+        <span className="media-badge media-badge-success mt-2">
+          <Icon name="trophy" className="size-3.5" />
+          إنجاز مكتمل · أحسنتم
+        </span>
+      )}
       {idea.sourceProposal && (
         <span className="mt-2 block text-xs font-medium text-[var(--primary)]">
           مقدم الفكرة: {idea.sourceProposal.proposerName}
@@ -65,24 +82,19 @@ export function IdeaCard({
       <div className="mt-4 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
         <span className="flex items-center gap-1.5 text-xs text-[var(--soft)]">
           <span className="flex size-6 items-center justify-center rounded-full bg-[var(--accent)] text-xs text-[var(--primary)]">
-            {(production.includes(idea.status) ? idea.designerId : idea.ownerId) ? (
-              nameOf(data, production.includes(idea.status) ? idea.designerId : idea.ownerId)[0]
+            {responsibleId ? (
+              nameOf(data, responsibleId)[0]
             ) : (
               <Icon name="people" className="size-3.5" />
             )}
           </span>
-          {
-            nameOf(
-              data,
-              production.includes(idea.status) ? idea.designerId : idea.ownerId,
-            ).split(" ")[0]
-          }
+          {nameOf(data, responsibleId).split(" ")[0]}
         </span>
         <span
           className={`flex items-center gap-1 text-xs ${late ? "text-[var(--danger)]" : "text-[var(--soft)]"}`}
         >
           <Icon name="calendar" className="size-3.5" />
-          {formatDate(idea.dueDate)}
+          {formatDate(delivered ? idea.deliveredAt : idea.dueDate)}
           {late && " · متأخر"}
         </span>
       </div>

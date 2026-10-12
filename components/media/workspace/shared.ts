@@ -9,6 +9,7 @@ export type View =
   | "calendar"
   | "archive"
   | "reports"
+  | "chat"
   | "admin";
 export const navigation: { id: View; label: string; icon: IconName }[] = [
   { id: "overview", label: "نظرة عامة", icon: "home" },
@@ -18,6 +19,7 @@ export const navigation: { id: View; label: string; icon: IconName }[] = [
   { id: "calendar", label: "تقويم التنفيذ", icon: "calendar" },
   { id: "archive", label: "أرشيف الأعمال", icon: "archive" },
   { id: "reports", label: "التقارير الشهرية", icon: "report" },
+  { id: "chat", label: "دردشة الفريق", icon: "chat" },
 ];
 export const descriptions: Record<View, string> = {
   overview: "كل فكرة، وكل مرحلة، في مساحة واحدة.",
@@ -27,6 +29,7 @@ export const descriptions: Record<View, string> = {
   calendar: "رتّب التنفيذ والنشر حسب مواعيد الفريق.",
   archive: "ذاكرة الفريق؛ كل عمل وتفاصيله ونسخه النهائية.",
   reports: "وثّق أثر الفريق بتقرير شهري جاهز للمشاركة.",
+  chat: "مساحة الفريق للرسائل والردود والصوتيات وتبادل التقدير.",
   admin: "الشركات والتصنيفات وهوية التقارير وإعدادات الأرشفة.",
 };
 export const production = ["approved", "scheduled", "designing", "design_review"];

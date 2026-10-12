@@ -31,6 +31,14 @@ export type IconName =
   | "link"
   | "logout"
   | "refresh"
+  | "chat"
+  | "mic"
+  | "send"
+  | "reply"
+  | "pin"
+  | "heart"
+  | "trash"
+  | "trophy"
   | "chevron";
 
 const paths: Record<IconName, ReactNode> = {
@@ -170,6 +178,28 @@ const paths: Record<IconName, ReactNode> = {
   refresh: (
     <>
       <path d="M20 7V2l-3 3a9 9 0 0 0-14 7M4 17v5l3-3a9 9 0 0 0 14-7M16 7h4M4 17h4" />
+    </>
+  ),
+  chat: (
+    <path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8ZM7 9h10M7 13h6" />
+  ),
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="13" rx="3" />
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+    </>
+  ),
+  send: <path d="m21 3-7 18-4-7-7-4 18-7ZM10 14l6-6" />,
+  reply: <path d="m9 5-6 6 6 6M3 11h9a8 8 0 0 1 8 8" />,
+  pin: <path d="m14 3 7 7-3 2-2 5-3-3-6 6M13 14l-3-3 5-2 2-3M5 22l4-4" />,
+  heart: (
+    <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z" />
+  ),
+  trash: <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />,
+  trophy: (
+    <>
+      <path d="M8 3h8v6a4 4 0 0 1-8 0V3ZM12 13v5M8 21h8M9 18h6l1 3H8l1-3Z" />
+      <path d="M8 5H4v3a4 4 0 0 0 4 4M16 5h4v3a4 4 0 0 1-4 4" />
     </>
   ),
   chevron: <path d="m8 5 7 7-7 7" />,

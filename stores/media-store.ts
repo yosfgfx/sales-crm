@@ -33,6 +33,7 @@ export interface MediaState {
   reopenIdea: (ideaId: string, reason: string) => Promise<void>;
   reassignIdea: (ideaId: string, input: { ownerId?: string; designerId?: string }) => Promise<void>;
   deleteIdea: (ideaId: string, reason?: string) => Promise<void>;
+  restoreIdea: (ideaId: string, assignment?: { ownerId?: string; designerId?: string }) => Promise<void>;
   scheduleIdea: (ideaId: string, input: ScheduleInput, expectedSchedule?: { designerId: string; scheduledAt: string; dueDate: string; priority: string }) => Promise<void>;
   changeDesignStatus: (ideaId: string, status: "designing" | "design_review" | "delivered") => Promise<void>;
   addAttachments: (ideaId: string, files: Attachment[]) => Promise<void>;
@@ -44,6 +45,8 @@ export interface MediaState {
   updateSettings: (patch: Partial<SystemSettings>, expectedSettings?: Partial<SystemSettings>) => Promise<void>;
   addCompany: (name: string) => Promise<Company>;
   addCategory: (name: string) => Promise<ContentCategory>;
+  removeCompany: (companyId: string) => Promise<void>;
+  removeCategory: (categoryId: string) => Promise<void>;
   updateCompany: (companyId: string, patch: { name?: string; shortName?: string; active?: boolean }) => Promise<void>;
   updateCategory: (categoryId: string, patch: { name?: string; active?: boolean; targetPerMonth?: number }) => Promise<void>;
   readAccounts: () => Promise<AccountSummary[]>;
@@ -152,6 +155,7 @@ export function mergeNotifications(current: Notice[], fresh: Notice[]) {
 }
 
 function operate<T = void>(operation: Record<string, unknown>, select?: (result: OperationResult) => T): Promise<T> {
+  operation = { ...operation, requestId: operation.requestId || crypto.randomUUID() };
   useMediaStore.setState({ lastFailed: null });
   return enqueue(async () => {
     if (refreshPromise) await refreshPromise;
@@ -188,8 +192,7 @@ export const useMediaStore = create<MediaState>(() => ({
     const result = await responseJson<{ notifications: MediaData["notifications"]; more: boolean }>(await fetch(`/api/notifications?before=${encodeURIComponent(cursor.createdAt)}&beforeId=${encodeURIComponent(cursor.id)}`, { cache: "no-store" }));
     useMediaStore.setState((state: MediaState) => {
       const ids = new Set(state.data.notifications.map((item) => item.id));
-      const known = new Set(state.data.ideas.map((idea) => idea.id));
-      const older = result.notifications.filter((item) => !ids.has(item.id) && known.has(item.ideaId));
+      const older = result.notifications.filter((item) => !ids.has(item.id));
       const last = result.notifications.at(-1);
       const next = result.more && last ? { createdAt: last.createdAt, id: last.id } : null;
       return { data: { ...state.data, notifications: [...state.data.notifications, ...older].sort(newerFirst) }, notificationCursor: next, olderNotifications: Boolean(next) };
@@ -236,6 +239,7 @@ export const useMediaStore = create<MediaState>(() => ({
   reopenIdea: (ideaId, reason) => operate({ type: "reopenIdea", ideaId, reason }),
   reassignIdea: (ideaId, input) => operate({ type: "reassignIdea", ideaId, ...input }),
   deleteIdea: (ideaId, reason) => operate({ type: "deleteIdea", ideaId, reason }),
+  restoreIdea: (ideaId, assignment) => operate({ type: "restoreIdea", ideaId, ...(assignment || {}) }),
   reviewIdea: (ideaId, decision, feedback) => operate({ type: "reviewIdea", ideaId, decision, feedback }),
   scheduleIdea: (ideaId, input, expectedSchedule) => operate({ type: "scheduleIdea", ideaId, input, expectedSchedule }),
   changeDesignStatus: (ideaId, status) => operate({ type: "changeDesignStatus", ideaId, status }),
@@ -253,6 +257,8 @@ export const useMediaStore = create<MediaState>(() => ({
   updateSettings: (patch, expected) => operate({ type: "updateSettings", patch, expected }),
   addCompany: (name) => operate({ type: "addCompany", name }, (result) => result.companies!.at(-1)!),
   addCategory: (name) => operate({ type: "addCategory", name }, (result) => result.categories!.at(-1)!),
+  removeCompany: (companyId) => operate({ type: "removeCompany", companyId }),
+  removeCategory: (categoryId) => operate({ type: "removeCategory", categoryId }),
   updateCompany: (companyId, patch) => operate({ type: "updateCompany", companyId, ...patch }),
   updateCategory: (categoryId, patch) => operate({ type: "updateCategory", categoryId, ...patch }),
   readAccounts: () => enqueue(loadAccountState),

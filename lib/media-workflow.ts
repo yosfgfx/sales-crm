@@ -22,8 +22,8 @@ export function formatMediaDate(value?: string): string {
 }
 export function monthLabel(value: string): string { return new Intl.DateTimeFormat("ar-SA", { calendar: "gregory", month: "long", year: "numeric", timeZone: "Asia/Riyadh" }).format(new Date(`${value}-01T12:00:00Z`)); }
 export function isAdministrator(actor: Pick<TeamMember, "role"> | null | undefined): boolean { return actor?.role === "admin" || actor?.role === "superadmin"; }
-export function canEditIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && editableStatuses.includes(idea.status) && (isAdministrator(actor) || (actor.role === "content" && idea.ownerId === actor.id)); }
-export function canDesignIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && designStatuses.includes(idea.status) && (isAdministrator(actor) || (actor.role === "designer" && (!idea.designerId || idea.designerId === actor.id))); }
+export function canEditIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && !idea.deletedAt && (isAdministrator(actor) || (editableStatuses.includes(idea.status) && actor.role === "content" && idea.ownerId === actor.id)); }
+export function canDesignIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && !idea.deletedAt && designStatuses.includes(idea.status) && (isAdministrator(actor) || (actor.role === "designer" && (!idea.designerId || idea.designerId === actor.id))); }
 export function missingDeliveryChannels(idea: Idea) { return idea.channels.filter((channel) => !idea.attachments.some((file) => file.kind === "final" && file.channel === channel)); }
 function requireActor(data: MediaData, actor: TeamMember) {
   const real = data.members.find((member) => member.id === actor.id && member.active);
@@ -32,8 +32,8 @@ function requireActor(data: MediaData, actor: TeamMember) {
 function requireRole(data: MediaData, actor: TeamMember, roles: TeamMember["role"][]) {
   requireActor(data, actor); if (!roles.includes(actor.role) && !(actor.role === "superadmin" && roles.includes("admin"))) throw new WorkflowError("هذا الإجراء غير متاح لصلاحيات حسابك.", "FORBIDDEN", 403);
 }
-function findIdea(data: MediaData, ideaId: string): Idea {
-  const idea = data.ideas.find((item) => item.id === ideaId);
+function findIdea(data: MediaData, ideaId: string, includeDeleted = false): Idea {
+  const idea = data.ideas.find((item) => item.id === ideaId && (includeDeleted || !item.deletedAt));
   if (!idea) throw new WorkflowError("لم يتم العثور على الفكرة.", "NOT_FOUND", 404);
   return idea;
 }
@@ -45,12 +45,23 @@ function approvalReady(idea: Idea) {
   if (idea.needsQuotes && (!idea.quotations.length || idea.quotations.some((quote) => !quote.attachmentId || !idea.attachments.some((file) => file.id === quote.attachmentId && file.kind === "quotation")))) throw new WorkflowError("أرفق ملف عرض السعر لكل مورد قبل الإرسال للاعتماد.", "MISSING_QUOTATIONS");
 }
 interface NotificationSpec { recipients: string[]; type: MediaNotification["type"]; title: string; body: string }
+function ideaNotices(data: MediaData, actor: TeamMember, previous: Idea | null, next: Idea, action: HistoryAction, note: string, at: string, ctx?: WorkflowContext, specification?: NotificationSpec): MediaNotification[] {
+  const managers = data.members.filter((member) => member.active && member.role === "manager").map((member) => member.id);
+  const recipients = new Set([...managers, ...(specification?.recipients || []), ...(previous?.ownerId !== next.ownerId ? [next.ownerId] : []), ...(next.designerId && previous?.designerId !== next.designerId ? [next.designerId] : [])]);
+  const detail = action === "edited" && previous?.status === "changes" ? "نفّذ التعديلات المطلوبة وفق ملاحظات المدير" : action === "submitted" && previous?.managerFeedback ? "أعاد إرسال الفكرة بعد معالجة ملاحظات المدير" : note;
+  return [...recipients].filter((recipientId) => data.members.some((member) => member.id === recipientId && member.active)).map((recipientId) => {
+    const assigned = previous?.ownerId !== next.ownerId && recipientId === next.ownerId || !!next.designerId && previous?.designerId !== next.designerId && recipientId === next.designerId;
+    const explicit = specification?.recipients.includes(recipientId);
+    const achievement = action === "delivered";
+    return { id: id(ctx), recipientId, ideaId: next.id, actorId: actor.id, actorName: actor.name, entityType: "idea" as const, entityId: next.id, action, type: achievement ? "achievement" as const : assigned ? "assignment" as const : explicit ? specification!.type : "activity" as const,
+      title: achievement ? "إنجاز جديد للفريق · شكراً لإبداعك" : assigned ? "أُسند إليك عمل جديد" : explicit ? specification!.title : "نشاط جديد على الفكرة",
+      body: `${actor.name} · ${detail} · ${next.title}${achievement ? " · اكتملت نسخ النشر المطلوبة، عمل رائع!" : ""}`, createdAt: at, read: false };
+  });
+}
 function commitIdea(data: MediaData, actor: TeamMember, previous: Idea, next: Idea, action: HistoryAction, note: string, ctx?: WorkflowContext, notification?: NotificationSpec): MediaData {
   const at = now(ctx);
   const event = { id: id(ctx), at, actorId: actor.id, action, note, ...(previous.status !== next.status ? { from: previous.status, to: next.status } : {}) };
-  const result = { ...data, ideas: data.ideas.map((idea) => idea.id === previous.id ? { ...next, updatedAt: at, history: [...previous.history, event] } : idea) };
-  if (notification) result.notifications = [...Array.from(new Set(notification.recipients)).filter((recipientId) => data.members.some((member) => member.id === recipientId && member.active)).map((recipientId) => ({ id: id(ctx), recipientId, ideaId: next.id, type: notification.type, title: notification.title, body: notification.body, createdAt: at, read: false })), ...data.notifications];
-  return result;
+  return { ...data, ideas: data.ideas.map((idea) => idea.id === previous.id ? { ...next, updatedAt: at, history: [...previous.history, event] } : idea), notifications: [...ideaNotices(data, actor, previous, next, action, note, at, ctx, notification), ...data.notifications] };
 }
 
 export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdeaInput, ctx?: WorkflowContext): MediaData {
@@ -65,7 +76,7 @@ export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdea
   const year = input.requestedAt.slice(0, 4) || riyadhToday().slice(0, 4);
   const maxCode = data.ideas.reduce((max, idea) => Math.max(max, Number(idea.code.split("-").at(-1)) || 0), 0);
   const idea: Idea = { ...input, id: ideaId, code: `IC-${year}-${String(maxCode + 1).padStart(3, "0")}`, status: "draft", designerId: "", scheduledAt: "", managerFeedback: "", quotations: [], attachments: [], createdAt: at, updatedAt: at, history: [{ id: id(ctx), at, actorId: actor.id, action: "created", note: "تم إنشاء الفكرة", to: "draft" }] };
-  const result = { ...data, ideas: [idea, ...data.ideas] }; validateMediaData(result); return result;
+  const result = { ...data, ideas: [idea, ...data.ideas], notifications: [...ideaNotices(data, actor, null, idea, "created", "أنشأ فكرة جديدة", at, ctx), ...data.notifications] }; validateMediaData(result); return result;
 }
 export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, patch: IdeaPatch, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);
@@ -78,8 +89,12 @@ export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: strin
   const changed = (Object.keys(patch) as (keyof IdeaPatch)[]).filter((key) => JSON.stringify(patch[key]) !== JSON.stringify(idea[key]));
   if (!changed.length) return data;
   const next: Idea = { ...idea, ...patch };
+  const substantive = ["title", "companyId", "categoryId", "workType", "description", "content", "executionPlan", "channels", "needsQuotes"];
+  const requiresReapproval = isAdministrator(actor) && (designStatuses.includes(idea.status) || idea.status === "delivered") && changed.some((key) => substantive.includes(key));
+  if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
+
   if (next.status === "quotations" && !next.needsQuotes && !next.quotations.length) next.status = "draft";
-  const result = commitIdea(data, actor, idea, next, "edited", "تم تحديث تفاصيل الفكرة", ctx); validateMediaData(result); return result;
+  const result = commitIdea(data, actor, idea, next, "edited", requiresReapproval ? "عُدّل المحتوى المعتمد وأُعيد إلى المدير للاعتماد مع حفظ ملفات التنفيذ" : idea.status === "changes" ? "تم تنفيذ التعديلات المطلوبة وفق ملاحظات المدير" : "تم تحديث تفاصيل الفكرة", ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager").map((member) => member.id), type: "approval", title: "تعديل محتوى معتمد يحتاج مراجعتك", body: idea.title } : undefined); validateMediaData(result); return result;
 }
 export function submitMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea); approvalReady(idea);
@@ -115,12 +130,13 @@ export function changeMediaDesignStatus(data: MediaData, actor: TeamMember, idea
   if (status === "delivered" && missingDeliveryChannels(idea).length) throw new WorkflowError(`أرفق النسخة النهائية لكل قناة: ${missingDeliveryChannels(idea).map((channel) => CHANNEL_LABELS[channel]).join("، ")}.`, "MISSING_DELIVERABLES");
   const action: HistoryAction = status === "designing" ? "design_started" : status === "design_review" ? "design_review" : "delivered";
   const next = { ...idea, status, ...(status === "delivered" ? { deliveredAt: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now(ctx))) } : {}) };
-  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: status === "delivered" ? [idea.ownerId, ...data.members.filter((member) => member.role === "manager").map((member) => member.id)] : [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
+  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: status === "delivered" ? [idea.ownerId, idea.designerId, actor.id, ...data.members.filter((member) => member.role === "manager").map((member) => member.id)] : [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
 }
 export function addMediaAttachments(data: MediaData, actor: TeamMember, ideaId: string, attachments: Attachment[], ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId);
+  requireActor(data, actor);
   if (!attachments.length) throw new WorkflowError("اختر ملفاً واحداً على الأقل.");
-  if (attachments.some((file) => file.kind === "final")) { assertDesign(data, actor, idea); if (idea.status === "approved") throw new WorkflowError("جدول الفكرة قبل إرفاق التصميم النهائي."); }
+  if (attachments.some((file) => file.kind === "final") && !isAdministrator(actor)) { assertDesign(data, actor, idea); if (idea.status === "approved") throw new WorkflowError("جدول الفكرة قبل إرفاق التصميم النهائي."); }
   if (attachments.some((file) => file.kind !== "final")) assertEditable(data, actor, idea);
   if (attachments.some((file) => file.kind === "final" && (!file.channel || !idea.channels.includes(file.channel)))) throw new WorkflowError("حدد قناة مطلوبة لكل مخرج نهائي.");
   if (attachments.some((file) => idea.attachments.some((existing) => existing.id === file.id))) throw new WorkflowError("هذا الملف مرفق بالفعل.");
@@ -129,9 +145,12 @@ export function addMediaAttachments(data: MediaData, actor: TeamMember, ideaId: 
 export function removeMediaAttachment(data: MediaData, actor: TeamMember, ideaId: string, attachmentId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId), file = idea.attachments.find((item) => item.id === attachmentId);
   if (!file) throw new WorkflowError("المرفق غير موجود.");
-  if (file.kind === "final") assertDesign(data, actor, idea); else assertEditable(data, actor, idea);
+  if (isAdministrator(actor)) requireActor(data, actor); else if (file.kind === "final") assertDesign(data, actor, idea); else assertEditable(data, actor, idea);
   if (idea.quotations.some((quote) => quote.attachmentId === attachmentId)) throw new WorkflowError("احذف عرض السعر المرتبط أولاً قبل إزالة المرفق.");
-  return commitIdea(data, actor, idea, { ...idea, attachments: idea.attachments.filter((item) => item.id !== attachmentId) }, "attachment_removed", file.kind === "quotation" ? "تم حذف ملف عرض سعر" : `تم حذف المرفق: ${file.name}`, ctx);
+  const next: Idea = { ...idea, attachments: idea.attachments.filter((item) => item.id !== attachmentId) };
+  const requiresDelivery = idea.status === "delivered" && file.kind === "final" && missingDeliveryChannels(next).length > 0;
+  if (requiresDelivery) { next.status = "design_review"; delete next.deliveredAt; }
+  return commitIdea(data, actor, idea, next, "attachment_removed", requiresDelivery ? `حُذف المخرج النهائي ${file.name} وأُعيد العمل إلى مراجعة التصميم لاستكمال نسخ النشر` : file.kind === "quotation" ? "تم حذف ملف عرض سعر" : `تم حذف المرفق: ${file.name}`, ctx, requiresDelivery ? { recipients: [idea.ownerId, idea.designerId], type: "assignment", title: "العمل يحتاج استكمال نسخة النشر", body: idea.title } : undefined);
 }
 export function addMediaQuotation(data: MediaData, actor: TeamMember, ideaId: string, quote: Quotation, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);
@@ -139,19 +158,59 @@ export function addMediaQuotation(data: MediaData, actor: TeamMember, ideaId: st
   if (!quote.attachmentId || !idea.attachments.some((file) => file.id === quote.attachmentId && file.kind === "quotation")) throw new WorkflowError("أرفق ملف عرض السعر وحدده قبل إضافة المورد.", "MISSING_QUOTATIONS");
   if (idea.quotations.some((item) => item.id === quote.id)) throw new WorkflowError("عرض السعر موجود بالفعل.");
   const next: Idea = { ...idea, needsQuotes: true, status: idea.status === "draft" ? "quotations" : idea.status, quotations: [...idea.quotations.map((item) => quote.recommended ? { ...item, recommended: false } : item), quote] };
-  return commitIdea(data, actor, idea, next, "quotation_added", `أُضيف عرض سعر من ${quote.vendor}`, ctx, { recipients: [idea.ownerId], type: "quotation", title: "عرض سعر جديد للمراجعة", body: `${idea.title} · ${quote.vendor}` });
+  const requiresReapproval = designStatuses.includes(idea.status) || idea.status === "delivered";
+  if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
+  return commitIdea(data, actor, idea, next, "quotation_added", `أُضيف عرض سعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لاعتماد عرض السعر الجديد" : ""}`, ctx, { recipients: [idea.ownerId, ...(requiresReapproval ? data.members.filter((member) => member.role === "manager").map((member) => member.id) : [])], type: requiresReapproval ? "approval" : "quotation", title: requiresReapproval ? "عرض سعر جديد يحتاج اعتمادك" : "عرض سعر جديد للمراجعة", body: `${idea.title} · ${quote.vendor}` });
 }
 export function removeMediaQuotation(data: MediaData, actor: TeamMember, ideaId: string, quotationId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);
   const quote = idea.quotations.find((item) => item.id === quotationId); if (!quote) throw new WorkflowError("عرض السعر غير موجود.");
-  return commitIdea(data, actor, idea, { ...idea, quotations: idea.quotations.filter((item) => item.id !== quotationId) }, "quotation_removed", `تم حذف عرض السعر من ${quote.vendor}`, ctx);
+  const next: Idea = { ...idea, quotations: idea.quotations.filter((item) => item.id !== quotationId) };
+  const requiresReapproval = designStatuses.includes(idea.status) || idea.status === "delivered";
+  if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
+  return commitIdea(data, actor, idea, next, "quotation_removed", `تم حذف عرض السعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لمراجعة عروض الأسعار" : ""}`, ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager").map((member) => member.id), type: "approval", title: "تغيير عروض الأسعار يحتاج اعتمادك", body: idea.title } : undefined);
 }
 const ownerStages: IdeaStatus[] = ["draft", "quotations", "review", "changes"];
 const finalStatuses: IdeaStatus[] = ["delivered", "cancelled", "rejected"];
-export function canWithdrawIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && idea.status === "review" && (isAdministrator(actor) || idea.ownerId === actor.id); }
-export function canCancelIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !finalStatuses.includes(idea.status) && (isAdministrator(actor) || (idea.ownerId === actor.id && ownerStages.includes(idea.status))); }
-export function canDeleteIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && (isAdministrator(actor) || (idea.ownerId === actor.id && !idea.approvedAt && [...ownerStages, "cancelled", "rejected"].includes(idea.status))); }
-export function canReopenIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && ["delivered", "cancelled", "rejected"].includes(idea.status); }
+export function canWithdrawIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !idea.deletedAt && idea.status === "review" && (isAdministrator(actor) || idea.ownerId === actor.id); }
+export function canCancelIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !idea.deletedAt && !finalStatuses.includes(idea.status) && (isAdministrator(actor) || (idea.ownerId === actor.id && ownerStages.includes(idea.status))); }
+export function canDeleteIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && !idea.deletedAt; }
+export function canRestoreIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && isAdministrator(actor) && !!idea.deletedAt; }
+export function deleteMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, reason = "", ctx?: WorkflowContext): MediaData {
+  requireRole(data, actor, ["admin"]); const idea = findIdea(data, ideaId, true);
+  if (idea.deletedAt) return data;
+  if (typeof reason !== "string" || reason.length > 4000) throw new WorkflowError("اكتب سبباً لا يتجاوز ٤٠٠٠ حرف.");
+  const at = now(ctx);
+  return commitIdea(data, actor, idea, { ...idea, deletedAt: at, deletedBy: actor.id, deletionReason: reason.trim() }, "deleted", "نُقل العمل إلى سلة المحذوفات" + (reason.trim() ? ` · ${reason.trim()}` : ""), { ...ctx, now: at }, { recipients: [idea.ownerId, idea.designerId], type: "activity", title: "نُقل العمل إلى سلة المحذوفات", body: idea.title });
+}
+export function restoreMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext, assignment?: { ownerId?: string; designerId?: string }): MediaData {
+  requireRole(data, actor, ["admin"]); const idea = findIdea(data, ideaId, true);
+  if (!idea.deletedAt) return data;
+  const restored = { ...idea };
+  const notes: string[] = [];
+  const assignmentError = () => { throw new WorkflowError("حدد مسؤول محتوى ومصممًا فعالين عند الاستعادة من إدارة النظام.", "RESTORE_ASSIGNMENT_REQUIRED", 422); };
+  if (assignment?.ownerId !== undefined) {
+    const owner = data.members.find((member) => member.id === assignment.ownerId && member.active && (isAdministrator(member) || member.role === "content"));
+    if (!owner) assignmentError();
+    restored.ownerId = owner!.id;
+    if (owner!.id !== idea.ownerId) notes.push(`أُعيد إسناد المحتوى إلى ${owner!.name}`);
+  }
+  if (assignment?.designerId !== undefined) {
+    const designer = data.members.find((member) => member.id === assignment.designerId && member.active && member.role === "designer");
+    if (!designer) assignmentError();
+    restored.designerId = designer!.id;
+    if (designer!.id !== idea.designerId) notes.push(`أُعيد إسناد التصميم إلى ${designer!.name}`);
+  }
+  if (!["delivered", "cancelled", "rejected"].includes(restored.status)) {
+    const owner = data.members.find((member) => member.id === restored.ownerId && member.active && (isAdministrator(member) || member.role === "content"));
+    const designer = !restored.designerId || data.members.some((member) => member.id === restored.designerId && member.active && member.role === "designer");
+    if (!owner || !designer || (["scheduled", "designing", "design_review"].includes(restored.status) && !restored.designerId)) assignmentError();
+  }
+  delete restored.deletedAt; delete restored.deletedBy; delete restored.deletionReason;
+  return commitIdea(data, actor, idea, restored, "restored", `استُعيد العمل من سلة المحذوفات مع جميع ملفاته وتفاصيله${notes.length ? ` · ${notes.join(" · ")}` : ""}`, ctx, { recipients: [restored.ownerId, restored.designerId], type: "activity", title: "استُعيد عمل الفريق", body: idea.title });
+}
+
+export function canReopenIdea(idea: Idea, actor: TeamMember | null) { return !!actor?.active && !idea.deletedAt && isAdministrator(actor) && ["delivered", "cancelled", "rejected"].includes(idea.status); }
 export function withdrawMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext): MediaData {
   requireActor(data, actor); const idea = findIdea(data, ideaId);
   if (!canWithdrawIdea(idea, actor)) throw new WorkflowError("يسحب صاحب الفكرة طلب الاعتماد فقط وهي بانتظار الاعتماد.", "FORBIDDEN", 403);
@@ -175,7 +234,6 @@ export function reopenMediaIdea(data: MediaData, actor: TeamMember, ideaId: stri
 }
 export function reassignMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, input: { ownerId?: string; designerId?: string }, ctx?: WorkflowContext): MediaData {
   requireRole(data, actor, ["admin"]); const idea = findIdea(data, ideaId);
-  if (finalStatuses.includes(idea.status)) throw new WorkflowError("لا تُعاد إسناد الأعمال المسلّمة أو الملغاة أو المرفوضة.", "INVALID_TRANSITION");
   const next: Idea = { ...idea };
   const notes: string[] = [];
   if (input.ownerId !== undefined && input.ownerId !== idea.ownerId) {
@@ -184,7 +242,7 @@ export function reassignMediaIdea(data: MediaData, actor: TeamMember, ideaId: st
     next.ownerId = owner.id; notes.push(`المسؤول: ${owner.name}`);
   }
   if (input.designerId !== undefined && input.designerId !== idea.designerId) {
-    if (!designStatuses.includes(idea.status)) throw new WorkflowError("يُسند المصمم بعد اعتماد الفكرة.", "INVALID_TRANSITION");
+    if (!designStatuses.includes(idea.status) && idea.status !== "delivered") throw new WorkflowError("يُسند المصمم بعد اعتماد الفكرة.", "INVALID_TRANSITION");
     const designer = data.members.find((member) => member.id === input.designerId && member.active && member.role === "designer");
     if (!designer) throw new WorkflowError("اختر مصمماً فعالاً.");
     next.designerId = designer.id; notes.push(`المصمم: ${designer.name}`);
@@ -251,7 +309,7 @@ export function updateMediaMember(data: MediaData, actor: TeamMember, memberId: 
   if (member.id === "root" && (patch.role !== undefined || patch.active === false)) throw new WorkflowError("لا يمكن تغيير صلاحية حساب root أو تعطيله.", "ROOT_PROTECTED", 403);
   if ((patch.name !== undefined && !patch.name.trim()) || (patch.title !== undefined && !patch.title.trim())) throw new WorkflowError("اسم العضو ومسماه مطلوبان.");
   const updated = { ...member, ...patch, ...(patch.name ? { name: patch.name.trim(), initials: patch.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join(" ") } : {}), ...(patch.title ? { title: patch.title.trim() } : {}) };
-  if (data.ideas.some((idea) => !["delivered", "cancelled", "rejected"].includes(idea.status) && ((idea.ownerId === memberId && (!updated.active || !(isAdministrator(updated) || updated.role === "content"))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
+  if (data.ideas.some((idea) => !idea.deletedAt && !["delivered", "cancelled", "rejected"].includes(idea.status) && ((idea.ownerId === memberId && (!updated.active || !(isAdministrator(updated) || updated.role === "content"))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
     throw new WorkflowError("أعد إسناد أفكار العضو ومهام التصميم المفتوحة قبل تعطيله أو تغيير صلاحيته. ستبقى أعماله المسلّمة منسوبة إليه.", "MEMBER_IN_USE", 409);
   }
   const result = { ...data, members: data.members.map((item) => item.id === memberId ? updated : item) }; validateMediaData(result); return result;
@@ -284,8 +342,9 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
   const companyIds = new Set(value.companies.map((company) => (company as Company).id)), categoryIds = new Set(value.categories.map((category) => (category as ContentCategory).id)), memberIds = new Set(members.map((member) => member.id));
   const codes = new Set<string>();
   for (const item of value.ideas) {
-    keys(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
+    keys(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial", "deletedAt", "deletedBy", "deletionReason"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
     textFields(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "ownerId", "designerId", "priority", "status"], 300); textFields(item, ["description", "content", "executionPlan", "managerFeedback"], 20000);
+    if (item.deletedAt !== undefined && (!dateTime(item.deletedAt) || typeof item.deletedBy !== "string" || !members.some((member) => member.id === item.deletedBy) || !str(item.deletionReason, 4000))) fail();
     if (item.archive !== undefined) { keys(item.archive, ["status", "archivedAt", "folderUrl"], ["status"]); if (!["not_started", "pending", "running", "done", "failed", "needs_review"].includes(item.archive.status as string) || (item.archive.archivedAt !== undefined && !dateTime(item.archive.archivedAt)) || (item.archive.folderUrl !== undefined && !/^https:\/\/drive\.google\.com\//.test(String(item.archive.folderUrl)))) fail(); }
     if (item.sourceProposal !== undefined) {
       keys(item.sourceProposal, ["batchId", "row", "proposerName", "funding", "originalGoal", "originalConcept", "sourceApproval", "reviewNote", "contentType", "platform", "reference", "fileName"], ["batchId", "row", "proposerName", "funding", "originalGoal", "originalConcept", "sourceApproval"]);
@@ -295,7 +354,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     }
     if (!item.title || codes.has(item.code as string)) fail(); codes.add(item.code as string);
     if (!companyIds.has(item.companyId as string) || !categoryIds.has(item.categoryId as string) || !memberIds.has(item.ownerId as string) || (item.designerId && !memberIds.has(item.designerId as string))) fail();
-    if (!["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
+    if (!item.deletedAt && !["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
     if (!hasEnumKey(item.workType, WORK_TYPE_LABELS) || !hasEnumKey(item.priority, PRIORITY_LABELS) || !hasEnumKey(item.status, STATUS_LABELS) || typeof item.needsQuotes !== "boolean") fail();
     if (!Array.isArray(item.channels) || !item.channels.length || item.channels.length > 3 || new Set(item.channels).size !== item.channels.length || item.channels.some((channel) => !hasEnumKey(channel, CHANNEL_LABELS))) fail();
     if (!validDate(item.requestedAt) || !validDate(item.dueDate) || item.dueDate < item.requestedAt || (!str(item.scheduledAt, 10) || (item.scheduledAt !== "" && !validDate(item.scheduledAt))) || (item.deliveredAt !== undefined && !validDate(item.deliveredAt)) || (item.approvedAt !== undefined && !dateTime(item.approvedAt)) || !dateTime(item.createdAt) || !dateTime(item.updatedAt)) fail();
@@ -303,14 +362,12 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     for (const file of item.attachments) { keys(file, ["id", "name", "size", "mime", "url", "kind", "channel", "createdAt"], ["id", "name", "size", "mime", "url", "kind"]); textFields(file, ["id", "name", "mime", "kind"], 500); if (!file.name || !["brief", "quotation", "final"].includes(file.kind as string) || !Number.isFinite(file.size) || (file.size as number) < 0 || (file.size as number) > 2 * 1024 * 1024 * 1024 || !urlAllowed(file.url) || (file.channel !== undefined && !hasEnumKey(file.channel, CHANNEL_LABELS)) || (file.createdAt !== undefined && !dateTime(file.createdAt))) fail(); }
     for (const quote of item.quotations) { keys(quote, ["id", "vendor", "amount", "scope", "days", "attachmentId", "recommended"], ["id", "vendor", "amount", "scope", "days", "recommended"]); textFields(quote, ["id", "vendor", "scope"]); if (!quote.vendor || !quote.scope || !Number.isFinite(quote.amount) || (quote.amount as number) <= 0 || !Number.isInteger(quote.days) || (quote.days as number) < 1 || (quote.days as number) > 3650 || typeof quote.recommended !== "boolean" || (quote.attachmentId !== undefined && (!(typeof quote.attachmentId === "string") || !item.attachments.some((file) => (file as Attachment).id === quote.attachmentId && (file as Attachment).kind === "quotation")))) fail(); }
     if (item.quotations.filter((quote) => (quote as Quotation).recommended).length > 1) fail();
-    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment", "withdrawn", "rejected", "cancelled", "reopened", "reassigned", "archived"];
+    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment", "withdrawn", "rejected", "cancelled", "reopened", "reassigned", "archived", "deleted", "restored"];
     for (const event of item.history) { keys(event, ["id", "at", "actorId", "action", "note", "from", "to"], ["id", "at", "actorId", "action", "note"]); textFields(event, ["id", "actorId", "action"], 100); textFields(event, ["note"], 20000); if (!memberIds.has(event.actorId as string) || !actions.includes(event.action as string) || !dateTime(event.at) || (event.from !== undefined && !hasEnumKey(event.from, STATUS_LABELS)) || (event.to !== undefined && !hasEnumKey(event.to, STATUS_LABELS))) fail(); }
   }
   uniqueIds((value.ideas as unknown as Idea[]).flatMap((idea) => idea.history));
   uniqueIds((value.ideas as unknown as Idea[]).flatMap((idea) => idea.attachments));
   uniqueIds([...(value.ideas as unknown as Idea[]).flatMap((idea) => idea.history), ...value.notifications]);
   const ideaIds = new Set(value.ideas.map((idea) => (idea as Idea).id));
-  for (const notice of value.notifications) { keys(notice, ["id", "recipientId", "ideaId", "title", "body", "type", "createdAt", "read"]); textFields(notice, ["id", "recipientId", "ideaId", "title", "body", "type"]); if (!memberIds.has(notice.recipientId as string) || !ideaIds.has(notice.ideaId as string) || !["approval", "feedback", "assignment", "quotation", "delivery", "comment", "archive", "reminder"].includes(notice.type as string) || !dateTime(notice.createdAt) || typeof notice.read !== "boolean") fail(); }
+  for (const notice of value.notifications) { keys(notice, ["id", "recipientId", "ideaId", "title", "body", "type", "createdAt", "read", "actorId", "actorName", "entityType", "entityId", "action"], ["id", "recipientId", "ideaId", "title", "body", "type", "createdAt", "read"]); textFields(notice, ["id", "recipientId", "ideaId", "title", "body", "type"]); if (!memberIds.has(notice.recipientId as string) || (notice.ideaId && !ideaIds.has(notice.ideaId as string)) || !["approval", "feedback", "assignment", "quotation", "delivery", "comment", "archive", "reminder", "activity", "achievement", "chat", "mention"].includes(notice.type as string) || !dateTime(notice.createdAt) || typeof notice.read !== "boolean" || (notice.actorId !== undefined && !memberIds.has(notice.actorId as string)) || ["actorName", "entityId", "action"].some((key) => notice[key] !== undefined && !str(notice[key], 300)) || (notice.entityType !== undefined && !["idea", "company", "category", "member", "settings", "chat", "workspace"].includes(notice.entityType as string))) fail(); }
 }
-
-

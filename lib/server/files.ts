@@ -33,12 +33,12 @@ export function safeFilename(name: string) {
   return path.basename(name.replaceAll("\\", "/")).replace(/[\u0000-\u001f\u007f]/g, "").replace(/[<>:"|?*]/g, "_").slice(0, 240).trim() || "مرفق";
 }
 
-export function assertUploadAllowed(actor: TeamMember, kind: string, idea: { status: string; ownerId: string; designerId: string; channels: string[] } | undefined, channel: string | null) {
+export function assertUploadAllowed(actor: TeamMember, kind: string, idea: { status: string; ownerId: string; designerId: string; channels: string[]; deletedAt?: string } | undefined, channel: string | null) {
   if (kind === "logo") { if (!isAdministrator(actor)) throw new MediaServerError("تغيير شعار الإدارة متاح لمدير النظام فقط.", 403, "FILE_PERMISSION"); requireAdministrator(actor); return; }
-  if (!idea) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
+  if (!idea || idea.deletedAt) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
   if (kind === "final") {
-    if (!["scheduled", "designing", "design_review"].includes(idea.status) || !channel || !idea.channels.includes(channel) || (!isAdministrator(actor) && (actor.role !== "designer" || idea.designerId !== actor.id))) throw new MediaServerError("إرفاق النسخ النهائية متاح للمصمم المكلّف بعد جدولة الفكرة، وللقنوات المطلوبة فقط.", 403, "FILE_PERMISSION");
-  } else if (!["draft", "quotations", "changes"].includes(idea.status) || (!isAdministrator(actor) && (actor.role !== "content" || idea.ownerId !== actor.id))) {
+    if ((!isAdministrator(actor) && !["scheduled", "designing", "design_review"].includes(idea.status)) || !channel || !idea.channels.includes(channel) || (!isAdministrator(actor) && (actor.role !== "designer" || idea.designerId !== actor.id))) throw new MediaServerError("إرفاق النسخ النهائية متاح للمصمم المكلّف بعد جدولة الفكرة، وللقنوات المطلوبة فقط.", 403, "FILE_PERMISSION");
+  } else if (!isAdministrator(actor) && (!["draft", "quotations", "changes"].includes(idea.status) || actor.role !== "content" || idea.ownerId !== actor.id)) {
     throw new MediaServerError("إضافة مرفقات المحتوى متاحة لمسؤول الفكرة أثناء إعدادها أو تعديلها.", 403, "FILE_PERMISSION");
   }
 }
@@ -77,6 +77,9 @@ export async function uploadFiles(request: Request): Promise<Attachment[]> {
       rows.push({ id, name: safeFilename(file.name), size: file.size, mime: inline || "application/octet-stream", inline, sha256: createHash("sha256").update(bytes).digest("hex"), ...stored });
     }
     return await db.transaction(async (tx) => {
+      const currentActor = await requireUser(request, tx);
+      const currentIdea = isLogo ? undefined : (await loadIdeas(tx, { ids: [String(ideaId)] }))[0];
+      assertUploadAllowed(currentActor, kind, currentIdea, channel);
       const result: Attachment[] = [];
       for (const row of rows) {
         const inserted = await tx.query(`insert into wasl.attachments (id, requested_idea_id, kind, channel, name, size, mime, storage, local_path, inline_mime, sha256, owner_id)
@@ -96,8 +99,9 @@ export async function downloadFile(request: Request, id: string): Promise<Respon
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new MediaServerError("الملف غير موجود.", 404, "FILE_NOT_FOUND");
   const db = database();
   const actor = await requireUser(request, db);
-  const row = (await db.query("select a.id, a.name, a.kind::text as kind, a.storage::text as storage, a.local_path, a.drive_file_id, a.inline_mime, a.owner_id, a.idea_id, a.requested_idea_id, a.removed_at, i.owner_id as idea_owner from wasl.attachments a left join wasl.ideas i on i.id = coalesce(a.idea_id, a.requested_idea_id) where a.id = $1 and a.storage in ('local', 'supabase', 'drive')", [id])).rows[0];
+  const row = (await db.query("select a.id, a.name, a.kind::text as kind, a.storage::text as storage, a.local_path, a.drive_file_id, a.inline_mime, a.owner_id, a.idea_id, a.requested_idea_id, a.removed_at, i.owner_id as idea_owner, i.deleted_at as idea_deleted_at from wasl.attachments a left join wasl.ideas i on i.id = coalesce(a.idea_id, a.requested_idea_id) where a.id = $1 and a.storage in ('local', 'supabase', 'drive')", [id])).rows[0];
   if (!row) throw new MediaServerError("الملف غير موجود.", 404, "FILE_NOT_FOUND");
+  if (row.idea_deleted_at && !isAdministrator(actor)) throw new MediaServerError("نُقل هذا العمل إلى سلة المحذوفات. يمكن لمدير النظام استعادته.", 404, "FILE_NOT_FOUND");
   const ownUpload = row.owner_id === actor.id;
   const visible = row.kind === "logo" || ownUpload || isAdministrator(actor) || (row.idea_id && !row.removed_at && (row.kind !== "quotation" || canSeeQuotations(actor, { ownerId: String(row.idea_owner) })));
   if (!visible) throw new MediaServerError("ليس لديك صلاحية الوصول لهذا الملف.", 403, "FILE_PERMISSION");

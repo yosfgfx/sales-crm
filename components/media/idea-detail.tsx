@@ -1,21 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import {
-  type Attachment,
-  type Channel,
-  type Idea,
-} from "@/data/media";
+import { type Attachment, type Channel, type Idea } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
-import {
-  Modal,
-  TabList,
-  errorText,
-  today,
-} from "./ui";
+import { Modal, TabList, errorText, today } from "./ui";
 import { uploadFiles } from "./idea-editor";
 import { PresentationPreview } from "./presentation";
-import { isAdministrator } from "@/lib/media-workflow";
+import { canEditIdea, isAdministrator } from "@/lib/media-workflow";
+import { ContextDiscussion } from "./social";
+import { ActionButton, Icon } from "./ui";
 import { IdeaSummary } from "./idea-detail/summary";
 import { ContentTab, OverviewTab } from "./idea-detail/overview-tab";
 import { QuotationsTab } from "./idea-detail/quotations-tab";
@@ -23,17 +16,25 @@ import { FilesTab } from "./idea-detail/files-tab";
 import { HistoryTab } from "./idea-detail/history-tab";
 import { ScheduleForm } from "./idea-detail/schedule-form";
 import { ActionsBar } from "./idea-detail/actions-bar";
-import { LifecycleDialog, ReassignDialog, ReturnDialog } from "./idea-detail/dialogs";
+import {
+  LifecycleDialog,
+  ReassignDialog,
+  ReturnDialog,
+} from "./idea-detail/dialogs";
 import { QuoteDialog } from "./idea-detail/quote-dialog";
 
 export default function IdeaDetail({
   idea,
   onClose,
   onEdit,
+  initialTab,
+  initialThreadId,
 }: {
   idea: Idea;
   onClose: () => void;
   onEdit: () => void;
+  initialTab?: string;
+  initialThreadId?: string;
 }) {
   const store = useMediaStore(),
     { data, currentUser } = store;
@@ -42,16 +43,28 @@ export default function IdeaDetail({
   useEffect(() => {
     if (partial) void loadIdea(idea.id).catch(() => undefined);
   }, [partial, idea.id, loadIdea]);
-  const [tab, setTab] = useState("overview"),
+  const [tab, setTab] = useState(initialTab || "overview"),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
   const [feedback, setFeedback] = useState(""),
     [returnDialog, setReturnDialog] = useState(false);
-  const [lifecycle, setLifecycle] = useState<{ kind: "reject" | "cancel" | "reopen" | "delete"; text: string } | null>(null);
-  const [reassign, setReassign] = useState<{ ownerId: string; designerId: string } | null>(null);
+  const [lifecycle, setLifecycle] = useState<{
+    kind: "reject" | "cancel" | "reopen" | "delete";
+    text: string;
+  } | null>(null);
+  const [reassign, setReassign] = useState<{
+    ownerId: string;
+    designerId: string;
+  } | null>(null);
   const defaultDesigner = () =>
-    (data.members.some((m) => m.id === idea.designerId && m.active && m.role === "designer") ? idea.designerId : "") ||
-    (currentUser?.role === "designer" ? currentUser.id : data.members.find((m) => m.role === "designer" && m.active)?.id) ||
+    (data.members.some(
+      (m) => m.id === idea.designerId && m.active && m.role === "designer",
+    )
+      ? idea.designerId
+      : "") ||
+    (currentUser?.role === "designer"
+      ? currentUser.id
+      : data.members.find((m) => m.role === "designer" && m.active)?.id) ||
     "";
   const [designer, setDesigner] = useState(defaultDesigner),
     [scheduled, setScheduled] = useState(idea.scheduledAt || today()),
@@ -71,25 +84,29 @@ export default function IdeaDetail({
     [pendingQuoteAttachment, setPendingQuoteAttachment] =
       useState<Attachment | null>(null),
     [pendingUpload, setPendingUpload] = useState<Attachment[]>([]),
-    [scheduleBaseline, setScheduleBaseline] = useState({ designerId: idea.designerId, scheduledAt: idea.scheduledAt, dueDate: idea.dueDate, priority: idea.priority as string });
+    [scheduleBaseline, setScheduleBaseline] = useState({
+      designerId: idea.designerId,
+      scheduledAt: idea.scheduledAt,
+      dueDate: idea.dueDate,
+      priority: idea.priority as string,
+    });
   const admin = isAdministrator(currentUser),
-    canContent =
-      admin ||
-      (currentUser?.role === "content" && idea.ownerId === currentUser.id),
-    canEdit =
-      canContent && ["draft", "quotations", "changes"].includes(idea.status);
+    canEdit = canEditIdea(idea, currentUser);
   const canReview =
-    (admin || currentUser?.role === "manager") && idea.status === "review" && idea.ownerId !== currentUser?.id;
+    !idea.deletedAt &&
+    (admin || currentUser?.role === "manager") &&
+    idea.status === "review" &&
+    idea.ownerId !== currentUser?.id;
   const canDesign =
-    admin ||
-    (currentUser?.role === "designer" &&
-      (idea.designerId === currentUser.id || !idea.designerId));
-  const designStage = [
-    "approved",
-    "scheduled",
-    "designing",
-    "design_review",
-  ].includes(idea.status);
+    !idea.deletedAt &&
+    (admin ||
+      (currentUser?.role === "designer" &&
+        (idea.designerId === currentUser.id || !idea.designerId)));
+  const designStage =
+    !idea.deletedAt &&
+    ["approved", "scheduled", "designing", "design_review"].includes(
+      idea.status,
+    );
   const pendingQuoteId = useRef<string | null>(null);
   const run = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -177,6 +194,7 @@ export default function IdeaDetail({
   };
   const tabs = [
     { id: "overview", label: "الملخص" },
+    { id: "discussion", label: "تعليقات الفريق" },
     { id: "content", label: "المحتوى والخطة" },
     { id: "quotations", label: `العروض (${idea.quotations.length})` },
     { id: "presentation", label: "عرض الاعتماد" },
@@ -194,17 +212,65 @@ export default function IdeaDetail({
         description={`${idea.code} · ${data.companies.find((c) => c.id === idea.companyId)?.name}`}
       >
         <div className="space-y-5 p-5 sm:p-6">
-          <IdeaSummary idea={idea} data={data} canEdit={canEdit} onEdit={onEdit} />
+          <IdeaSummary
+            idea={idea}
+            data={data}
+            canEdit={canEdit}
+            onEdit={onEdit}
+          />
+          {idea.deletedAt && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 text-sm">
+              <p>
+                هذا العمل محفوظ في سلة المحذوفات. يمكنك استعادته مع ملفاته
+                وسجله.
+              </p>
+              {admin && (
+                <ActionButton
+                  disabled={busy}
+                  className="mt-3"
+                  onClick={() =>
+                    void run(
+                      () => store.restoreIdea(idea.id),
+                      "استُعيد العمل مع تفاصيله ومرفقاته.",
+                    )
+                  }
+                >
+                  <Icon name="refresh" className="size-4" />
+                  استعادة العمل
+                </ActionButton>
+              )}
+            </div>
+          )}
           <div className="border-b border-[var(--border)] pb-3">
-            <TabList label="تفاصيل الفكرة" idPrefix="idea" compact value={tab} onChange={setTab} items={tabs} />
+            <TabList
+              label="تفاصيل الفكرة"
+              idPrefix="idea"
+              compact
+              value={tab}
+              onChange={setTab}
+              items={tabs}
+            />
           </div>
-          <div role="tabpanel" id="idea-panel" aria-labelledby={`idea-tab-${tab}`}>
+          <div
+            role="tabpanel"
+            id="idea-panel"
+            aria-labelledby={`idea-tab-${tab}`}
+          >
+            {tab === "discussion" && (
+              <ContextDiscussion
+                initialThreadId={initialThreadId}
+                contextType="idea"
+                contextId={idea.id}
+                title={`تعليقات: ${idea.title}`}
+                data={data}
+                currentUser={currentUser}
+                compact
+              />
+            )}
             {tab === "overview" && (
               <OverviewTab idea={idea} data={data} setTab={setTab} />
             )}
-            {tab === "content" && (
-              <ContentTab idea={idea} />
-            )}
+            {tab === "content" && <ContentTab idea={idea} />}
             {tab === "quotations" && (
               <QuotationsTab
                 idea={idea}
@@ -287,20 +353,22 @@ export default function IdeaDetail({
             </div>
           )}
         </div>
-        <ActionsBar
-          idea={idea}
-          currentUser={currentUser}
-          admin={admin}
-          busy={busy}
-          run={run}
-          store={store}
-          canEdit={canEdit}
-          canReview={canReview}
-          canDesign={canDesign}
-          setLifecycle={setLifecycle}
-          setReassign={setReassign}
-          setReturnDialog={setReturnDialog}
-        />
+        {!idea.deletedAt && (
+          <ActionsBar
+            idea={idea}
+            currentUser={currentUser}
+            admin={admin}
+            busy={busy}
+            run={run}
+            store={store}
+            canEdit={canEdit}
+            canReview={canReview}
+            canDesign={canDesign}
+            setLifecycle={setLifecycle}
+            setReassign={setReassign}
+            setReturnDialog={setReturnDialog}
+          />
+        )}
       </Modal>
       <LifecycleDialog
         idea={idea}

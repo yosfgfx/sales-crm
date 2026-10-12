@@ -119,7 +119,7 @@ test("delivery archives automatically into year, month and company with a summar
   const legacyRow = (await h.pg.query("select storage from wasl.attachments where id = $1", [legacy[0].id])).rows[0];
   assert.equal(legacyRow.storage, "drive");
   const done = await h.pg.query("select recipient_id from wasl.notifications where idea_id = 'idea-007' and type = 'archive'");
-  assert.deepEqual(done.rows.map((row) => row.recipient_id).sort(), ["faisal", "noura"]);
+  assert.deepEqual(done.rows.map((row) => row.recipient_id).sort(), ["faisal", "manager", "noura"]);
   const view = await state.loadStateFor((await auth.currentSession(h.getRequest("/api/media", h.cookies.noura))).user);
   const projected = view.data.ideas.find((item) => item.id === "idea-007");
   assert.equal(projected.archive.status, "done");
@@ -138,7 +138,7 @@ test("archive failures retry with backoff, then alert administrators once (C1)",
   const last = await archive.runDueArchiveJobs(1);
   assert.equal(last[0].status, "needs_review");
   const alerts = await h.pg.query("select recipient_id from wasl.notifications where idea_id = 'idea-006' and type = 'archive'");
-  assert.deepEqual(alerts.rows.map((row) => row.recipient_id).sort(), ["admin", "root"]);
+  assert.deepEqual(alerts.rows.map((row) => row.recipient_id).sort(), ["admin", "manager", "root"]);
   const status = await integration.integrationStatus(h.getRequest("/api/integrations/google", h.cookies.admin));
   assert.ok(status.issues.some((issue) => issue.ideaId === "idea-006" && issue.status === "needs_review"));
   fake.state.failUploads = false;

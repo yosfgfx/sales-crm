@@ -45,7 +45,7 @@ test("an operation sends only the action and merges the returned idea", async ()
   const { store, remote, requests, handlers } = fixture();
   await store.getState().initialize();
   const updated = { ...remote.ideas.find((idea) => idea.id === "idea-003"), description: "وصف من الخادم" };
-  handlers["/api/ops"] = (body) => { assert.deepEqual(body, { type: "patchIdea", ideaId: "idea-003", patch: { description: "وصف" } }); return Response.json({ idea: updated, notifications: [] }); };
+  handlers["/api/ops"] = (body) => { assert.match(body.requestId, /^[a-f0-9-]{36}$/); const { requestId, ...action } = body; void requestId; assert.deepEqual(action, { type: "patchIdea", ideaId: "idea-003", patch: { description: "وصف" } }); return Response.json({ idea: updated, notifications: [] }); };
   await store.getState().patchIdea("idea-003", { description: "وصف" });
   const post = requests.find((request) => request.url === "/api/ops");
   assert.ok(Buffer.byteLength(post.body) < 5 * 1024);
@@ -163,4 +163,24 @@ test("merging a fresh first page keeps older loaded notifications and marks stal
   assert.equal(combined[0].id, "n-0-1");
   assert.equal(combined.find((item) => item.id === "n-055").read, true);
   assert.equal(new Set(combined.map((item) => item.id)).size, combined.length);
+});
+
+
+test("retrying an uncertain saved action reuses the same idempotency key", async () => {
+  const { store, handlers } = fixture(); await store.getState().initialize();
+  const attempts = [];
+  handlers["/api/ops"] = (body) => { attempts.push(body); if (attempts.length === 1) throw new TypeError("connection lost"); return Response.json({ notifications: [] }); };
+  await assert.rejects(store.getState().addComment("idea-003", "تحديث للفريق"));
+  await store.getState().retryLast();
+  assert.equal(attempts.length, 2); assert.equal(attempts[0].requestId, attempts[1].requestId);
+  assert.deepEqual(attempts[0], attempts[1]);
+});
+
+test("soft deleted work stays in admin state for the recycle bin and can be restored", async () => {
+  const { store, remote, handlers } = fixture("admin"); await store.getState().initialize();
+  const original = remote.ideas.find((item) => item.id === "idea-003");
+  handlers["/api/ops"] = (body) => Response.json({ idea: body.type === "deleteIdea" ? { ...original, deletedAt: "2026-10-12T07:00:00.000Z", deletedBy: "admin", deletionReason: "تكرار" } : original, notifications: [] });
+  await store.getState().deleteIdea(original.id, "تكرار");
+  assert.equal(store.getState().data.ideas.length, remote.ideas.length); assert.ok(store.getState().data.ideas.find((item) => item.id === original.id).deletedAt);
+  await store.getState().restoreIdea(original.id); assert.equal(store.getState().data.ideas.find((item) => item.id === original.id).deletedAt, undefined);
 });

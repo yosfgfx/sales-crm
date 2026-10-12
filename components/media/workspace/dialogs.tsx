@@ -2,7 +2,12 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import type { MediaState } from "@/stores/media-store";
-import { memberDisplayLabel, type MediaData, type TeamMember } from "@/data/media";
+import {
+  memberDisplayLabel,
+  type MediaData,
+  type MediaNotification,
+  type TeamMember,
+} from "@/data/media";
 import MfaSettings from "../mfa-settings";
 import { ActionButton, EmptyState, Icon, Modal, formatDate } from "../ui";
 import { Avatar } from "./avatar";
@@ -14,26 +19,26 @@ type Run = (action: () => Promise<unknown>, message?: string) => Promise<void>;
 export function NotificationsDialog({
   notifications,
   setNotifications,
-  setSelected,
   run,
   store,
   data,
   currentUser,
+  onNavigateNotice,
 }: {
   notifications: boolean;
   setNotifications: Setter<boolean>;
-  setSelected: Setter<string | null>;
   run: Run;
   store: MediaState;
   data: MediaData;
   currentUser: TeamMember;
+  onNavigateNotice: (notice: MediaNotification) => void;
 }) {
   return (
     <Modal
       open={notifications}
       onClose={() => setNotifications(false)}
       title="إشعارات الفريق"
-      description="المراجعات والتسليمات والعروض المتعلقة بعملك."
+      description="إسناد المهام، وتحديثات الفريق، والتعليقات والإنجازات."
     >
       <div className="space-y-3 p-5">
         <ActionButton
@@ -56,14 +61,29 @@ export function NotificationsDialog({
                 key={n.id}
                 onClick={() => {
                   void run(() => store.markNotificationsRead([n.id]));
-                  setSelected(n.ideaId);
+                  onNavigateNotice(n);
                   setNotifications(false);
                 }}
                 className={`h-auto w-full items-start justify-start gap-3 px-4 py-4 text-start !whitespace-normal ${!n.read ? "!bg-[var(--accent)]" : ""}`}
               >
-                <Icon name="bell" className="size-4" />
+                {n.actorName || n.actorId ? (
+                  <Avatar
+                    name={
+                      n.actorName ||
+                      data.members.find((member) => member.id === n.actorId)
+                        ?.name ||
+                      "عضو الفريق"
+                    }
+                  />
+                ) : (
+                  <Icon
+                    name={n.type === "achievement" ? "trophy" : "bell"}
+                    className="size-5"
+                  />
+                )}
                 <span className="leading-relaxed">
-                  {n.title} · {n.body}
+                  <span className="block font-semibold">{n.title}</span>
+                  <span className="mt-1 block text-sm">{n.body}</span>
                   <span className="mt-1 block text-xs text-[var(--soft)]">
                     {formatDate(n.createdAt)}
                   </span>
@@ -72,11 +92,16 @@ export function NotificationsDialog({
             ))
         )}
         {store.olderNotifications && (
-          <ActionButton onClick={() => void run(() => store.loadOlderNotifications())} className="w-full">
+          <ActionButton
+            onClick={() => void run(() => store.loadOlderNotifications())}
+            className="w-full"
+          >
             عرض إشعارات أقدم
           </ActionButton>
         )}
-        <p className="text-center text-xs text-[var(--soft)]">تُحذف الإشعارات المقروءة بعد 90 يوماً.</p>
+        <p className="text-center text-xs text-[var(--soft)]">
+          تُحذف الإشعارات المقروءة بعد 90 يوماً.
+        </p>
       </div>
     </Modal>
   );

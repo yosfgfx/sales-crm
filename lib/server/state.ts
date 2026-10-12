@@ -30,7 +30,7 @@ export function liteIdea(idea: Idea): Idea {
 }
 
 export async function loadStateFor(viewer: TeamMember, q: Queryable = database(), now = Date.now()): Promise<{ version: number; data: MediaData }> {
-  const [reference, ideas, notifications] = await Promise.all([loadReference(q), loadIdeas(q), loadNotifications(q, viewer.id)]);
+  const [reference, ideas, notifications] = await Promise.all([loadReference(q), loadIdeas(q, { includeDeleted: administrator(viewer) }), loadNotifications(q, viewer.id)]);
   const shaped = ideas.map((idea) => {
     const projected = projectIdea(viewer, idea);
     return CLOSED.includes(idea.status) && now - new Date(idea.updatedAt).getTime() > LITE_AFTER_MS ? liteIdea(projected) : projected;
@@ -39,6 +39,6 @@ export async function loadStateFor(viewer: TeamMember, q: Queryable = database()
 }
 
 export async function loadIdeaFor(viewer: TeamMember, id: string, q: Queryable = database()) {
-  const [idea] = await loadIdeas(q, { ids: [id] });
+  const [idea] = await loadIdeas(q, { ids: [id], includeDeleted: administrator(viewer) });
   return idea ? projectIdea(viewer, idea) : null;
 }

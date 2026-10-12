@@ -4,7 +4,7 @@ import type { AccountSummary, MediaData, TeamMember } from "@/data/media";
 import { addMediaMember, updateMediaMember } from "@/lib/media-workflow";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, clientAddress, MediaServerError, readJson, responseHeaders } from "./http";
-import { loadIdeas, loadReference } from "./repository";
+import { loadIdeas, loadReference, notifyWorkspaceActivity } from "./repository";
 import { loadStateFor } from "./state";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { newSecret, otpauthUri, verifyCode } from "./totp";
@@ -247,6 +247,13 @@ export async function mutateAccounts(request: Request): Promise<Response> {
         await tx.query("update wasl.accounts set username = $2, password_hash = coalesce($3, password_hash), auth_version = auth_version + $4, updated_at = now() where member_id = $1", [targetId, username, passwordHash || null, identityChanged ? 1 : 0]);
       }
     }
+    const targetName = (await memberById(tx, targetId))?.name || "عضو الفريق";
+    await notifyWorkspaceActivity(tx, actor, {
+      entityType: "member", entityId: targetId,
+      action: submitted.operation === "create" ? "account_created" : "account_updated",
+      title: submitted.operation === "create" ? "عضو جديد في الفريق" : "تحديث حساب عضو",
+      body: submitted.operation === "create" ? `أضاف حساب ${targetName} إلى الفريق.` : `حدّث بيانات حساب ${targetName}.`,
+    });
     return { targetId };
   });
   const user = await sessionUser(request);

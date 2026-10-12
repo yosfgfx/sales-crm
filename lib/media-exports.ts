@@ -70,6 +70,7 @@ export function monthlyReport(data: MediaData, month: string) {
   const ideas = data.ideas
     .filter(
       (idea) =>
+        !idea.deletedAt &&
         idea.status === "delivered" &&
         reportDate(idea.deliveredAt).slice(0, 7) === month,
     )
@@ -599,6 +600,8 @@ const HISTORY_LABELS: Record<Idea["history"][number]["action"], string> = {
   reopened: "إعادة فتح العمل",
   reassigned: "إعادة إسناد",
   archived: "أرشفة في Google Drive",
+  deleted: "نقل إلى سلة المحذوفات",
+  restored: "استعادة العمل",
 };
 
 function splitText(value: string, limit = 650): string[] {

@@ -3,7 +3,7 @@ export type Channel = "screens" | "whatsapp" | "email";
 export type WorkType = "motion" | "video" | "design" | "report" | "presentation" | "document";
 export type Priority = "urgent" | "high" | "normal" | "low";
 export type IdeaStatus = "draft" | "quotations" | "review" | "changes" | "approved" | "scheduled" | "designing" | "design_review" | "delivered" | "cancelled" | "rejected";
-export type HistoryAction = "created" | "edited" | "submitted" | "changes_requested" | "approved" | "scheduled" | "design_started" | "design_review" | "delivered" | "attachments_added" | "attachment_removed" | "quotation_added" | "quotation_removed" | "comment" | "withdrawn" | "rejected" | "cancelled" | "reopened" | "reassigned" | "archived";
+export type HistoryAction = "created" | "edited" | "submitted" | "changes_requested" | "approved" | "scheduled" | "design_started" | "design_review" | "delivered" | "attachments_added" | "attachment_removed" | "quotation_added" | "quotation_removed" | "comment" | "withdrawn" | "rejected" | "cancelled" | "reopened" | "reassigned" | "archived" | "deleted" | "restored";
 
 export interface Company { id: string; name: string; shortName: string; initials: string; color: string; active?: boolean }
 export interface ContentCategory { id: string; name: string; color: string; targetPerMonth: number; active?: boolean }
@@ -21,13 +21,16 @@ export interface Idea {
   sourceProposal?: SourceProposal;
   archive?: IdeaArchive;
   partial?: boolean;
+  deletedAt?: string; deletedBy?: string; deletionReason?: string;
 }
 export type ArchiveStatus = "not_started" | "pending" | "running" | "done" | "failed" | "needs_review";
 export interface IdeaArchive { status: ArchiveStatus; archivedAt?: string; folderUrl?: string }
+export type NotificationEntity = "idea" | "company" | "category" | "member" | "settings" | "chat" | "workspace";
 export interface MediaNotification {
   id: string; recipientId: string; ideaId: string; title: string; body: string;
-  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder";
+  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder" | "activity" | "achievement" | "chat" | "mention";
   createdAt: string; read: boolean;
+  actorId?: string; actorName?: string; entityType?: NotificationEntity; entityId?: string; action?: string;
 }
 export interface SystemSettings { departmentName: string; organizationName: string; logoUrl: string; driveFolderId: string }
 export interface MediaData { companies: Company[]; categories: ContentCategory[]; members: TeamMember[]; ideas: Idea[]; notifications: MediaNotification[]; settings: SystemSettings }

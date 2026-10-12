@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createInitialMediaData, type Attachment, type MediaData, type NewIdeaInput, type TeamMember } from "../data/media";
-import { addMediaAttachments, addMediaComment, addMediaMember, addMediaQuotation, changeMediaDesignStatus, createMediaIdea, isAdministrator, patchMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaMember, validateMediaData, WorkflowError } from "../lib/media-workflow";
+import { addMediaAttachments, addMediaComment, addMediaMember, addMediaQuotation, changeMediaDesignStatus, createMediaIdea, deleteMediaIdea, restoreMediaIdea, isAdministrator, patchMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaMember, validateMediaData, WorkflowError } from "../lib/media-workflow";
 
 const actor = (data: MediaData, memberId: string): TeamMember => data.members.find((member) => member.id === memberId)!;
 const input = (): NewIdeaInput => ({ title: "حملة صحة الموظفين", companyId: "mawaredcom", department: "إدارة الصحة والعافية", categoryId: "wellbeing", workType: "motion", description: "حملة توعوية بصحة الموظفين وطرق الاستفادة من الخدمات.", content: "صحتك أولاً، ونحن إلى جانبك.", executionPlan: "كتابة النص، تصميم النسخ، المراجعة ثم التسليم.", channels: ["screens", "whatsapp", "email"], ownerId: "noura", requestedAt: "2026-10-08", dueDate: "2026-10-20", priority: "high", needsQuotes: false });
@@ -70,7 +70,7 @@ function step(previous: MediaData, memberId: string, operation: (data: MediaData
  test("comments notify the responsible members while retaining the underlying brief", () => {
   const data = create(), next = addMediaComment(data, actor(data, "manager"), data.ideas[0].id, "يرجى تنسيق الموعد مع إدارة الصحة");
   validateMediaData(next); assert.equal(next.ideas[0].description, data.ideas[0].description);
-  assert.equal(next.ideas[0].history.at(-1)?.action, "comment"); assert.equal(next.notifications[0].recipientId, "noura");
+  assert.equal(next.ideas[0].history.at(-1)?.action, "comment"); assert.ok(next.notifications.some((notice) => notice.recipientId === "noura" && notice.action === "comment"));
  });
  test("admin may create another admin and manage roster names while preserving an active administrator", () => {
   const data = createInitialMediaData(), admin = actor(data, "admin");
@@ -130,4 +130,97 @@ test("import provenance retains original attribution through edits and cannot be
   const edited = patchMediaIdea(data, actor(data, "noura"), ideaId, { title: "عنوان تنفيذي" }); validateMediaData(edited);
   assert.deepEqual(edited.ideas[0].sourceProposal, data.ideas[0].sourceProposal);
   const malformed = structuredClone(data); malformed.ideas[0].sourceProposal!.row = 0; reject(() => validateMediaData(malformed), "INVALID_DATA");
+});
+
+
+test("every persisted idea activity reaches active managers once with authenticated actor identity", () => {
+  const before = createInitialMediaData();
+  before.members.push({ id: "inactive-manager", name: "مدير سابق", role: "manager", title: "", initials: "م", color: "#555555", active: false });
+  const author = actor(before, "noura");
+  const next = patchMediaIdea(before, author, "idea-003", { content: "نص يستجيب لملاحظات المدير" });
+  const fresh = next.notifications.slice(0, next.notifications.length - before.notifications.length);
+  assert.deepEqual(fresh.map((notice) => notice.recipientId), ["manager"]);
+  assert.equal(fresh[0].actorId, author.id); assert.equal(fresh[0].actorName, author.name);
+  assert.equal(fresh[0].entityType, "idea"); assert.equal(fresh[0].entityId, "idea-003"); assert.equal(fresh[0].action, "edited");
+  assert.match(fresh[0].body, /نفّذ التعديلات المطلوبة/);
+  const unchanged = patchMediaIdea(next, author, "idea-003", { content: "نص يستجيب لملاحظات المدير" });
+  assert.equal(unchanged, next);
+});
+
+test("assigning an owner or designer generates an immediate assignment notification", () => {
+  const before = createInitialMediaData();
+  const created = createMediaIdea(before, actor(before, "admin"), input());
+  assert.ok(created.notifications.some((notice) => notice.ideaId === created.ideas[0].id && notice.recipientId === "noura" && notice.type === "assignment" && notice.action === "created"));
+  const scheduled = scheduleMediaIdea(before, actor(before, "admin"), "idea-005", { designerId: "omar", scheduledAt: "2026-10-10" });
+  assert.equal(scheduled.notifications.filter((notice) => notice.ideaId === "idea-005" && notice.recipientId === "omar" && notice.action === "scheduled").length, 1);
+});
+
+test("completed delivery celebrates both responsible teammates and informs the manager once", () => {
+  const before = createInitialMediaData();
+  const work = before.ideas.find((item) => item.id === "idea-007")!;
+  work.attachments = before.ideas.find((item) => item.status === "delivered" && item.channels.length === 3)!.attachments.map((file, index) => ({ ...file, id: `celebration-file-${index}` }));
+  const next = changeMediaDesignStatus(before, actor(before, "faisal"), work.id, "delivered");
+  const achievements = next.notifications.filter((notice) => notice.ideaId === work.id && notice.action === "delivered");
+  assert.deepEqual(achievements.map((notice) => notice.recipientId).sort(), ["faisal", "manager", "noura"]);
+  assert.ok(achievements.every((notice) => notice.type === "achievement" && notice.actorId === "faisal"));
+});
+
+test("only admins delete and restore work, preserving status and every archive attachment", () => {
+  const before = createInitialMediaData(); const work = before.ideas.find((item) => item.status === "delivered")!;
+  reject(() => deleteMediaIdea(before, actor(before, "noura"), work.id), "FORBIDDEN");
+  const removed = deleteMediaIdea(before, actor(before, "admin"), work.id, "تم استبداله");
+  const deleted = removed.ideas.find((item) => item.id === work.id)!; assert.ok(deleted.deletedAt); assert.equal(deleted.deletedBy, "admin");
+  assert.equal(deleted.status, work.status); assert.deepEqual(deleted.attachments, work.attachments);
+  reject(() => patchMediaIdea(removed, actor(removed, "admin"), work.id, { title: "مخفي" }), "NOT_FOUND");
+  reject(() => restoreMediaIdea(removed, actor(removed, "manager"), work.id), "FORBIDDEN");
+  const restored = restoreMediaIdea(removed, actor(removed, "admin"), work.id);
+  assert.equal(restored.ideas.find((item) => item.id === work.id)!.deletedAt, undefined);
+  assert.deepEqual(restored.ideas.find((item) => item.id === work.id)!.attachments, work.attachments);
+  assert.equal(restored.ideas.find((item) => item.id === work.id)!.history.at(-1)!.action, "restored");
+});
+
+test("admin metadata edits retain delivery, but approved content changes require another approval", () => {
+  const before = createInitialMediaData(); const work = before.ideas.find((item) => item.status === "delivered")!;
+  const admin = actor(before, "admin");
+  const metadata = patchMediaIdea(before, admin, work.id, { priority: "urgent" });
+  assert.equal(metadata.ideas.find((item) => item.id === work.id)!.status, "delivered");
+  const revision = patchMediaIdea(metadata, admin, work.id, { content: "محتوى جديد يحتاج اعتماداً" });
+  const revised = revision.ideas.find((item) => item.id === work.id)!;
+  assert.equal(revised.status, "review"); assert.equal(revised.approvedAt, undefined); assert.equal(revised.deliveredAt, undefined);
+  assert.deepEqual(revised.attachments, work.attachments);
+  assert.ok(revision.notifications.some((notice) => notice.entityId === work.id && notice.type === "approval" && notice.recipientId === "manager"));
+});
+
+
+test("the acting administrator also receives a completion celebration once", () => {
+  const before = createInitialMediaData(); const work = before.ideas.find((item) => item.id === "idea-007")!;
+  work.attachments = before.ideas.find((item) => item.status === "delivered" && item.channels.length === 3)!.attachments.map((file, index) => ({ ...file, id: `admin-celebration-${index}` }));
+  const next = changeMediaDesignStatus(before, actor(before, "admin"), work.id, "delivered");
+  assert.equal(next.notifications.filter((notice) => notice.action === "delivered" && notice.recipientId === "admin" && notice.type === "achievement").length, 1);
+});
+
+test("deleted open work permits roster changes and requires explicit valid assignments on restoration", () => {
+  const before = createInitialMediaData();
+  const work = before.ideas.find((idea) => idea.id === "idea-007")!;
+  before.ideas = [work]; before.notifications = [];
+  let removed = deleteMediaIdea(before, actor(before, "admin"), work.id);
+  removed = updateMediaMember(removed, actor(removed, "admin"), work.ownerId, { role: "manager" });
+  removed = updateMediaMember(removed, actor(removed, "admin"), work.designerId, { active: false });
+  reject(() => restoreMediaIdea(removed, actor(removed, "admin"), work.id), "RESTORE_ASSIGNMENT_REQUIRED");
+  const restored = restoreMediaIdea(removed, actor(removed, "admin"), work.id, undefined, { ownerId: "sara", designerId: "omar" });
+  assert.equal(restored.ideas[0].ownerId, "sara"); assert.equal(restored.ideas[0].designerId, "omar");
+  assert.equal(restored.ideas[0].status, work.status); assert.deepEqual(restored.ideas[0].attachments, work.attachments);
+  validateMediaData(restored);
+});
+
+test("restoring delivered work preserves inactive historical assignments unless a replacement is requested", () => {
+  const before = createInitialMediaData();
+  const work = before.ideas.find((idea) => idea.status === "delivered")!;
+  before.ideas = [work]; before.notifications = [];
+  let removed = deleteMediaIdea(before, actor(before, "admin"), work.id);
+  removed = updateMediaMember(removed, actor(removed, "admin"), work.ownerId, { active: false });
+  const restored = restoreMediaIdea(removed, actor(removed, "admin"), work.id);
+  assert.equal(restored.ideas[0].ownerId, work.ownerId); assert.equal(restored.ideas[0].status, "delivered");
+  validateMediaData(restored);
+  reject(() => restoreMediaIdea(removed, actor(removed, "admin"), work.id, undefined, { ownerId: work.ownerId }), "RESTORE_ASSIGNMENT_REQUIRED");
 });

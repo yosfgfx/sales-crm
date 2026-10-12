@@ -6,7 +6,7 @@ import { createMediaIdea, validateMediaData } from "@/lib/media-workflow";
 import { requireAdministrator, requireUser } from "./auth";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, readJson } from "./http";
-import { loadReference, nextIdeaCode, persistIdea } from "./repository";
+import { insertNotifications, loadReference, nextIdeaCode, persistIdea } from "./repository";
 
 const FILE_LIMIT = 4 * 1024 * 1024;
 type Options = { companyId: string; categoryId: string; dueDays: number; ownerMap: Record<string, string>; defaultOwnerId: string };
@@ -124,6 +124,7 @@ export async function importIdeas(request: Request) {
       idea.history[0] = { ...idea.history[0], note: `استُوردت من الملف «${file.name.slice(0, 120)}»، الصف ${row.row}` };
       validateMediaData({ ...slice, ideas: [idea] });
       await persistIdea(tx, null, idea, actor.id);
+      await insertNotifications(tx, next.notifications);
       result.push({ id: idea.id, code: idea.code, title: idea.title, ownerId: idea.ownerId });
     }
     return result;
