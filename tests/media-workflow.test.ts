@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createInitialMediaData, type Attachment, type MediaData, type NewIdeaInput, type TeamMember } from "../data/media";
-import { addMediaAttachments, addMediaComment, addMediaMember, addMediaQuotation, changeMediaDesignStatus, createMediaIdea, deleteMediaIdea, restoreMediaIdea, isAdministrator, patchMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaMember, validateMediaData, WorkflowError } from "../lib/media-workflow";
+import { decideMediaIdeaEdit, requestMediaIdeaEdit, addMediaAttachments, addMediaComment, addMediaMember, addMediaQuotation, changeMediaDesignStatus, createMediaIdea, deleteMediaIdea, restoreMediaIdea, isAdministrator, patchMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaMember, validateMediaData, WorkflowError } from "../lib/media-workflow";
 
 const actor = (data: MediaData, memberId: string): TeamMember => data.members.find((member) => member.id === memberId)!;
 const input = (): NewIdeaInput => ({ title: "حملة صحة الموظفين", companyId: "mawaredcom", department: "إدارة الصحة والعافية", categoryId: "wellbeing", workType: "motion", description: "حملة توعوية بصحة الموظفين وطرق الاستفادة من الخدمات.", content: "صحتك أولاً، ونحن إلى جانبك.", executionPlan: "كتابة النص، تصميم النسخ، المراجعة ثم التسليم.", channels: ["screens", "whatsapp", "email"], ownerId: "noura", requestedAt: "2026-10-08", dueDate: "2026-10-20", priority: "high", needsQuotes: false });
@@ -234,4 +234,21 @@ test("restoring delivered work preserves inactive historical assignments unless 
   reject(() => patchMediaIdea(data, actor(data, "noura"), ideaId, { allCompanies: false, companyIds: ["missing-company"] }));
   const created = createMediaIdea(data, actor(data, "noura"), { ...input(), companyId: others[0], companyIds: [others[0], "mawaredcom"] });
   assert.equal(created.ideas[0].companyId, others[0]); assert.deepEqual(created.ideas[0].companyIds, [others[0], "mawaredcom"]);
+ });
+ test("a colleague requests an edit, and only the department manager or an administrator decides it", () => {
+  let data = create(); const ideaId = data.ideas[0].id;
+  data = step(data, "noura", (d, a) => submitMediaIdea(d, a, ideaId));
+  const colleague = data.members.find((member) => member.active && member.id !== "noura" && member.role !== "manager" && !isAdministrator(member))!;
+  reject(() => requestMediaIdeaEdit(data, actor(data, "noura"), ideaId, "own", "ملاحظة على فكرتي"), "OWN_IDEA");
+  data = step(data, colleague.id, (d, a) => requestMediaIdeaEdit(d, a, ideaId, "edit-1", "أضف رقم التواصل في نهاية الرسالة"));
+  assert.equal(data.ideas[0].editRequests?.[0].status, "pending");
+  assert.ok(data.notifications.some((item) => item.recipientId === "manager" && item.type === "approval" && item.ideaId === ideaId));
+  reject(() => requestMediaIdeaEdit(data, actor(data, colleague.id), ideaId, "edit-2", "طلب مكرر"), "DUPLICATE_REQUEST");
+  reject(() => decideMediaIdeaEdit(data, actor(data, colleague.id), ideaId, "edit-1", "approved"), "FORBIDDEN");
+  reject(() => decideMediaIdeaEdit(data, actor(data, "manager"), ideaId, "edit-1", "rejected"), "FEEDBACK_REQUIRED");
+  data = step(data, "manager", (d, a) => decideMediaIdeaEdit(d, a, ideaId, "edit-1", "approved", "موافق"));
+  assert.equal(data.ideas[0].status, "changes"); assert.match(data.ideas[0].managerFeedback, /رقم التواصل/);
+  assert.equal(data.ideas[0].editRequests?.[0].status, "approved");
+  assert.ok(data.notifications.some((item) => item.recipientId === "noura" && item.title === "تعديل معتمد على الفكرة"));
+  reject(() => decideMediaIdeaEdit(data, actor(data, "manager"), ideaId, "edit-1", "approved"), "INVALID_TRANSITION");
  });

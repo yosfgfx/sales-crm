@@ -68,6 +68,7 @@ export function detail(idea: Idea, data: MediaData, origin: string) {
     approvedAt: idea.approvedAt || null, deliveredAt: idea.deliveredAt || null, needsQuotes: idea.needsQuotes, managerFeedback: idea.managerFeedback || null,
     quotationsDetail: idea.quotations, sourceProposal: idea.sourceProposal || null, archiveFolder: idea.archive?.folderUrl || null,
     files: idea.attachments.map((file) => ({ id: file.id, name: file.name, kind: file.kind, channel: file.channel || null, size: file.size, mime: file.mime, url: file.url.startsWith("/") ? `${origin}${file.url}` : file.url })),
+    editRequests: (idea.editRequests || []).map((request) => ({ id: request.id, by: label.member(request.requesterId), note: request.note, status: request.status, createdAt: request.createdAt, decidedBy: label.member(request.decidedBy) || null, decisionNote: request.decisionNote || null })),
     history: idea.history.map((event) => ({ at: event.at, by: label.member(event.actorId), action: event.action, note: event.note, from: event.from || null, to: event.to || null })),
   };
 }

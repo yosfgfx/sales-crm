@@ -60,12 +60,16 @@ export default function Approvals({
     (member) => member.active && member.role === "manager",
   );
   const activeIdeas = data.ideas.filter((idea) => !idea.deletedAt);
+  const hasPendingEdit = (idea: Idea) =>
+    (idea.editRequests || []).some((request) => request.status === "pending");
   const ideas = activeIdeas.filter((idea) =>
     tab === "review"
       ? idea.status === "review"
       : tab === "changes"
         ? idea.status === "changes"
-        : approvedStages.includes(idea.status),
+        : tab === "edits"
+          ? hasPendingEdit(idea)
+          : approvedStages.includes(idea.status),
   );
   const selected = activeIdeas.find((idea) => idea.id === decision?.ideaId);
 
@@ -183,6 +187,11 @@ export default function Approvals({
               .length,
           },
           {
+            id: "edits",
+            label: "طلبات التعديل",
+            count: activeIdeas.filter(hasPendingEdit).length,
+          },
+          {
             id: "approved",
             label: "تم اعتمادها",
             count: activeIdeas.filter((idea) =>
@@ -235,6 +244,17 @@ export default function Approvals({
                 <h2 className="!text-base leading-relaxed">{idea.title}</h2>
                 <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-9 w-28" className="mt-2 text-xs text-[var(--soft)]" />
                 <p className="mt-2 text-xs text-[var(--soft)]">{idea.department}</p>
+                {tab === "edits" &&
+                  (idea.editRequests || [])
+                    .filter((request) => request.status === "pending")
+                    .map((request) => (
+                      <p key={request.id} className="mt-3 rounded-xl bg-[#fff4e3] p-3 text-sm text-[#7a4510]">
+                        <strong>
+                          {data.members.find((member) => member.id === request.requesterId)?.name || "زميل"}
+                        </strong>
+                        : {request.note}
+                      </p>
+                    ))}
                 {idea.sourceProposal && (
                   <p className="mt-2 text-xs text-[var(--primary)]">
                     مقدم الفكرة: {idea.sourceProposal.proposerName}
@@ -315,7 +335,9 @@ export default function Approvals({
             title={
               tab === "review"
                 ? "لا توجد أفكار بانتظار الاعتماد"
-                : "لا توجد أفكار في هذا القسم"
+                : tab === "edits"
+                  ? "لا توجد طلبات تعديل معلّقة"
+                  : "لا توجد أفكار في هذا القسم"
             }
             description="عندما يرسل فريق المحتوى فكرة للمراجعة، ستظهر هنا مع عرضها وجميع مرفقاتها."
           />

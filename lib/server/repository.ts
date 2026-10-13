@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { NotificationEntity, Attachment, Company, ContentCategory, HistoryEvent, Idea, MediaData, MediaNotification, Quotation, SystemSettings, TeamMember } from "@/data/media";
+import type { EditRequest, NotificationEntity, Attachment, Company, ContentCategory, HistoryEvent, Idea, MediaData, MediaNotification, Quotation, SystemSettings, TeamMember } from "@/data/media";
 import type { Queryable } from "./db";
 
 export const DEFAULT_LOGO_URL = "/assets/media/department-logo.png";
@@ -52,14 +52,16 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[]; includeD
   const ideas = await q.query(`select ${IDEA_COLUMNS} from wasl.ideas ${where} order by created_at desc, id`, params);
   if (!ideas.rows.length) return [];
   const ids = ideas.rows.map((row) => text(row.id));
-  const [events, files, quotes] = await Promise.all([
+  const [events, files, quotes, edits] = await Promise.all([
     q.query("select id, idea_id, at, actor_id, action, note, from_status::text as from_status, to_status::text as to_status from wasl.idea_events where idea_id = any($1::text[]) order by at, id", [ids]),
     q.query("select id, idea_id, kind::text as kind, channel::text as channel, name, size, mime, storage::text as storage, external_url, inline_mime, created_at from wasl.attachments where idea_id = any($1::text[]) and removed_at is null order by created_at, id", [ids]),
     q.query("select id, idea_id, vendor, amount, scope, days, attachment_id, recommended from wasl.quotations where idea_id = any($1::text[]) order by created_at, id", [ids]),
+    q.query("select id, idea_id, requester_id, note, status, created_at, decided_by, decided_at, decision_note from wasl.idea_edit_requests where idea_id = any($1::text[]) order by created_at, id", [ids]),
   ]);
   const group = <T,>(rows: Row[], map: (row: Row) => T) => rows.reduce((all, row) => all.set(text(row.idea_id), [...(all.get(text(row.idea_id)) || []), map(row)]), new Map<string, T[]>());
   const history = group(events.rows, (row): HistoryEvent => ({ id: text(row.id), at: iso(row.at), actorId: text(row.actor_id), action: row.action as HistoryEvent["action"], note: text(row.note), ...(row.from_status ? { from: row.from_status as HistoryEvent["from"] } : {}), ...(row.to_status ? { to: row.to_status as HistoryEvent["to"] } : {}) }));
   const attachments = group(files.rows, toAttachment);
+  const editRequests = group(edits.rows, (row): EditRequest => ({ id: text(row.id), requesterId: text(row.requester_id), note: text(row.note), status: row.status as EditRequest["status"], createdAt: iso(row.created_at), ...(row.decided_by ? { decidedBy: text(row.decided_by) } : {}), ...(row.decided_at ? { decidedAt: iso(row.decided_at) } : {}), ...(row.decision_note ? { decisionNote: text(row.decision_note) } : {}) }));
   const quotations = group(quotes.rows, (row): Quotation => ({ id: text(row.id), vendor: text(row.vendor), amount: Number(row.amount), scope: text(row.scope), days: Number(row.days), ...(row.attachment_id ? { attachmentId: text(row.attachment_id) } : {}), recommended: Boolean(row.recommended) }));
   return ideas.rows.map((row) => {
     const id = text(row.id);
@@ -72,6 +74,7 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[]; includeD
     const deliveredAt = optionalText(row.delivered_at), approvedAt = row.approved_at ? iso(row.approved_at) : undefined;
     if (row.deleted_at) { idea.deletedAt = iso(row.deleted_at); idea.deletedBy = text(row.deleted_by); idea.deletionReason = text(row.deletion_reason); }
     if (deliveredAt) idea.deliveredAt = deliveredAt;
+    if (editRequests.has(id)) idea.editRequests = editRequests.get(id);
     if (approvedAt) idea.approvedAt = approvedAt;
     idea.archive = { status: row.archive_status as NonNullable<Idea["archive"]>["status"], ...(row.archived_at ? { archivedAt: iso(row.archived_at) } : {}), ...(row.drive_folder_id ? { folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(text(row.drive_folder_id))}` } : {}) };
     if (row.source_proposal) idea.sourceProposal = (typeof row.source_proposal === "string" ? JSON.parse(row.source_proposal) : row.source_proposal) as Idea["sourceProposal"];
@@ -113,6 +116,12 @@ export async function persistIdea(q: Queryable, before: Idea | null, after: Idea
     if (linked.rows.length !== 1) throw new Error("Attachment link race");
   }
   for (const id of beforeFiles) if (!afterFiles.has(id)) await q.query("update wasl.attachments set removed_at = now() where id = $1 and idea_id = $2", [id, after.id]);
+  const beforeRequests = new Map((before?.editRequests || []).map((request) => [request.id, request]));
+  for (const request of after.editRequests || []) {
+    const prior = beforeRequests.get(request.id);
+    if (!prior) await q.query("insert into wasl.idea_edit_requests (id, idea_id, requester_id, note, status, created_at, decided_by, decided_at, decision_note) values ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8::timestamptz, $9)", [request.id, after.id, request.requesterId, request.note, request.status, request.createdAt, request.decidedBy || null, request.decidedAt || null, request.decisionNote || null]);
+    else if (prior.status !== request.status) await q.query("update wasl.idea_edit_requests set status = $3, decided_by = $4, decided_at = $5::timestamptz, decision_note = $6 where id = $1 and idea_id = $2 and status = 'pending'", [request.id, after.id, request.status, request.decidedBy || null, request.decidedAt || null, request.decisionNote || null]);
+  }
   const beforeQuotes = new Set((before?.quotations || []).map((quote) => quote.id)), afterQuotes = new Set(after.quotations.map((quote) => quote.id));
   for (const id of beforeQuotes) if (!afterQuotes.has(id)) await q.query("delete from wasl.quotations where id = $1 and idea_id = $2", [id, after.id]);
   await q.query("update wasl.quotations set recommended = false where idea_id = $1 and recommended", [after.id]);

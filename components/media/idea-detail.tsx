@@ -22,6 +22,7 @@ import {
   ReturnDialog,
 } from "./idea-detail/dialogs";
 import { QuoteDialog } from "./idea-detail/quote-dialog";
+import { EditRequestsPanel } from "./idea-detail/edit-requests";
 
 export default function IdeaDetail({
   idea,
@@ -218,6 +219,9 @@ export default function IdeaDetail({
             canEdit={canEdit}
             onEdit={onEdit}
           />
+          {!idea.deletedAt && (
+            <EditRequestsPanel idea={idea} data={data} currentUser={currentUser} />
+          )}
           {idea.deletedAt && (
             <div className="rounded-xl border border-[var(--border)] bg-[var(--background)] p-4 text-sm">
               <p>

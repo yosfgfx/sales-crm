@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Attachment, Idea, IdeaPatch, MediaData, NewIdeaInput, Quotation, ScheduleInput, SystemSettings, TeamMember } from "@/data/media";
 import {
-  addMediaAttachments, addMediaCategory, addMediaComment, addMediaCompany, addMediaQuotation, deleteMediaIdea, restoreMediaIdea, cancelMediaIdea, changeMediaDesignStatus, createMediaIdea, patchMediaIdea,
+  decideMediaIdeaEdit, requestMediaIdeaEdit, addMediaAttachments, addMediaCategory, addMediaComment, addMediaCompany, addMediaQuotation, deleteMediaIdea, restoreMediaIdea, cancelMediaIdea, changeMediaDesignStatus, createMediaIdea, patchMediaIdea,
   reassignMediaIdea, removeMediaAttachment, updateMediaCategory, updateMediaCompany, removeMediaQuotation, reopenMediaIdea, reviewMediaIdea, scheduleMediaIdea, submitMediaIdea, updateMediaSettings, validateMediaData, withdrawMediaIdea,
 } from "@/lib/media-workflow";
 import { isAdministrator, requireAdministrator, requireUser } from "./auth";
@@ -29,6 +29,8 @@ type Operation =
   | { type: "addQuotation"; ideaId: string; quote: Quotation }
   | { type: "removeQuotation"; ideaId: string; quotationId: string }
   | { type: "addComment"; ideaId: string; text: string }
+  | { type: "requestEdit"; ideaId: string; editRequestId: string; note: string }
+  | { type: "decideEdit"; ideaId: string; editRequestId: string; decision: "approved" | "rejected"; note?: string }
   | { type: "markNotificationsRead"; ids?: string[] }
   | { type: "updateSettings"; patch: Partial<SystemSettings>; expected?: Partial<SystemSettings> }
   | { type: "addCompany"; name: string }
@@ -48,7 +50,7 @@ export interface OperationResult {
 }
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
-const IDEA_OPS = new Set(["withdrawIdea", "cancelIdea", "reopenIdea", "reassignIdea", "deleteIdea", "restoreIdea", "patchIdea", "submitIdea", "reviewIdea", "scheduleIdea", "changeDesignStatus", "addAttachments", "removeAttachment", "addQuotation", "removeQuotation", "addComment"]);
+const IDEA_OPS = new Set(["withdrawIdea", "cancelIdea", "reopenIdea", "reassignIdea", "deleteIdea", "restoreIdea", "patchIdea", "submitIdea", "reviewIdea", "scheduleIdea", "changeDesignStatus", "addAttachments", "removeAttachment", "addQuotation", "removeQuotation", "addComment", "requestEdit", "decideEdit"]);
 
 function context() {
   const now = new Date().toISOString();
@@ -104,6 +106,8 @@ async function ideaOperation(tx: Queryable, actor: TeamMember, op: Exclude<Opera
       break;
     }
     case "removeQuotation": next = removeMediaQuotation(slice, actor, op.ideaId, op.quotationId, ctx); break;
+    case "requestEdit": next = requestMediaIdeaEdit(slice, actor, op.ideaId, typeof op.editRequestId === "string" ? op.editRequestId : "", typeof op.note === "string" ? op.note : "", ctx); break;
+    case "decideEdit": next = decideMediaIdeaEdit(slice, actor, op.ideaId, typeof op.editRequestId === "string" ? op.editRequestId : "", op.decision === "approved" ? "approved" : "rejected", typeof op.note === "string" ? op.note : "", ctx); break;
     case "addComment": next = addMediaComment(slice, actor, op.ideaId, typeof op.text === "string" ? op.text : "", ctx); break;
   }
   if (next === slice) return before;

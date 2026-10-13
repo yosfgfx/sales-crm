@@ -604,6 +604,9 @@ const HISTORY_LABELS: Record<Idea["history"][number]["action"], string> = {
   archived: "أرشفة في Google Drive",
   deleted: "نقل إلى سلة المحذوفات",
   restored: "استعادة العمل",
+  edit_requested: "طلب تعديل من زميل",
+  edit_request_approved: "الموافقة على طلب تعديل",
+  edit_request_rejected: "رفض طلب تعديل",
 };
 
 function splitText(value: string, limit = 650): string[] {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { STATUS_LABELS, ideaHasCompany, type IdeaStatus, type MediaData } from "@/data/media";
@@ -119,6 +120,12 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
 
   server.registerTool("add_comment", { title: "إضافة تعليق", description: "Add a comment to an idea's history; the responsible members are notified.", inputSchema: { ideaId: z.string(), text: z.string().min(1).max(4000) }, annotations: write },
     tool(ctx, "add_comment", async ({ ideaId, text }: { ideaId: string; text: string }) => operate(ctx, { type: "addComment", ideaId, text })));
+
+  server.registerTool("request_idea_edit", { title: "طلب تعديل على فكرة زميل", description: "Ask for a change on another member's idea. The department manager or a system administrator approves it; on approval the idea returns to its owner with the notes.", inputSchema: { ideaId: z.string(), note: z.string().min(3).max(4000) }, annotations: write },
+    tool(ctx, "request_idea_edit", async ({ ideaId, note }: { ideaId: string; note: string }) => operate(ctx, { type: "requestEdit", ideaId, editRequestId: randomUUID(), note })));
+
+  server.registerTool("decide_idea_edit", { title: "البت في طلب تعديل", description: "Manager or administrator: approve or reject a pending edit request (see editRequests in get_idea). A reason is required to reject.", inputSchema: { ideaId: z.string(), editRequestId: z.string(), decision: z.enum(["approved", "rejected"]), note: z.string().max(4000).optional() }, annotations: write },
+    tool(ctx, "decide_idea_edit", async ({ ideaId, editRequestId, decision, note }: { ideaId: string; editRequestId: string; decision: "approved" | "rejected"; note?: string }) => operate(ctx, { type: "decideEdit", ideaId, editRequestId, decision, note: note || "" })));
 
   server.registerTool("add_quotation", {
     title: "إضافة عرض سعر", description: "Add a vendor quotation to an idea. attachmentId optionally links an already uploaded quotation file (kind=quotation).",

@@ -40,6 +40,8 @@ export interface MediaState {
   removeAttachment: (ideaId: string, attachmentId: string) => Promise<void>;
   addQuotation: (ideaId: string, quote: Quotation) => Promise<void>;
   removeQuotation: (ideaId: string, quotationId: string) => Promise<void>;
+  requestEdit: (ideaId: string, note: string) => Promise<void>;
+  decideEdit: (ideaId: string, requestId: string, decision: "approved" | "rejected", note?: string) => Promise<void>;
   addComment: (ideaId: string, text: string) => Promise<void>;
   markNotificationsRead: (ids?: string[]) => Promise<void>;
   updateSettings: (patch: Partial<SystemSettings>, expectedSettings?: Partial<SystemSettings>) => Promise<void>;
@@ -247,6 +249,8 @@ export const useMediaStore = create<MediaState>(() => ({
   removeAttachment: (ideaId, attachmentId) => operate({ type: "removeAttachment", ideaId, attachmentId }),
   addQuotation: (ideaId, quote) => operate({ type: "addQuotation", ideaId, quote }),
   removeQuotation: (ideaId, quotationId) => operate({ type: "removeQuotation", ideaId, quotationId }),
+  requestEdit: (ideaId, note) => operate({ type: "requestEdit", ideaId, editRequestId: crypto.randomUUID(), note }),
+  decideEdit: (ideaId, requestId, decision, note = "") => operate({ type: "decideEdit", ideaId, editRequestId: requestId, decision, note }),
   addComment: (ideaId, text) => operate({ type: "addComment", ideaId, text }),
   markNotificationsRead: (ids): Promise<void> => {
     const { data, currentUser }: MediaState = useMediaStore.getState();

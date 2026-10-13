@@ -181,3 +181,23 @@ test("notifications load in pages, keep every unread one, and read ones older th
   const left = (await h.pg.query("select id from wasl.notifications where id in ('old-read', 'old-unread', 'read-today') order by id")).rows.map((row) => row.id);
   assert.deepEqual(left, ["old-unread", "read-today"]);
 });
+
+test("edit requests and multi-company selection persist through the database", async () => {
+  await h.pg.query("update wasl.ideas set status = 'review', deleted_at = null where id = 'idea-001'");
+  const companies = (await h.pg.query("select id from wasl.companies where active order by sort_order limit 2")).rows.map((row) => row.id);
+  await h.pg.query("update wasl.ideas set status = 'draft' where id = 'idea-001'");
+  const owner = (await h.pg.query("select owner_id from wasl.ideas where id = 'idea-001'")).rows[0].owner_id;
+  const patched = await h.op(owner, { type: "patchIdea", ideaId: "idea-001", patch: { companyId: companies[1], companyIds: [companies[1], companies[0]] } });
+  assert.deepEqual(patched.idea.companyIds, [companies[1], companies[0]]);
+  const all = await h.op(owner, { type: "patchIdea", ideaId: "idea-001", patch: { allCompanies: true } });
+  assert.equal(all.idea.allCompanies, true);
+  assert.deepEqual((await h.pg.query("select all_companies, company_ids from wasl.ideas where id = 'idea-001'")).rows[0], { all_companies: true, company_ids: [] });
+  const requester = owner === "sara" ? "faisal" : "sara";
+  const requested = await h.op(requester, { type: "requestEdit", ideaId: "idea-001", editRequestId: "edit-req-1", note: "أضف موعد الفعالية في العنوان" });
+  assert.equal(requested.idea.editRequests[0].status, "pending");
+  await assert.rejects(h.op(requester, { type: "decideEdit", ideaId: "idea-001", editRequestId: "edit-req-1", decision: "approved" }), expectStatus(403));
+  const decided = await h.op("manager", { type: "decideEdit", ideaId: "idea-001", editRequestId: "edit-req-1", decision: "approved" });
+  assert.equal(decided.idea.editRequests[0].status, "approved");
+  assert.equal((await h.pg.query("select status, decided_by from wasl.idea_edit_requests where id = 'edit-req-1'")).rows[0].decided_by, "manager");
+  assert.ok((await h.pg.query("select 1 from wasl.notifications where idea_id = 'idea-001' and recipient_id = $1 and title = 'تعديل معتمد على الفكرة'", [owner])).rows.length);
+});

@@ -1,7 +1,7 @@
 import {
   CHANNEL_LABELS, PRIORITY_LABELS, ROLE_LABELS, STATUS_LABELS, WORK_TYPE_LABELS,
   type Attachment, type Company, type ContentCategory, type HistoryAction, type Idea,
-  type IdeaPatch, type IdeaStatus, type MediaData, type MediaNotification, type NewIdeaInput,
+  type EditRequest, type IdeaPatch, type IdeaStatus, type MediaData, type MediaNotification, type NewIdeaInput,
   type MemberPatch, type NewMemberInput, type Quotation, type ScheduleInput, type SystemSettings, type TeamMember,
 } from "../data/media";
 
@@ -81,6 +81,46 @@ function normalizeCompanies<T extends Partial<Pick<Idea, "companyId" | "companyI
   if (!selected.length) throw new WorkflowError("اختر شركة واحدة على الأقل أو كل الشركات.");
   if (selected.length > 50 || selected.some((companyId) => !allowed(companyId))) throw new WorkflowError("إحدى الشركات المختارة غير متاحة.");
   return { ...input, companyId: selected[0], companyIds: selected.length > 1 ? selected : [], allCompanies: false };
+}
+
+const editRequestClosed: IdeaStatus[] = ["cancelled", "rejected"];
+const editReturnStatuses: IdeaStatus[] = ["review", "approved", "scheduled", "designing", "design_review", "delivered"];
+export function canRequestIdeaEdit(idea: Idea, actor: TeamMember | null): boolean {
+  return !!actor?.active && !idea.deletedAt && idea.ownerId !== actor.id && !editRequestClosed.includes(idea.status) && !(idea.editRequests || []).some((request) => request.status === "pending" && request.requesterId === actor.id);
+}
+export function canDecideIdeaEdit(actor: TeamMember | null, request: EditRequest): boolean {
+  return !!actor?.active && (actor.role === "manager" || isAdministrator(actor)) && request.status === "pending" && request.requesterId !== actor.id;
+}
+export function requestMediaIdeaEdit(data: MediaData, actor: TeamMember, ideaId: string, requestId: string, note: string, ctx?: WorkflowContext): MediaData {
+  requireActor(data, actor); const idea = findIdea(data, ideaId);
+  if (idea.ownerId === actor.id) throw new WorkflowError("أنت صاحب الفكرة، ويمكنك تعديلها مباشرة متى كانت متاحة للتعديل.", "OWN_IDEA");
+  if (editRequestClosed.includes(idea.status)) throw new WorkflowError("لا يمكن طلب تعديل على فكرة ملغاة أو مرفوضة.", "INVALID_TRANSITION");
+  if (!canRequestIdeaEdit(idea, actor)) throw new WorkflowError("لديك طلب تعديل قيد المراجعة على هذه الفكرة.", "DUPLICATE_REQUEST");
+  const text = String(note ?? "").trim();
+  if (text.length < 3 || text.length > 4000) throw new WorkflowError("اكتب ملاحظات التعديل المطلوبة بوضوح.", "FEEDBACK_REQUIRED");
+  if (typeof requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(requestId) || (idea.editRequests || []).some((request) => request.id === requestId)) throw new WorkflowError("معرّف الطلب غير صالح.");
+  const at = now(ctx);
+  const next: Idea = { ...idea, editRequests: [...(idea.editRequests || []), { id: requestId, requesterId: actor.id, note: text, status: "pending", createdAt: at }] };
+  const approvers = data.members.filter((member) => member.active && member.id !== actor.id && (member.role === "manager" || isAdministrator(member))).map((member) => member.id);
+  return commitIdea(data, actor, idea, next, "edit_requested", `طلب تعديلاً: ${text}`, { ...ctx, now: at }, { recipients: [...approvers, idea.ownerId], type: "approval", title: "طلب تعديل بانتظار الموافقة", body: `${idea.title} · ${text}` });
+}
+export function decideMediaIdeaEdit(data: MediaData, actor: TeamMember, ideaId: string, requestId: string, decision: "approved" | "rejected", note = "", ctx?: WorkflowContext): MediaData {
+  requireRole(data, actor, ["admin", "manager"]); const idea = findIdea(data, ideaId);
+  const request = (idea.editRequests || []).find((item) => item.id === requestId);
+  if (!request) throw new WorkflowError("لم يتم العثور على طلب التعديل.", "NOT_FOUND", 404);
+  if (request.status !== "pending") throw new WorkflowError("تم البت في هذا الطلب مسبقاً.", "INVALID_TRANSITION");
+  if (request.requesterId === actor.id) throw new WorkflowError("يبت في طلب التعديل مدير آخر غير صاحب الطلب.", "SELF_APPROVAL", 403);
+  if (decision !== "approved" && decision !== "rejected") throw new WorkflowError("قرار غير صالح.");
+  const text = String(note ?? "").trim().slice(0, 4000);
+  if (decision === "rejected" && !text) throw new WorkflowError("اكتب سبب رفض طلب التعديل ليصل إلى صاحبه.", "FEEDBACK_REQUIRED");
+  const at = now(ctx);
+  const requester = data.members.find((member) => member.id === request.requesterId);
+  const decided: EditRequest = { ...request, status: decision, decidedBy: actor.id, decidedAt: at, ...(text ? { decisionNote: text } : {}) };
+  const next: Idea = { ...idea, editRequests: (idea.editRequests || []).map((item) => (item.id === requestId ? decided : item)) };
+  if (decision === "rejected") return commitIdea(data, actor, idea, next, "edit_request_rejected", `لم يُوافَق على طلب التعديل: ${text}`, { ...ctx, now: at }, { recipients: [request.requesterId], type: "feedback", title: "لم يُوافَق على طلب التعديل", body: `${idea.title} · ${text}` });
+  next.managerFeedback = `طلب تعديل من ${requester?.name || "زميل"}: ${request.note}${text ? `\nملاحظة ${actor.name}: ${text}` : ""}`;
+  if (editReturnStatuses.includes(idea.status)) { next.status = "changes"; delete next.approvedAt; delete next.deliveredAt; }
+  return commitIdea(data, actor, idea, next, "edit_request_approved", `وافق على طلب التعديل المقدم من ${requester?.name || "زميل"}`, { ...ctx, now: at }, { recipients: [idea.ownerId, request.requesterId, ...(idea.designerId && next.status !== idea.status ? [idea.designerId] : [])], type: "feedback", title: "تعديل معتمد على الفكرة", body: `${idea.title} · ${request.note}` });
 }
 
 export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdeaInput, ctx?: WorkflowContext): MediaData {
@@ -362,9 +402,10 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
   const companyIds = new Set(value.companies.map((company) => (company as Company).id)), categoryIds = new Set(value.categories.map((category) => (category as ContentCategory).id)), memberIds = new Set(members.map((member) => member.id));
   const codes = new Set<string>();
   for (const item of value.ideas) {
-    keys(item, ["id", "code", "title", "companyId", "companyIds", "allCompanies", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial", "deletedAt", "deletedBy", "deletionReason"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
+    keys(item, ["id", "code", "title", "companyId", "companyIds", "allCompanies", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial", "deletedAt", "deletedBy", "deletionReason", "editRequests"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
     textFields(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "ownerId", "designerId", "priority", "status"], 300); textFields(item, ["description", "content", "executionPlan", "managerFeedback"], 20000);
     if (item.deletedAt !== undefined && (!dateTime(item.deletedAt) || typeof item.deletedBy !== "string" || !members.some((member) => member.id === item.deletedBy) || !str(item.deletionReason, 4000))) fail();
+    if (item.editRequests !== undefined) { array(item.editRequests, 500); for (const request of item.editRequests) { keys(request, ["id", "requesterId", "note", "status", "createdAt", "decidedBy", "decidedAt", "decisionNote"], ["id", "requesterId", "note", "status", "createdAt"]); textFields(request, ["id", "requesterId", "status"], 100); textFields(request, ["note"], 4000); if (!memberIds.has(request.requesterId as string) || !["pending", "approved", "rejected"].includes(request.status as string) || !dateTime(request.createdAt) || (request.decidedBy !== undefined && !memberIds.has(request.decidedBy as string)) || (request.decidedAt !== undefined && !dateTime(request.decidedAt)) || (request.decisionNote !== undefined && !str(request.decisionNote, 4000))) fail(); } uniqueIds(item.editRequests as unknown as { id: string }[]); }
     if (item.archive !== undefined) { keys(item.archive, ["status", "archivedAt", "folderUrl"], ["status"]); if (!["not_started", "pending", "running", "done", "failed", "needs_review"].includes(item.archive.status as string) || (item.archive.archivedAt !== undefined && !dateTime(item.archive.archivedAt)) || (item.archive.folderUrl !== undefined && !/^https:\/\/drive\.google\.com\//.test(String(item.archive.folderUrl)))) fail(); }
     if (item.sourceProposal !== undefined) {
       keys(item.sourceProposal, ["batchId", "row", "proposerName", "funding", "originalGoal", "originalConcept", "sourceApproval", "reviewNote", "contentType", "platform", "reference", "fileName"], ["batchId", "row", "proposerName", "funding", "originalGoal", "originalConcept", "sourceApproval"]);
@@ -383,7 +424,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     for (const file of item.attachments) { keys(file, ["id", "name", "size", "mime", "url", "kind", "channel", "createdAt"], ["id", "name", "size", "mime", "url", "kind"]); textFields(file, ["id", "name", "mime", "kind"], 500); if (!file.name || !["brief", "quotation", "final"].includes(file.kind as string) || !Number.isFinite(file.size) || (file.size as number) < 0 || (file.size as number) > 2 * 1024 * 1024 * 1024 || !urlAllowed(file.url) || (file.channel !== undefined && !hasEnumKey(file.channel, CHANNEL_LABELS)) || (file.createdAt !== undefined && !dateTime(file.createdAt))) fail(); }
     for (const quote of item.quotations) { keys(quote, ["id", "vendor", "amount", "scope", "days", "attachmentId", "recommended"], ["id", "vendor", "amount", "scope", "days", "recommended"]); textFields(quote, ["id", "vendor", "scope"]); if (!quote.vendor || !quote.scope || !Number.isFinite(quote.amount) || (quote.amount as number) <= 0 || !Number.isInteger(quote.days) || (quote.days as number) < 1 || (quote.days as number) > 3650 || typeof quote.recommended !== "boolean" || (quote.attachmentId !== undefined && (!(typeof quote.attachmentId === "string") || !item.attachments.some((file) => (file as Attachment).id === quote.attachmentId && (file as Attachment).kind === "quotation")))) fail(); }
     if (item.quotations.filter((quote) => (quote as Quotation).recommended).length > 1) fail();
-    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment", "withdrawn", "rejected", "cancelled", "reopened", "reassigned", "archived", "deleted", "restored"];
+    const actions = ["created", "edited", "submitted", "changes_requested", "approved", "scheduled", "design_started", "design_review", "delivered", "attachments_added", "attachment_removed", "quotation_added", "quotation_removed", "comment", "withdrawn", "rejected", "cancelled", "reopened", "reassigned", "archived", "deleted", "restored", "edit_requested", "edit_request_approved", "edit_request_rejected"];
     for (const event of item.history) { keys(event, ["id", "at", "actorId", "action", "note", "from", "to"], ["id", "at", "actorId", "action", "note"]); textFields(event, ["id", "actorId", "action"], 100); textFields(event, ["note"], 20000); if (!memberIds.has(event.actorId as string) || !actions.includes(event.action as string) || !dateTime(event.at) || (event.from !== undefined && !hasEnumKey(event.from, STATUS_LABELS)) || (event.to !== undefined && !hasEnumKey(event.to, STATUS_LABELS))) fail(); }
   }
   uniqueIds((value.ideas as unknown as Idea[]).flatMap((idea) => idea.history));
