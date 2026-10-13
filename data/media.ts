@@ -48,7 +48,7 @@ export interface AccountsResponse { version: number; accounts: AccountSummary[] 
 export interface AccountMutationResponse extends VersionedMediaData { accounts: AccountSummary[]; currentUser: TeamMember | null; reloginRequired: boolean }
 export interface ScheduleInput { designerId: string; scheduledAt: string; dueDate?: string; priority?: Priority }
 
-export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "مراجعة المصمم النهائية", delivered: "تم التسليم", cancelled: "ملغاة", rejected: "مرفوضة" };
+export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "المراجعة النهائية", delivered: "تم التسليم", cancelled: "ملغاة", rejected: "مرفوضة" };
 export const STATUS_HINTS: Record<IdeaStatus, string> = {
   draft: "صاحب الفكرة يكتبها ويكمل تفاصيلها، ولا يراها المدير للاعتماد بعد.",
   quotations: "تُجمع عروض أسعار الموردين قبل إرسال الفكرة للاعتماد.",
@@ -57,7 +57,7 @@ export const STATUS_HINTS: Record<IdeaStatus, string> = {
   approved: "اعتُمدت الفكرة، ويحدد مدير الإدارة المصمم والموعد.",
   scheduled: "حُدد المصمم والموعد، ويمكن للمصمم البدء ورفع الملفات.",
   designing: "المصمم يعمل على التصميم.",
-  design_review: "المصمم يراجع عمله النهائي ويعتمده بنفسه، وتعليقات صاحب الفكرة للاستئناس.",
+  design_review: "تُراجع النسخ النهائية لكل قناة قبل التسليم.",
   delivered: "سُلّم العمل، ويؤرشفه النظام تلقائياً في Google Drive.",
   cancelled: "أُلغيت الفكرة، ويمكن لمدير النظام إعادة فتحها.",
   rejected: "رفض المدير الفكرة نهائياً.",

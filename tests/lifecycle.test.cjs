@@ -83,7 +83,7 @@ test("work can be reassigned at any open stage so members can be deactivated (H4
 
 test("a design stage labelled as the designer's own final review", async () => {
   const { STATUS_LABELS } = require(path.join(h.root, "data/media.ts"));
-  assert.equal(STATUS_LABELS.design_review, "مراجعة المصمم النهائية");
+  assert.equal(STATUS_LABELS.design_review, "المراجعة النهائية");
 });
 
 test("editing without changes records nothing, and unticking quotations returns to draft (L12, L13)", async () => {

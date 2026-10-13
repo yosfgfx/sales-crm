@@ -587,7 +587,7 @@ const HISTORY_LABELS: Record<Idea["history"][number]["action"], string> = {
   approved: "اعتماد الفكرة",
   scheduled: "جدولة التصميم",
   design_started: "بدء التصميم",
-  design_review: "مراجعة المصمم النهائية",
+  design_review: "المراجعة النهائية",
   delivered: "تسليم العمل",
   attachments_added: "إضافة مرفقات",
   attachment_removed: "إزالة مرفق",
