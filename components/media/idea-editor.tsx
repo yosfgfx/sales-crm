@@ -13,6 +13,7 @@ import { ActionButton, Icon, Modal, bytes, errorText, today } from "./ui";
 import { isAdministrator } from "@/lib/media-workflow";
 import { RequestSection } from "./idea-editor/request-section";
 import { CoordinationSection } from "./idea-editor/coordination-section";
+import { QuotationsSection, saveQuotationDrafts, type QuotationDraft } from "./idea-editor/quotations-section";
 
 
 import { uploadFiles } from "@/lib/upload-client";
@@ -99,7 +100,11 @@ function EditorForm({
     [error, setError] = useState(""),
     [createdId, setCreatedId] = useState<string | undefined>(idea?.id),
     [expectedUpdatedAt, setExpectedUpdatedAt] = useState(idea?.updatedAt),
-    [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+    [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]),
+    [quoteDrafts, setQuoteDrafts] = useState<QuotationDraft[]>([]);
+  const liveIdea = useMediaStore((state) =>
+    createdId ? state.data.ideas.find((item) => item.id === createdId) : undefined,
+  );
   const update = <K extends keyof NewIdeaInput>(
     key: K,
     value: NewIdeaInput[K],
@@ -143,6 +148,14 @@ function EditorForm({
         if (missing.length) await store.addAttachments(savedId, missing);
         setPendingAttachments([]);
         setFiles([]);
+        setExpectedUpdatedAt(
+          useMediaStore
+            .getState()
+            .data.ideas.find((item) => item.id === savedId)?.updatedAt,
+        );
+      }
+      if (quoteDrafts.length && savedId) {
+        await saveQuotationDrafts(savedId, quoteDrafts, setQuoteDrafts);
         setExpectedUpdatedAt(
           useMediaStore
             .getState()
@@ -263,6 +276,13 @@ function EditorForm({
             </fieldset>
           </section>
           <CoordinationSection form={form} update={update} store={store} />
+          {(form.needsQuotes || !!liveIdea?.quotations.length || quoteDrafts.length > 0) && (
+            <QuotationsSection
+              idea={liveIdea || idea}
+              drafts={quoteDrafts}
+              setDrafts={setQuoteDrafts}
+            />
+          )}
           <section className="space-y-3 border-t border-[var(--border)] pt-6">
             <h2>مرفقات الفكرة</h2>
             <label className="block cursor-pointer rounded-xl border border-dashed border-[#c6bcdf] bg-[var(--background)] p-6 text-center">
