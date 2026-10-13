@@ -23,6 +23,7 @@ import {
 } from "./idea-detail/dialogs";
 import { QuoteDialog } from "./idea-detail/quote-dialog";
 import { EditRequestsPanel } from "./idea-detail/edit-requests";
+import { DeliveryPanel } from "./idea-detail/delivery-panel";
 
 export default function IdeaDetail({
   idea,
@@ -219,6 +220,11 @@ export default function IdeaDetail({
             canEdit={canEdit}
             onEdit={onEdit}
           />
+          {!idea.deletedAt &&
+            ["scheduled", "designing", "design_review"].includes(idea.status) &&
+            (canDesign || admin || currentUser?.role === "manager" || currentUser?.id === idea.ownerId) && (
+              <DeliveryPanel idea={idea} canUpload={canDesign} />
+            )}
           {!idea.deletedAt && (
             <EditRequestsPanel idea={idea} data={data} currentUser={currentUser} />
           )}

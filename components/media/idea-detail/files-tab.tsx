@@ -188,7 +188,7 @@ export function FilesTab({
                     <option value="quotation">عرض سعر</option>
                   </>
                 )}
-                {!canEdit && (
+                {(!canEdit || (canDesign && designStage)) && (
                   <option value="final">نسخة نهائية للأرشفة</option>
                 )}
               </select>
