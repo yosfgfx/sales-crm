@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { type Attachment, type Channel, type Idea } from "@/data/media";
+import { ideaCompanyLabel, type Attachment, type Channel, type Idea } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { Modal, TabList, errorText, today } from "./ui";
 import { uploadFiles } from "./idea-editor";
@@ -209,7 +209,7 @@ export default function IdeaDetail({
         locked={busy}
         drawer
         title={idea.title}
-        description={`${idea.code} · ${data.companies.find((c) => c.id === idea.companyId)?.name}`}
+        description={`${idea.code} · ${ideaCompanyLabel(idea, data.companies)}`}
       >
         <div className="space-y-5 p-5 sm:p-6">
           <IdeaSummary

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { STATUS_LABELS, WORK_TYPE_LABELS } from "@/data/media";
+import { STATUS_LABELS, WORK_TYPE_LABELS, ideaCompanyLabel, ideaHasCompany } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { isAdministrator } from "@/lib/media-workflow";
 import {
@@ -46,14 +46,14 @@ export default function AdminWorkspace({
     () =>
       store.data.ideas.filter((idea) => {
         if (Boolean(idea.deletedAt) !== (mode === "deleted")) return false;
-        if (company !== "all" && idea.companyId !== company) return false;
+        if (company !== "all" && !ideaHasCompany(idea, company)) return false;
         if (status !== "all" && idea.status !== status) return false;
         const terms = [
           idea.title,
           idea.code,
           idea.department,
           idea.sourceProposal?.proposerName,
-          store.data.companies.find((item) => item.id === idea.companyId)?.name,
+          ideaCompanyLabel(idea, store.data.companies),
         ]
           .join(" ")
           .normalize("NFKD")
@@ -330,12 +330,7 @@ export default function AdminWorkspace({
                 </p>
                 <h3 className="mt-1 !text-base break-words">{idea.title}</h3>
                 <p className="mt-1 text-xs text-[var(--soft)]">
-                  {
-                    store.data.companies.find(
-                      (item) => item.id === idea.companyId,
-                    )?.name
-                  }{" "}
-                  · {idea.department}
+                  {ideaCompanyLabel(idea, store.data.companies)} · {idea.department}
                 </p>
                 {idea.deletedAt && (
                   <p className="mt-2 text-xs text-[var(--soft)]">

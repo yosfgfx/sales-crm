@@ -2,7 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import type { IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP } from "node:net";
-import { CHANNEL_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, type Idea, type MediaData, type TeamMember } from "@/data/media";
+import { CHANNEL_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, ideaCompanyIds, type Idea, type MediaData, type TeamMember } from "@/data/media";
 import { audit } from "../api-access";
 import { apiCaller, internalRequests } from "../auth";
 import { database } from "../db";
@@ -53,7 +53,7 @@ export function summary(idea: Idea, data: MediaData) {
   const label = names(data);
   return {
     id: idea.id, code: idea.code, title: idea.title, status: idea.status, statusLabel: STATUS_LABELS[idea.status],
-    company: label.company(idea.companyId), category: label.category(idea.categoryId), workType: WORK_TYPE_LABELS[idea.workType],
+    company: idea.allCompanies ? "كل الشركات" : ideaCompanyIds(idea).map(label.company).join("، "), companyIds: ideaCompanyIds(idea), allCompanies: idea.allCompanies === true, category: label.category(idea.categoryId), workType: WORK_TYPE_LABELS[idea.workType],
     owner: label.member(idea.ownerId), designer: label.member(idea.designerId) || null, priority: idea.priority,
     dueDate: idea.dueDate || null, overdue: isOverdue(idea), attachments: idea.attachments.length, quotations: idea.quotations.length,
     archive: idea.archive?.status || null, updatedAt: idea.updatedAt,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMediaStore } from "@/stores/media-store";
-import { STATUS_LABELS, type Idea, type MediaData } from "@/data/media";
+import { STATUS_LABELS, ideaHasCompany, type Idea, type MediaData } from "@/data/media";
 import { ActionButton, countText, Icon } from "../ui";
 import { IdeaCard } from "./idea-card";
 import { IdeaList } from "./idea-list";
@@ -31,7 +31,7 @@ export function WorkBoard({
   const ideas = data.ideas.filter(
     (i) =>
       stages.includes(i.status) &&
-      (company === "all" || i.companyId === company) &&
+      (company === "all" || ideaHasCompany(i, company)) &&
       (category === "all" || i.categoryId === category) &&
       (proposer === "all" ||
         (proposer === "__imported"

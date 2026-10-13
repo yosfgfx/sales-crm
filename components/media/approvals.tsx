@@ -4,7 +4,7 @@ import { useRef, useState, type FormEvent } from "react";
 import type { Idea, MediaData } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { isAdministrator } from "@/lib/media-workflow";
-import { CompanyLogo } from "./company-logo";
+import { IdeaCompanies } from "./company-logo";
 import {
   ActionButton,
   countText,
@@ -233,17 +233,8 @@ export default function Approvals({
                   <PriorityBadge priority={idea.priority} />
                 </div>
                 <h2 className="!text-base leading-relaxed">{idea.title}</h2>
-                <CompanyLogo
-                  companyId={idea.companyId}
-                  decorative
-                  className="mt-2 h-9 w-28"
-                />
-                <p className="mt-2 text-xs text-[var(--soft)]">
-                  {data.companies.find(
-                    (company) => company.id === idea.companyId,
-                  )?.name || "شركة"}{" "}
-                  · {idea.department}
-                </p>
+                <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-9 w-28" className="mt-2 text-xs text-[var(--soft)]" />
+                <p className="mt-2 text-xs text-[var(--soft)]">{idea.department}</p>
                 {idea.sourceProposal && (
                   <p className="mt-2 text-xs text-[var(--primary)]">
                     مقدم الفكرة: {idea.sourceProposal.proposerName}

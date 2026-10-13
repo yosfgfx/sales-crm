@@ -3,6 +3,8 @@ import {
   PRIORITY_LABELS,
   STATUS_LABELS,
   WORK_TYPE_LABELS,
+  ideaCompanyLabel,
+  ideaHasCompany,
   type Attachment,
   type Idea,
   type MediaData,
@@ -104,7 +106,7 @@ export function monthlyReport(data: MediaData, month: string) {
   const companies = data.companies
     .map((company) => ({
       ...company,
-      count: ideas.filter((idea) => idea.companyId === company.id).length,
+      count: ideas.filter((idea) => ideaHasCompany(idea, company.id)).length,
     }))
     .filter((company) => company.count)
     .sort((a, b) => b.count - a.count);
@@ -223,7 +225,7 @@ export function buildMonthlyReportHtml(data: MediaData, month: string): string {
   const listRows = report.ideas
     .map(
       (idea, index) =>
-        `<tr><td>${index + 1}</td><td><b>${escapeHtml(idea.title)}</b><small>${escapeHtml(idea.code)}</small></td><td>${htmlCompanyLogo(idea.companyId, "register-company-logo")}<span>${escapeHtml(data.companies.find((company) => company.id === idea.companyId)?.shortName || "")}</span></td><td>${escapeHtml(idea.department)}</td><td>${escapeHtml(WORK_TYPE_LABELS[idea.workType])}</td><td>${escapeHtml(shortReportDate(idea.requestedAt))}</td><td>${escapeHtml(shortReportDate(idea.deliveredAt))}</td><td>${escapeHtml(idea.channels.map((channel) => CHANNEL_LABELS[channel]).join("، "))}</td><td>${idea.attachments.filter((file) => file.kind === "final").length}</td></tr>`,
+        `<tr><td>${index + 1}</td><td><b>${escapeHtml(idea.title)}</b><small>${escapeHtml(idea.code)}</small></td><td>${htmlCompanyLogo(idea.companyId, "register-company-logo")}<span>${escapeHtml(ideaCompanyLabel(idea, data.companies, true))}</span></td><td>${escapeHtml(idea.department)}</td><td>${escapeHtml(WORK_TYPE_LABELS[idea.workType])}</td><td>${escapeHtml(shortReportDate(idea.requestedAt))}</td><td>${escapeHtml(shortReportDate(idea.deliveredAt))}</td><td>${escapeHtml(idea.channels.map((channel) => CHANNEL_LABELS[channel]).join("، "))}</td><td>${idea.attachments.filter((file) => file.kind === "final").length}</td></tr>`,
     )
     .join("");
   const companyBars = report.companies
@@ -324,7 +326,7 @@ function reportRows(data: MediaData, month: string): (string | number)[][] {
   return monthlyReport(data, month).ideas.map((idea) => [
     idea.code,
     idea.title,
-    data.companies.find((company) => company.id === idea.companyId)?.name || "",
+    ideaCompanyLabel(idea, data.companies),
     idea.department,
     WORK_TYPE_LABELS[idea.workType],
     data.categories.find((category) => category.id === idea.categoryId)?.name ||
@@ -626,8 +628,7 @@ export function composeApprovalSlides(
   idea: Idea,
   data: MediaData,
 ): ApprovalSlide[] {
-  const company =
-    data.companies.find((item) => item.id === idea.companyId)?.name || "";
+  const company = ideaCompanyLabel(idea, data.companies);
   const category =
     data.categories.find((item) => item.id === idea.categoryId)?.name || "";
   const owner =

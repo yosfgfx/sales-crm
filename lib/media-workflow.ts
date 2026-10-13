@@ -13,7 +13,7 @@ const id = (ctx?: WorkflowContext) => ctx?.id?.() ?? crypto.randomUUID();
 const now = (ctx?: WorkflowContext) => ctx?.now ?? new Date().toISOString();
 const editableStatuses: IdeaStatus[] = ["draft", "quotations", "changes"];
 const designStatuses: IdeaStatus[] = ["approved", "scheduled", "designing", "design_review"];
-const patchKeys = ["title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "requestedAt", "dueDate", "priority", "needsQuotes"] as const;
+const patchKeys = ["title", "companyId", "companyIds", "allCompanies", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "requestedAt", "dueDate", "priority", "needsQuotes"] as const;
 
 export function riyadhToday(): string { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
 export function formatMediaDate(value?: string): string {
@@ -64,9 +64,28 @@ function commitIdea(data: MediaData, actor: TeamMember, previous: Idea, next: Id
   return { ...data, ideas: data.ideas.map((idea) => idea.id === previous.id ? { ...next, updatedAt: at, history: [...previous.history, event] } : idea), notifications: [...ideaNotices(data, actor, previous, next, action, note, at, ctx, notification), ...data.notifications] };
 }
 
+function normalizeCompanies<T extends Partial<Pick<Idea, "companyId" | "companyIds" | "allCompanies">>>(data: MediaData, input: T, current?: Idea): T {
+  if (input.companyId === undefined && input.companyIds === undefined && input.allCompanies === undefined) return input;
+  const allCompanies = input.allCompanies ?? current?.allCompanies ?? false;
+  if (typeof allCompanies !== "boolean") throw new WorkflowError("اختيار الشركات غير صالح.");
+  const requested = input.companyIds ?? (input.companyId !== undefined ? [input.companyId] : current ? [current.companyId, ...(current.companyIds || [])] : []);
+  if (!Array.isArray(requested) || requested.some((value) => typeof value !== "string")) throw new WorkflowError("اختيار الشركات غير صالح.");
+  const primary = input.companyId ?? requested[0] ?? current?.companyId;
+  const selected = [...new Set([primary, ...requested].filter(Boolean) as string[])];
+  const allowed = (companyId: string) => data.companies.some((company) => company.id === companyId && (company.active !== false || companyId === current?.companyId || current?.companyIds?.includes(companyId)));
+  if (allCompanies) {
+    const fallback = selected.find(allowed) || data.companies.find((company) => company.active !== false)?.id;
+    if (!fallback) throw new WorkflowError("لا توجد شركة فعالة لربط الفكرة بها.");
+    return { ...input, companyId: fallback, companyIds: [], allCompanies: true };
+  }
+  if (!selected.length) throw new WorkflowError("اختر شركة واحدة على الأقل أو كل الشركات.");
+  if (selected.length > 50 || selected.some((companyId) => !allowed(companyId))) throw new WorkflowError("إحدى الشركات المختارة غير متاحة.");
+  return { ...input, companyId: selected[0], companyIds: selected.length > 1 ? selected : [], allCompanies: false };
+}
+
 export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdeaInput, ctx?: WorkflowContext): MediaData {
   requireRole(data, actor, ["admin", "content"]);
-  const input = Object.fromEntries(patchKeys.map((key) => [key, raw?.[key]])) as NewIdeaInput;
+  const input = normalizeCompanies(data, Object.fromEntries(patchKeys.filter((key) => raw?.[key] !== undefined || !["companyIds", "allCompanies"].includes(key)).map((key) => [key, raw?.[key]])) as NewIdeaInput);
   if (typeof input.title !== "string" || typeof input.requestedAt !== "string" || typeof input.ownerId !== "string") throw new WorkflowError("بيانات الفكرة غير مكتملة.");
   if (!isAdministrator(actor) && input.ownerId !== actor.id) throw new WorkflowError("يجب أن تكون أنت مسؤول الفكرة الجديدة.", "FORBIDDEN", 403);
   const owner = data.members.find((member) => member.id === input.ownerId && member.active);
@@ -86,10 +105,11 @@ export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: strin
     const owner = data.members.find((member) => member.id === patch.ownerId && member.active);
     if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى والتنسيق.");
   }
-  const changed = (Object.keys(patch) as (keyof IdeaPatch)[]).filter((key) => JSON.stringify(patch[key]) !== JSON.stringify(idea[key]));
+  patch = normalizeCompanies(data, patch, idea);
+  const changed = (Object.keys(patch) as (keyof IdeaPatch)[]).filter((key) => JSON.stringify(patch[key] ?? (key === "companyIds" ? [] : key === "allCompanies" ? false : undefined)) !== JSON.stringify(idea[key] ?? (key === "companyIds" ? [] : key === "allCompanies" ? false : undefined)));
   if (!changed.length) return data;
   const next: Idea = { ...idea, ...patch };
-  const substantive = ["title", "companyId", "categoryId", "workType", "description", "content", "executionPlan", "channels", "needsQuotes"];
+  const substantive = ["title", "companyId", "companyIds", "allCompanies", "categoryId", "workType", "description", "content", "executionPlan", "channels", "needsQuotes"];
   const requiresReapproval = isAdministrator(actor) && (designStatuses.includes(idea.status) || idea.status === "delivered") && changed.some((key) => substantive.includes(key));
   if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
 
@@ -342,7 +362,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
   const companyIds = new Set(value.companies.map((company) => (company as Company).id)), categoryIds = new Set(value.categories.map((category) => (category as ContentCategory).id)), memberIds = new Set(members.map((member) => member.id));
   const codes = new Set<string>();
   for (const item of value.ideas) {
-    keys(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial", "deletedAt", "deletedBy", "deletionReason"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
+    keys(item, ["id", "code", "title", "companyId", "companyIds", "allCompanies", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "deliveredAt", "approvedAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt", "sourceProposal", "archive", "partial", "deletedAt", "deletedBy", "deletionReason"], ["id", "code", "title", "companyId", "department", "categoryId", "workType", "description", "content", "executionPlan", "channels", "ownerId", "designerId", "requestedAt", "dueDate", "scheduledAt", "priority", "status", "needsQuotes", "quotations", "attachments", "managerFeedback", "history", "createdAt", "updatedAt"]);
     textFields(item, ["id", "code", "title", "companyId", "department", "categoryId", "workType", "ownerId", "designerId", "priority", "status"], 300); textFields(item, ["description", "content", "executionPlan", "managerFeedback"], 20000);
     if (item.deletedAt !== undefined && (!dateTime(item.deletedAt) || typeof item.deletedBy !== "string" || !members.some((member) => member.id === item.deletedBy) || !str(item.deletionReason, 4000))) fail();
     if (item.archive !== undefined) { keys(item.archive, ["status", "archivedAt", "folderUrl"], ["status"]); if (!["not_started", "pending", "running", "done", "failed", "needs_review"].includes(item.archive.status as string) || (item.archive.archivedAt !== undefined && !dateTime(item.archive.archivedAt)) || (item.archive.folderUrl !== undefined && !/^https:\/\/drive\.google\.com\//.test(String(item.archive.folderUrl)))) fail(); }
@@ -353,6 +373,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
       if (!item.sourceProposal.batchId || !item.sourceProposal.proposerName || !Number.isInteger(item.sourceProposal.row) || (item.sourceProposal.row as number) < 1 || (item.sourceProposal.row as number) > 10000 || (item.sourceProposal.reviewNote !== undefined && !str(item.sourceProposal.reviewNote, 4000)) || ["contentType", "platform", "fileName"].some((key) => (item.sourceProposal as Record<string, unknown>)[key] !== undefined && !str((item.sourceProposal as Record<string, unknown>)[key], 300)) || ((item.sourceProposal as Record<string, unknown>).reference !== undefined && !str((item.sourceProposal as Record<string, unknown>).reference, 4000))) fail();
     }
     if (!item.title || codes.has(item.code as string)) fail(); codes.add(item.code as string);
+    if ((item.allCompanies !== undefined && typeof item.allCompanies !== "boolean") || (item.companyIds !== undefined && (!Array.isArray(item.companyIds) || item.companyIds.length > 50 || item.companyIds.some((companyId) => !companyIds.has(companyId as string))))) fail();
     if (!companyIds.has(item.companyId as string) || !categoryIds.has(item.categoryId as string) || !memberIds.has(item.ownerId as string) || (item.designerId && !memberIds.has(item.designerId as string))) fail();
     if (!item.deletedAt && !["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
     if (!hasEnumKey(item.workType, WORK_TYPE_LABELS) || !hasEnumKey(item.priority, PRIORITY_LABELS) || !hasEnumKey(item.status, STATUS_LABELS) || typeof item.needsQuotes !== "boolean") fail();

@@ -35,6 +35,8 @@ export default function IdeaEditor({
   const initial: NewIdeaInput = {
     title: idea?.title || "",
     companyId: idea?.companyId || store.data.companies.find((c) => c.active !== false)?.id || "",
+    companyIds: idea?.companyIds || [],
+    allCompanies: idea?.allCompanies || false,
     department: idea?.department || "",
     categoryId: idea?.categoryId || store.data.categories.find((c) => c.active !== false)?.id || "",
     workType: idea?.workType || "design",

@@ -13,7 +13,7 @@ export interface Quotation { id: string; vendor: string; amount: number; scope: 
 export interface HistoryEvent { id: string; at: string; actorId: string; action: HistoryAction; note: string; from?: IdeaStatus; to?: IdeaStatus }
 export interface SourceProposal { batchId: string; row: number; proposerName: string; funding: string; originalGoal: string; originalConcept: string; sourceApproval: string; reviewNote?: string; contentType?: string; platform?: string; reference?: string; fileName?: string }
 export interface Idea {
-  id: string; code: string; title: string; companyId: string; department: string; categoryId: string; workType: WorkType;
+  id: string; code: string; title: string; companyId: string; companyIds?: string[]; allCompanies?: boolean; department: string; categoryId: string; workType: WorkType;
   description: string; content: string; executionPlan: string; channels: Channel[]; ownerId: string; designerId: string;
   requestedAt: string; dueDate: string; scheduledAt: string; deliveredAt?: string; approvedAt?: string;
   priority: Priority; status: IdeaStatus; needsQuotes: boolean; quotations: Quotation[]; attachments: Attachment[];
@@ -35,8 +35,8 @@ export interface MediaNotification {
 export interface SystemSettings { departmentName: string; organizationName: string; logoUrl: string; driveFolderId: string }
 export interface MediaData { companies: Company[]; categories: ContentCategory[]; members: TeamMember[]; ideas: Idea[]; notifications: MediaNotification[]; settings: SystemSettings }
 export interface VersionedMediaData { version: number; data: MediaData }
-export type IdeaPatch = Partial<Pick<Idea, "title" | "companyId" | "department" | "categoryId" | "workType" | "description" | "content" | "executionPlan" | "channels" | "ownerId" | "requestedAt" | "dueDate" | "priority" | "needsQuotes">>;
-export type NewIdeaInput = Pick<Idea, "title" | "companyId" | "department" | "categoryId" | "workType" | "description" | "content" | "executionPlan" | "channels" | "ownerId" | "requestedAt" | "dueDate" | "priority" | "needsQuotes">;
+export type IdeaPatch = Partial<Pick<Idea, "title" | "companyId" | "companyIds" | "allCompanies" | "department" | "categoryId" | "workType" | "description" | "content" | "executionPlan" | "channels" | "ownerId" | "requestedAt" | "dueDate" | "priority" | "needsQuotes">>;
+export type NewIdeaInput = Pick<Idea, "title" | "companyId" | "companyIds" | "allCompanies" | "department" | "categoryId" | "workType" | "description" | "content" | "executionPlan" | "channels" | "ownerId" | "requestedAt" | "dueDate" | "priority" | "needsQuotes">;
 export type MemberPatch = Partial<Pick<TeamMember, "name" | "title" | "active">> & { role?: Exclude<MemberRole, "superadmin"> };
 export type NewMemberInput = Pick<TeamMember, "name" | "title"> & { role: Exclude<MemberRole, "superadmin"> };
 /** Account credentials are transient inputs. They must never enter shared MediaData. */
@@ -48,6 +48,18 @@ export interface AccountsResponse { version: number; accounts: AccountSummary[] 
 export interface AccountMutationResponse extends VersionedMediaData { accounts: AccountSummary[]; currentUser: TeamMember | null; reloginRequired: boolean }
 export interface ScheduleInput { designerId: string; scheduledAt: string; dueDate?: string; priority?: Priority }
 
+export const ALL_COMPANIES_LABEL = "كل الشركات";
+export function ideaCompanyIds(idea: Pick<Idea, "companyId" | "companyIds" | "allCompanies">, companies?: Company[]): string[] {
+  if (idea.allCompanies && companies) return companies.filter((company) => company.active !== false || company.id === idea.companyId).map((company) => company.id);
+  return [...new Set([idea.companyId, ...(idea.companyIds || [])].filter(Boolean))];
+}
+export function ideaHasCompany(idea: Pick<Idea, "companyId" | "companyIds" | "allCompanies">, companyId: string): boolean {
+  return !!idea.allCompanies || idea.companyId === companyId || !!idea.companyIds?.includes(companyId);
+}
+export function ideaCompanyLabel(idea: Pick<Idea, "companyId" | "companyIds" | "allCompanies">, companies: Company[], short = false): string {
+  if (idea.allCompanies) return ALL_COMPANIES_LABEL;
+  return ideaCompanyIds(idea).map((id) => { const company = companies.find((item) => item.id === id); return (short ? company?.shortName : company?.name) || company?.name || ""; }).filter(Boolean).join("، ");
+}
 export const STATUS_LABELS: Record<IdeaStatus, string> = { draft: "مسودة", quotations: "جمع عروض الأسعار", review: "بانتظار الاعتماد", changes: "مطلوب تعديل", approved: "معتمد · بانتظار الجدولة", scheduled: "مجدول", designing: "قيد التصميم", design_review: "المراجعة النهائية", delivered: "تم التسليم", cancelled: "ملغاة", rejected: "مرفوضة" };
 export const STATUS_HINTS: Record<IdeaStatus, string> = {
   draft: "صاحب الفكرة يكتبها ويكمل تفاصيلها، ولا يراها المدير للاعتماد بعد.",

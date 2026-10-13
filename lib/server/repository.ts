@@ -41,7 +41,7 @@ export async function loadReference(q: Queryable): Promise<Pick<MediaData, "memb
   };
 }
 
-const IDEA_COLUMNS = `id, code, title, company_id, department, category_id, work_type::text as work_type, description, content, execution_plan, channels::text[] as channels,
+const IDEA_COLUMNS = `id, code, title, company_id, company_ids, all_companies, department, category_id, work_type::text as work_type, description, content, execution_plan, channels::text[] as channels,
   owner_id, coalesce(designer_id, '') as designer_id, requested_at::text as requested_at, due_date::text as due_date, coalesce(scheduled_at::text, '') as scheduled_at,
   approved_at, delivered_at::text as delivered_at, priority::text as priority, status::text as status, needs_quotes, manager_feedback, source_proposal, created_at, updated_at, archive_status::text as archive_status, archived_at, drive_folder_id, deleted_at, deleted_by, deletion_reason`;
 
@@ -64,7 +64,7 @@ export async function loadIdeas(q: Queryable, filter: { ids?: string[]; includeD
   return ideas.rows.map((row) => {
     const id = text(row.id);
     const idea: Idea = {
-      id, code: text(row.code), title: text(row.title), companyId: text(row.company_id), department: text(row.department), categoryId: text(row.category_id), workType: row.work_type as Idea["workType"],
+      id, code: text(row.code), title: text(row.title), companyId: text(row.company_id), companyIds: textArray(row.company_ids), allCompanies: row.all_companies === true, department: text(row.department), categoryId: text(row.category_id), workType: row.work_type as Idea["workType"],
       description: text(row.description), content: text(row.content), executionPlan: text(row.execution_plan), channels: textArray(row.channels) as Idea["channels"], ownerId: text(row.owner_id), designerId: text(row.designer_id),
       requestedAt: text(row.requested_at), dueDate: text(row.due_date), scheduledAt: text(row.scheduled_at), priority: row.priority as Idea["priority"], status: row.status as Idea["status"], needsQuotes: Boolean(row.needs_quotes),
       quotations: quotations.get(id) || [], attachments: attachments.get(id) || [], managerFeedback: text(row.manager_feedback), history: history.get(id) || [], createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
@@ -90,17 +90,17 @@ export async function nextIdeaCode(q: Queryable, year: number) {
   return `IC-${year}-${String(row.last_value).padStart(3, "0")}`;
 }
 
-const ideaValues = (idea: Idea) => [idea.title, idea.companyId, idea.department, idea.categoryId, idea.workType, idea.description, idea.content, idea.executionPlan, `{${idea.channels.join(",")}}`, idea.ownerId, idea.designerId || null, idea.requestedAt, idea.dueDate, idea.scheduledAt || null, idea.approvedAt || null, idea.deliveredAt || null, idea.priority, idea.status, idea.needsQuotes, idea.managerFeedback, idea.updatedAt];
+const ideaValues = (idea: Idea) => [idea.title, idea.companyId, idea.department, idea.categoryId, idea.workType, idea.description, idea.content, idea.executionPlan, `{${idea.channels.join(",")}}`, idea.ownerId, idea.designerId || null, idea.requestedAt, idea.dueDate, idea.scheduledAt || null, idea.approvedAt || null, idea.deliveredAt || null, idea.priority, idea.status, idea.needsQuotes, idea.managerFeedback, idea.updatedAt, idea.companyIds || [], idea.allCompanies === true];
 
 export async function persistIdea(q: Queryable, before: Idea | null, after: Idea, actorId: string) {
   if (!before) {
-    await q.query(`insert into wasl.ideas (title, company_id, department, category_id, work_type, description, content, execution_plan, channels, owner_id, designer_id, requested_at, due_date, scheduled_at, approved_at, delivered_at, priority, status, needs_quotes, manager_feedback, updated_at, id, code, created_at, source_proposal)
-      values ($1, $2, $3, $4, $5::wasl.work_type, $6, $7, $8, $9::wasl.channel[], $10, $11, $12::date, $13::date, $14::date, $15::timestamptz, $16::date, $17::wasl.priority, $18::wasl.idea_status, $19, $20, $21::timestamptz, $22, $23, $24::timestamptz, $25::jsonb)`,
+    await q.query(`insert into wasl.ideas (title, company_id, department, category_id, work_type, description, content, execution_plan, channels, owner_id, designer_id, requested_at, due_date, scheduled_at, approved_at, delivered_at, priority, status, needs_quotes, manager_feedback, updated_at, company_ids, all_companies, id, code, created_at, source_proposal)
+      values ($1, $2, $3, $4, $5::wasl.work_type, $6, $7, $8, $9::wasl.channel[], $10, $11, $12::date, $13::date, $14::date, $15::timestamptz, $16::date, $17::wasl.priority, $18::wasl.idea_status, $19, $20, $21::timestamptz, $22::text[], $23, $24, $25, $26::timestamptz, $27::jsonb)`,
     [...ideaValues(after), after.id, after.code, after.createdAt, after.sourceProposal ? JSON.stringify(after.sourceProposal) : null]);
   } else {
     await q.query(`update wasl.ideas set title = $1, company_id = $2, department = $3, category_id = $4, work_type = $5::wasl.work_type, description = $6, content = $7, execution_plan = $8, channels = $9::wasl.channel[], owner_id = $10, designer_id = $11,
-      requested_at = $12::date, due_date = $13::date, scheduled_at = $14::date, approved_at = $15::timestamptz, delivered_at = $16::date, priority = $17::wasl.priority, status = $18::wasl.idea_status, needs_quotes = $19, manager_feedback = $20, updated_at = $21::timestamptz,
-      approved_by = case when $18::wasl.idea_status = 'approved' and status <> 'approved' then $23 else approved_by end, revision = revision + 1 where id = $22`, [...ideaValues(after), after.id, actorId]);
+      requested_at = $12::date, due_date = $13::date, scheduled_at = $14::date, approved_at = $15::timestamptz, delivered_at = $16::date, priority = $17::wasl.priority, status = $18::wasl.idea_status, needs_quotes = $19, manager_feedback = $20, updated_at = $21::timestamptz, company_ids = $22::text[], all_companies = $23,
+      approved_by = case when $18::wasl.idea_status = 'approved' and status <> 'approved' then $25 else approved_by end, revision = revision + 1 where id = $24`, [...ideaValues(after), after.id, actorId]);
   }
   if (before?.deletedAt !== after.deletedAt) await q.query("update wasl.ideas set deleted_at = $2::timestamptz, deleted_by = $3, deletion_reason = $4 where id = $1", [after.id, after.deletedAt || null, after.deletedBy || null, after.deletionReason || ""]);
   const known = new Set((before?.history || []).map((event) => event.id));

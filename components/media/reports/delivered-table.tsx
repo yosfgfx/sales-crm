@@ -2,7 +2,7 @@
 
 import { WORK_TYPE_LABELS, type MediaData } from "@/data/media";
 import { shortReportDate, type monthlyReport } from "@/lib/media-exports";
-import { CompanyLogo } from "../company-logo";
+import { IdeaCompanies } from "../company-logo";
 import { Channels, EmptyState, countText } from "../ui";
 
 export function DeliveredTable({
@@ -68,18 +68,7 @@ export function DeliveredTable({
                     </button>
                   </td>
                   <td className="px-5 py-4">
-                    <CompanyLogo
-                      companyId={idea.companyId}
-                      decorative
-                      className="mb-1 h-9 w-24"
-                    />
-                    <span className="block text-xs">
-                      {
-                        data.companies.find(
-                          (company) => company.id === idea.companyId,
-                        )?.shortName
-                      }
-                    </span>
+                    <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-9 w-24" className="text-xs" />
                   </td>
                   <td className="px-5 py-4 text-xs text-[var(--soft)]">
                     {idea.department}

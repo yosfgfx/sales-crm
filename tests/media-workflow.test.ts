@@ -224,3 +224,14 @@ test("restoring delivered work preserves inactive historical assignments unless 
   validateMediaData(restored);
   reject(() => restoreMediaIdea(removed, actor(removed, "admin"), work.id, undefined, { ownerId: work.ownerId }), "RESTORE_ASSIGNMENT_REQUIRED");
 });
+ test("an idea can target several companies or all companies, and the primary company stays first", () => {
+  let data = create(); const ideaId = data.ideas[0].id;
+  const others = data.companies.filter((company) => company.id !== "mawaredcom" && company.active !== false).map((company) => company.id);
+  data = step(data, "noura", (d, a) => patchMediaIdea(d, a, ideaId, { companyId: "mawaredcom", companyIds: ["mawaredcom", others[0], others[0]] }));
+  assert.equal(data.ideas[0].companyId, "mawaredcom"); assert.deepEqual(data.ideas[0].companyIds, ["mawaredcom", others[0]]); assert.equal(data.ideas[0].allCompanies, false);
+  data = step(data, "noura", (d, a) => patchMediaIdea(d, a, ideaId, { allCompanies: true }));
+  assert.equal(data.ideas[0].allCompanies, true); assert.deepEqual(data.ideas[0].companyIds, []); assert.ok(data.ideas[0].companyId);
+  reject(() => patchMediaIdea(data, actor(data, "noura"), ideaId, { allCompanies: false, companyIds: ["missing-company"] }));
+  const created = createMediaIdea(data, actor(data, "noura"), { ...input(), companyId: others[0], companyIds: [others[0], "mawaredcom"] });
+  assert.equal(created.ideas[0].companyId, others[0]); assert.deepEqual(created.ideas[0].companyIds, [others[0], "mawaredcom"]);
+ });

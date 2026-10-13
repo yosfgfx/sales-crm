@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Asset from "@/components/_ui/asset";
-import { WORK_TYPE_LABELS, type Attachment, type MediaData } from "@/data/media";
+import { WORK_TYPE_LABELS, ideaHasCompany, type Attachment, type MediaData } from "@/data/media";
 import { useAttachmentSrc } from "./use-attachment-src";
-import { CompanyLogo } from "./company-logo";
+import { IdeaCompanies } from "./company-logo";
 import {
   ActionButton,
   Channels,
@@ -30,7 +30,7 @@ export default function Archive({
       (i) =>
         i.status === "delivered" &&
         (month === "all" || i.deliveredAt?.startsWith(month)) &&
-        (company === "all" || i.companyId === company) &&
+        (company === "all" || ideaHasCompany(i, company)) &&
         (type === "all" || i.workType === type),
     )
     .sort((a, b) => (b.deliveredAt || "").localeCompare(a.deliveredAt || ""));
@@ -151,17 +151,7 @@ export default function Archive({
                         </span>
                       </ActionButton>
                       <div className="text-xs text-[var(--soft)]">
-                        <CompanyLogo
-                          companyId={idea.companyId}
-                          decorative
-                          className="mb-1 h-9 w-28"
-                        />
-                        <span className="block">
-                          {
-                            data.companies.find((c) => c.id === idea.companyId)
-                              ?.name
-                          }
-                        </span>
+                        <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-9 w-28" className="mb-1" />
                       </div>
                       <div className="flex items-center justify-between gap-2 text-xs text-[var(--soft)]">
                         <span>{formatDate(idea.deliveredAt)}</span>

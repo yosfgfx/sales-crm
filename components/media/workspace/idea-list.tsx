@@ -1,9 +1,9 @@
 "use client";
 
 import { WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
-import { CompanyLogo } from "../company-logo";
+import { IdeaCompanies } from "../company-logo";
 import { ActionButton, EmptyState, StatusBadge, formatDate } from "../ui";
-import { companyOf, nameOf, production } from "./shared";
+import { nameOf, production } from "./shared";
 import { Icon } from "../ui";
 import { useTeamPresence } from "@/stores/team-presence";
 
@@ -60,12 +60,7 @@ export function IdeaList({
               )}
             </span>
             <span className="text-xs leading-relaxed text-[var(--soft)]">
-              <CompanyLogo
-                companyId={idea.companyId}
-                decorative
-                className="mb-1 h-8 w-24 p-1"
-              />
-              <span className="block">{companyOf(data, idea.companyId)}</span>
+              <IdeaCompanies idea={idea} companies={data.companies} className="mb-1" />
               <span className="block">{idea.department}</span>
             </span>
             <span>

@@ -1,7 +1,7 @@
 "use client";
 
 import { WORK_TYPE_LABELS, type Idea, type MediaData, STATUS_HINTS } from "@/data/media";
-import { CompanyLogo } from "../company-logo";
+import { IdeaCompanies } from "../company-logo";
 import { ActionButton, Icon, PriorityBadge, StatusBadge } from "../ui";
 
 export function IdeaSummary({
@@ -17,13 +17,7 @@ export function IdeaSummary({
 }) {
   return (
     <>
-      <CompanyLogo
-        companyId={idea.companyId}
-        companyName={
-          data.companies.find((c) => c.id === idea.companyId)?.name
-        }
-        className="h-12 w-40"
-      />
+      <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-12 w-40" className="text-sm text-[var(--soft)]" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge status={idea.status} />

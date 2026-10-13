@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { STATUS_LABELS, type IdeaStatus, type MediaData } from "@/data/media";
+import { STATUS_LABELS, ideaHasCompany, type IdeaStatus, type MediaData } from "@/data/media";
 import { confirmWithAuthenticator } from "../auth";
 import { database } from "../db";
 import { MediaServerError } from "../http";
@@ -69,7 +69,7 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
     const data = await state(ctx, { trash: args.inTrash });
     const query = args.query?.trim().toLowerCase();
     const rows = data.ideas.filter((idea) => (!args.status?.length || args.status.includes(idea.status))
-      && (!args.companyId || idea.companyId === args.companyId) && (!args.categoryId || idea.categoryId === args.categoryId)
+      && (!args.companyId || ideaHasCompany(idea, args.companyId)) && (!args.categoryId || idea.categoryId === args.categoryId)
       && (!args.ownerId || idea.ownerId === args.ownerId) && (!args.designerId || idea.designerId === args.designerId)
       && (!args.overdueOnly || isOverdue(idea)) && (!args.dueBefore || (idea.dueDate && idea.dueDate <= args.dueBefore))
       && (!query || [idea.title, idea.code, idea.description, idea.department].some((field) => field.toLowerCase().includes(query))));
@@ -83,7 +83,7 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
   server.registerTool("create_idea", {
     title: "إنشاء فكرة", description: "Create a new idea as a draft. Use list_reference for valid company and category ids and list_team for member ids. ownerId defaults to you.",
     inputSchema: {
-      title: z.string().min(1), companyId: z.string(), department: z.string().min(1), categoryId: z.string(), workType, description: z.string().default(""),
+      title: z.string().min(1), companyId: z.string().describe("Primary company id"), companyIds: z.array(z.string()).max(50).optional().describe("All companies the work serves, primary first"), allCompanies: z.boolean().optional().describe("True when the work serves every company"), department: z.string().min(1), categoryId: z.string(), workType, description: z.string().default(""),
       content: z.string().min(1), executionPlan: z.string().min(1), channels, ownerId: z.string().optional(), requestedAt: date.optional(), dueDate: date, priority: priority.default("normal"), needsQuotes: z.boolean().default(false),
     }, annotations: write,
   }, tool(ctx, "create_idea", async (args: Record<string, unknown>) => operate(ctx, { type: "createIdea", input: { ...args, ownerId: args.ownerId || ctx.member.id, requestedAt: args.requestedAt || today() } })));
@@ -91,7 +91,7 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
   server.registerTool("update_idea", {
     title: "تعديل فكرة", description: "Edit idea fields while it is editable (draft, quotations, changes). Only send fields you want to change.",
     inputSchema: {
-      ideaId: z.string(), title: z.string().optional(), companyId: z.string().optional(), department: z.string().optional(), categoryId: z.string().optional(), workType: workType.optional(),
+      ideaId: z.string(), title: z.string().optional(), companyId: z.string().optional(), companyIds: z.array(z.string()).max(50).optional(), allCompanies: z.boolean().optional(), department: z.string().optional(), categoryId: z.string().optional(), workType: workType.optional(),
       description: z.string().optional(), content: z.string().optional(), executionPlan: z.string().optional(), channels: channels.optional(), ownerId: z.string().optional(),
       requestedAt: date.optional(), dueDate: date.optional(), priority: priority.optional(), needsQuotes: z.boolean().optional(),
     }, annotations: write,

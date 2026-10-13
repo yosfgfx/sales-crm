@@ -9,7 +9,7 @@ import {
   exportIdeaPresentation,
 } from "@/lib/media-exports";
 import { ActionButton, Icon, errorText } from "@/components/media/ui";
-import { CompanyLogo } from "@/components/media/company-logo";
+import { IdeaCompanies } from "@/components/media/company-logo";
 import { useAttachmentSrc } from "@/components/media/use-attachment-src";
 
 export function PresentationPreview({
@@ -68,14 +68,7 @@ export function PresentationPreview({
           </span>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <CompanyLogo
-            companyId={idea.companyId}
-            companyName={
-              data.companies.find((company) => company.id === idea.companyId)
-                ?.name
-            }
-            className="h-12 w-36"
-          />
+          <IdeaCompanies idea={idea} companies={data.companies} logoClassName="h-12 w-36" className="text-sm" />
           {data.settings.logoUrl && (
             <span className="flex h-12 w-36 items-center justify-center rounded-lg bg-white p-2">
               <Asset

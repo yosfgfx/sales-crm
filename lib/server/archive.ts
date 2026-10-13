@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CHANNEL_LABELS, PRIORITY_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
+import { CHANNEL_LABELS, PRIORITY_LABELS, STATUS_LABELS, WORK_TYPE_LABELS, ideaCompanyIds, ideaCompanyLabel, type Idea, type MediaData } from "@/data/media";
 import { database, type Queryable } from "./db";
 import { readBlob } from "./blob-store";
 import { createFolder, createGoogleDocFromHtml, deleteFile, DriveError, exportPdf, getFile, loadIntegration, moveFile, uploadWhole, type DriveFile } from "./google";
@@ -53,6 +53,8 @@ async function deliveredParent(idea: Idea, data: Pick<MediaData, "companies">, r
   const date = idea.deliveredAt || new Date().toISOString().slice(0, 10);
   const year = await ensureFolder(`year:${date.slice(0, 4)}`, root, date.slice(0, 4), root);
   const month = await ensureFolder(`month:${date.slice(0, 7)}`, year, monthFolderName(date), root);
+  if (idea.allCompanies) return ensureFolder(`company:${date.slice(0, 7)}:*all`, month, clean("أعمال كل الشركات"), root);
+  if (ideaCompanyIds(idea).length > 1) return ensureFolder(`company:${date.slice(0, 7)}:*shared`, month, clean("أعمال مشتركة بين الشركات"), root);
   const company = data.companies.find((item) => item.id === idea.companyId);
   return ensureFolder(`company:${date.slice(0, 7)}:${idea.companyId}`, month, companyFolderName(company?.shortName || company?.name || "أخرى"), root);
 }
@@ -86,7 +88,7 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => (
 
 export function summaryHtml(idea: Idea, data: Pick<MediaData, "members" | "companies" | "categories">) {
   const member = (id?: string) => data.members.find((item) => item.id === id)?.name || "—";
-  const company = data.companies.find((item) => item.id === idea.companyId)?.name || "—";
+  const company = ideaCompanyLabel(idea, data.companies) || "—";
   const category = data.categories.find((item) => item.id === idea.categoryId)?.name || "—";
   const approval = [...idea.history].reverse().find((event) => event.action === "approved");
   const rows: [string, string][] = [

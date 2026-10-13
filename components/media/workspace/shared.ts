@@ -1,4 +1,4 @@
-import { WORK_TYPE_LABELS, type Idea, type MediaData } from "@/data/media";
+import { WORK_TYPE_LABELS, ideaCompanyLabel, type Idea, type MediaData } from "@/data/media";
 import type { IconName } from "../ui";
 
 export type View =
@@ -52,7 +52,7 @@ export function matches(idea: Idea, query: string, data: MediaData) {
       idea.description,
       idea.content,
       idea.department,
-      companyOf(data, idea.companyId),
+      ideaCompanyLabel(idea, data.companies),
       idea.sourceProposal?.proposerName,
       idea.sourceProposal?.originalGoal,
       idea.sourceProposal?.originalConcept,
