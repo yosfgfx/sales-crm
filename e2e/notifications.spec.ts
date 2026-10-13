@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { Client } from "pg";
-import { E2E_DB_URL, navigate, pageAs } from "./helpers";
+import { E2E_DB_URL, dismissWelcome, navigate, pageAs } from "./helpers";
 
 test("older notifications load on demand and the guide is one click away (P1.5)", async ({ browser }, info) => {
   const db = new Client({ connectionString: E2E_DB_URL });
@@ -12,7 +12,7 @@ test("older notifications load on demand and the guide is one click away (P1.5)"
 
   const sara = await pageAs(browser, "sara");
   await sara.getByRole("button", { name: /فتح الإشعارات/ }).click();
-  const panel = sara.getByRole("dialog", { name: "إشعارات الفريق" });
+  const panel = sara.getByRole("dialog", { name: "الإشعارات" });
   await expect(panel.getByText("إشعار رقم 0", { exact: true })).toBeVisible();
   await expect(panel.getByText("إشعار رقم 65", { exact: true })).toBeVisible();
   await expect(panel.getByText("إشعار رقم 69", { exact: true })).toHaveCount(0);
@@ -31,6 +31,7 @@ test("older notifications load on demand and the guide is one click away (P1.5)"
   await sara.getByRole("link", { name: "دليل الاستخدام" }).click();
   await expect(sara.getByRole("heading", { level: 1, name: "دليل استخدام وصل" })).toBeVisible();
   await sara.getByRole("link", { name: "العودة إلى مساحة العمل" }).click();
-  await expect(sara.getByRole("heading", { level: 1, name: /مرحبًا سارة/ })).toBeVisible();
+  await dismissWelcome(sara);
+  await expect(sara.getByRole("main").getByRole("heading", { level: 1, name: /الخير يا سارة/ })).toBeVisible();
   await navigate(sara, "الأفكار والمحتوى");
 });

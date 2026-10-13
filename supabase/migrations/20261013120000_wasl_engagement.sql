@@ -20,7 +20,7 @@ create table wasl.member_presence (
 create table wasl.member_activity (
   member_id text not null references wasl.members(id) on delete cascade,
   day date not null,
-  active_minutes integer not null default 0 check (active_minutes between 0 and 1440),
+  active_seconds integer not null default 0 check (active_seconds between 0 and 86400),
   first_seen_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
   primary key (member_id, day)
@@ -144,10 +144,30 @@ create table wasl.push_outbox (
   url text not null default '/',
   created_at timestamptz not null default now(),
   sent_at timestamptz,
+  claimed_until timestamptz,
   attempts integer not null default 0
 );
 create index push_outbox_pending_idx on wasl.push_outbox(created_at) where sent_at is null;
 create index push_outbox_member_idx on wasl.push_outbox(member_id);
+
+create function wasl.signal_engagement() returns trigger language plpgsql set search_path=pg_catalog,wasl as $$
+declare
+  topic text;
+begin
+  if to_regprocedure('realtime.send(jsonb,text,text,boolean)') is not null then
+    select realtime_topic into topic from wasl.settings where id;
+    if topic is not null then
+      begin
+        execute 'select realtime.send($1, $2, $3, false)' using jsonb_build_object('table', TG_TABLE_NAME), 'engagement', topic;
+      exception when others then
+        null;
+      end;
+    end if;
+  end if;
+  return null;
+end $$;
+revoke all on function wasl.signal_engagement() from public, anon, authenticated;
+grant execute on function wasl.signal_engagement() to wasl_app;
 
 do $$
 declare t text;
@@ -160,14 +180,14 @@ begin
     execute format('create policy wasl_app_all on wasl.%I for all to wasl_app using (true) with check (true)', t);
   end loop;
   foreach t in array array['meetings','meeting_items','meeting_attendance','tasks','work_sessions','honor_awards','honor_cheers'] loop
-    execute format('create trigger wasl_changed after insert or update or delete on wasl.%I for each statement execute function wasl.bump_change_cursor()', t);
+    execute format('create trigger wasl_engagement_changed after insert or update or delete on wasl.%I for each statement execute function wasl.signal_engagement()', t);
   end loop;
 end $$;
 grant usage, select on sequence wasl.push_outbox_id_seq to wasl_app;
 
 create function wasl.queue_push() returns trigger language plpgsql set search_path=pg_catalog,wasl as $$
 begin
-  if new.type::text not in ('activity','archive') and exists (select 1 from wasl.push_subscriptions where member_id = new.recipient_id) then
+  if new.type::text not in ('activity','archive','chat') and exists (select 1 from wasl.push_subscriptions s join wasl.members m on m.id = s.member_id where s.member_id = new.recipient_id and m.active) then
     insert into wasl.push_outbox (notification_id, member_id, title, body, url) values (new.id, new.recipient_id, left(new.title, 200), left(new.body, 300), '/');
   end if;
   return null;
@@ -175,3 +195,5 @@ end $$;
 revoke all on function wasl.queue_push() from public, anon, authenticated;
 grant execute on function wasl.queue_push() to wasl_app;
 create trigger wasl_queue_push after insert on wasl.notifications for each row execute function wasl.queue_push();
+
+insert into wasl.job_runs (key) values ('honor:' || to_char(date_trunc('month', now() at time zone 'Asia/Riyadh') - interval '1 day', 'YYYY-MM')) on conflict (key) do nothing;

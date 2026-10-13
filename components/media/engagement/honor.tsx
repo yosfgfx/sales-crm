@@ -86,8 +86,8 @@ export function HonorBoard({ data, currentUser, onOpenProfile }: { data: MediaDa
         <section className="flex items-center gap-4 rounded-[28px] bg-[radial-gradient(90%_120%_at_15%_0%,#3A3170_0%,#1D243C_60%)] p-7 text-white">
           <Icon3D name="trophy" className="size-16" />
           <div>
-            <h2 className="!text-2xl text-white">لوحة الشرف</h2>
-            <p className="text-[#D7DBEA]">يُعلن الموظف المثالي أول يوم من كل شهر بناءً على أداء الشهر السابق.</p>
+            <h2 className="!text-2xl text-white">أول تتويج قريباً</h2>
+            <p className="text-[#D7DBEA]">يُعلن الموظف المثالي أول يوم من كل شهر بناءً على أداء الشهر السابق، ويصل الإعلان للجميع.</p>
           </div>
         </section>
       )}

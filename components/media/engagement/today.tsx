@@ -9,7 +9,7 @@ import { useEngagement } from "@/stores/engagement-store";
 import { ActionButton, Icon, errorText } from "../ui";
 import { Icon3D } from "./icons-3d";
 import { PersonAvatar, useOnline } from "./person";
-import { STAGES, addDays, arNum, clock, daysBetween, dueText, firstName, greeting, isWorkDay, minutesText, nextStep, relativeTime, riyadhDay, stageIndex } from "./format";
+import { AGENDA, STAGES, WORKS, addDays, arNum, plural, streakText, clock, daysBetween, dueText, firstName, greeting, isWorkDay, minutesText, nextStep, relativeTime, riyadhDay, stageIndex } from "./format";
 
 const EASE = [0.25, 1, 0.5, 1] as const;
 const CLOSED = ["delivered", "cancelled", "rejected"];
@@ -220,7 +220,7 @@ function TeamRow({ member, line }: { member: TeamMember; line: string }) {
         <strong className="block truncate text-[15px]">{member.name}</strong>
         <span className="block truncate text-[13px] text-[var(--soft)]">
           <span className="sr-only">{online ? "متصل الآن. " : "غير متصل. "}</span>
-          {line}
+          {online && line.startsWith("آخر ظهور") ? "متصل الآن" : line}
         </span>
       </div>
     </li>
@@ -253,7 +253,7 @@ export function NextMeetingCard({ meeting, data, onOpenMeeting, compact }: { mee
       <span className="text-[13px] font-medium text-[#11665E]">{when} · {time(start)} – {time(end)}</span>
       <strong className="text-lg">{meeting.title}</strong>
       {agenda.length > 0 && (
-        <span className="line-clamp-2 text-[13px] text-[#35405B]">{arNum(agenda.length)} بنود · {agenda.slice(0, 3).map((item) => item.text).join("، ")}</span>
+        <span className="line-clamp-2 text-[13px] text-[#35405B]">{plural(agenda.length, AGENDA)} · {agenda.slice(0, 3).map((item) => item.text).join("، ")}</span>
       )}
       <div className="flex items-center justify-between gap-3">
         <div className="flex">
@@ -326,7 +326,7 @@ export function Today({
   const weekMax = Math.max(1, ...week.map((entry) => entry.done));
   const dateLabel = new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", weekday: "long", day: "numeric", month: "long" }).format(new Date());
   const summary = [
-    counts.today ? `عندك ${arNum(counts.today)} ${counts.today === 1 ? "عمل" : "أعمال"} موعدها اليوم` : mine.length ? `عندك ${arNum(mine.length)} ${mine.length === 1 ? "عمل جارٍ" : "أعمال جارية"}` : addressed(f, "ما عندك أعمال مسندة الآن", "ما عندك أعمال مسندة الآن"),
+    counts.today ? `عندك ${plural(counts.today, WORKS)} ${counts.today === 1 ? "موعده" : "موعدها"} اليوم` : mine.length ? `عندك ${plural(mine.length, WORKS)} ${mine.length === 1 ? "جارٍ" : "جارية"}` : addressed(f, "ما عندك أعمال مسندة الآن", "ما عندك أعمال مسندة الآن"),
     meetingToday ? `واجتماع «${nextMeeting.title}» الساعة ${new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", hour: "numeric", minute: "2-digit" }).format(new Date(nextMeeting.startsAt))}` : "",
   ].filter(Boolean).join(" ") + "." + (top ? ` ${addressed(f, "ابدأ", "ابدئي")} بـ «${top.title}»${top.dueDate === today ? " لأن موعدها اليوم" : top.dueDate && top.dueDate < today ? " لأنها متأخرة" : ""}.` : "");
 
@@ -359,12 +359,12 @@ export function Today({
                 {(state?.streak || 0) > 0 && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#FFF4E3] py-1.5 ps-2.5 pe-3.5 font-medium text-[#8A4B0A]">
                     <Icon3D name="flame" className="size-6" />
-                    {arNum(state!.streak)} {state!.streak === 1 ? "يوم نشاط" : "أيام نشاط متتالية"}
+                    {streakText(state!.streak)}
                   </span>
                 )}
                 <span className="inline-flex items-center gap-2 rounded-full bg-[#E7F6EF] py-1.5 ps-2.5 pe-3.5 font-medium text-[#155F43]">
                   <Icon3D name="check" className="size-6" />
-                  {deliveredMonth ? `${addressed(f, "سلّمت", "سلّمتِ")} ${arNum(deliveredMonth)} ${deliveredMonth === 1 ? "عملاً" : "أعمال"} هذا الشهر` : "أول تسليم هذا الشهر بانتظارك"}
+                  {deliveredMonth ? `${addressed(f, "سلّمت", "سلّمتِ")} ${plural(deliveredMonth, WORKS)} هذا الشهر` : "أول تسليم هذا الشهر بانتظارك"}
                 </span>
               </div>
             </div>
@@ -427,7 +427,7 @@ export function Today({
               value={quick}
               maxLength={300}
               onChange={(event) => setQuick(event.target.value)}
-              placeholder="وش في بالك؟ اكتب مهمة وتنضاف لخطة يومك…"
+              placeholder="وش في بالك؟ أضف مهمة ليومك…"
               className="min-h-13 min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-[#7A8299]"
             />
             <button type="submit" aria-label="إضافة إلى خطة اليوم" className="flex size-13 shrink-0 items-center justify-center rounded-full bg-[#1D243C] text-white transition-transform duration-200 ease-power3-out hover:scale-105 active:scale-95">
@@ -516,7 +516,7 @@ export function Today({
                   const entry = teamState.get(member.id);
                   const working = entry?.working;
                   const workingIdea = working?.ideaId ? data.ideas.find((idea) => idea.id === working.ideaId) : undefined;
-                  const line = working ? `يعمل على «${workingIdea?.title || working.label || "مهمة"}»` : `آخر ظهور ${relativeTime(entry?.lastSeenAt || null)}`;
+                  const line = working ? `يعمل على «${workingIdea?.title || working.label || "مهمة"}»` : entry?.lastSeenAt ? `آخر ظهور ${relativeTime(entry.lastSeenAt)}` : relativeTime(null);
                   return <TeamRow key={member.id} member={member} line={line} />;
                 })}
             </ul>

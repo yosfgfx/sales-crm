@@ -76,7 +76,7 @@ export async function restoreBackup(db, compressed) {
         if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("سجل النسخة الاحتياطية غير صالح.");
         const names = Object.keys(row).filter((column) => columns.has(column)).map((column) => `"${column.replaceAll('"', '""')}"`).join(",");
         if (!names) throw new Error("سجل النسخة الاحتياطية فارغ.");
-        const singleton = table === "change_cursor" ? " on conflict(id) do update set version=greatest(wasl.change_cursor.version,excluded.version)+1,last_changed_at=now()" : "";
+        const singleton = table === "change_cursor" ? " on conflict(id) do update set version=greatest(wasl.change_cursor.version,excluded.version)+1,last_changed_at=now()" : table === "job_runs" ? " on conflict(key) do nothing" : "";
         await db.query(`insert into wasl.${table} (${names}) select ${names} from jsonb_populate_record(null::wasl.${table}, $1::jsonb)${singleton}`, [JSON.stringify(row)]);
       }
     }

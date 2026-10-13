@@ -68,7 +68,7 @@ function normalizeCompanies<T extends Partial<Pick<Idea, "companyId" | "companyI
   if (input.companyId === undefined && input.companyIds === undefined && input.allCompanies === undefined) return input;
   const allCompanies = input.allCompanies ?? current?.allCompanies ?? false;
   if (typeof allCompanies !== "boolean") throw new WorkflowError("اختيار الشركات غير صالح.");
-  const requested = input.companyIds ?? (input.companyId !== undefined ? [input.companyId] : current ? [current.companyId, ...(current.companyIds || [])] : []);
+  const requested = input.companyIds ?? (input.companyId !== undefined ? [input.companyId, ...(current && !current.allCompanies ? (current.companyIds || []).filter((id) => id !== input.companyId) : [])] : current ? [current.companyId, ...(current.companyIds || [])] : []);
   if (!Array.isArray(requested) || requested.some((value) => typeof value !== "string")) throw new WorkflowError("اختيار الشركات غير صالح.");
   const primary = input.companyId ?? requested[0] ?? current?.companyId;
   const selected = [...new Set([primary, ...requested].filter(Boolean) as string[])];
@@ -91,6 +91,9 @@ export function canRequestIdeaEdit(idea: Idea, actor: TeamMember | null): boolea
 export function canDecideIdeaEdit(actor: TeamMember | null, request: EditRequest): boolean {
   return !!actor?.active && (actor.role === "manager" || isAdministrator(actor)) && request.status === "pending" && request.requesterId !== actor.id;
 }
+export function canDecideIdeaEditOn(idea: Idea, actor: TeamMember | null, request: EditRequest): boolean {
+  return canDecideIdeaEdit(actor, request) && idea.ownerId !== actor?.id && !editRequestClosed.includes(idea.status) && !idea.deletedAt;
+}
 export function requestMediaIdeaEdit(data: MediaData, actor: TeamMember, ideaId: string, requestId: string, note: string, ctx?: WorkflowContext): MediaData {
   requireActor(data, actor); const idea = findIdea(data, ideaId);
   if (idea.ownerId === actor.id) throw new WorkflowError("أنت صاحب الفكرة، ويمكنك تعديلها مباشرة متى كانت متاحة للتعديل.", "OWN_IDEA");
@@ -109,7 +112,8 @@ export function decideMediaIdeaEdit(data: MediaData, actor: TeamMember, ideaId: 
   const request = (idea.editRequests || []).find((item) => item.id === requestId);
   if (!request) throw new WorkflowError("لم يتم العثور على طلب التعديل.", "NOT_FOUND", 404);
   if (request.status !== "pending") throw new WorkflowError("تم البت في هذا الطلب مسبقاً.", "INVALID_TRANSITION");
-  if (request.requesterId === actor.id) throw new WorkflowError("يبت في طلب التعديل مدير آخر غير صاحب الطلب.", "SELF_APPROVAL", 403);
+  if (request.requesterId === actor.id || idea.ownerId === actor.id) throw new WorkflowError("يبت في طلب التعديل مدير آخر غير صاحب الطلب أو صاحب الفكرة.", "SELF_APPROVAL", 403);
+  if (editRequestClosed.includes(idea.status)) throw new WorkflowError("الفكرة ملغاة أو مرفوضة، ولا يمكن تنفيذ طلب تعديل عليها.", "INVALID_TRANSITION");
   if (decision !== "approved" && decision !== "rejected") throw new WorkflowError("قرار غير صالح.");
   const text = String(note ?? "").trim().slice(0, 4000);
   if (decision === "rejected" && !text) throw new WorkflowError("اكتب سبب رفض طلب التعديل ليصل إلى صاحبه.", "FEEDBACK_REQUIRED");

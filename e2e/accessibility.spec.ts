@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { navigate, openIdea, pageAs, projectContext } from "./helpers";
 
-const VIEWS = ["نظرة عامة", "الأفكار والمحتوى", "اعتمادات المدير", "استوديو التصميم", "تقويم التنفيذ", "أرشيف الأعمال", "التقارير الشهرية"];
+const VIEWS = ["يومي", "الاجتماعات", "الفريق", "لوحة الشرف", "نظرة عامة", "الأفكار والمحتوى", "اعتمادات المدير", "استوديو التصميم", "تقويم التنفيذ", "أرشيف الأعمال", "التقارير الشهرية"];
 
 async function audit(page: Page, name: string) {
   await page.waitForLoadState("networkidle");

@@ -3,6 +3,19 @@ import { missingDeliveryChannels } from "@/lib/media-workflow";
 import { addressed } from "@/data/engagement";
 
 export const arNum = (value: number) => value.toLocaleString("ar-SA");
+export function plural(count: number, [one, two, few, many]: [string, string, string, string]) {
+  if (count === 0) return `لا ${many}`;
+  if (count === 1) return one;
+  if (count === 2) return two;
+  return `${arNum(count)} ${count % 100 >= 3 && count % 100 <= 10 ? few : many}`;
+}
+export const AGENDA: [string, string, string, string] = ["بند واحد", "بندان", "بنود", "بندًا"];
+export const DECISIONS: [string, string, string, string] = ["قرار واحد", "قراران", "قرارات", "قرارًا"];
+export const TASKS: [string, string, string, string] = ["مهمة واحدة", "مهمتان", "مهام", "مهمة"];
+export const WORKS: [string, string, string, string] = ["عمل واحد", "عملان", "أعمال", "عملًا"];
+export const DAYS: [string, string, string, string] = ["يوم واحد", "يومين", "أيام", "يومًا"];
+export const streakText = (days: number) => (days <= 1 ? "أول يوم نشاط" : `نشاط متواصل منذ ${plural(days, DAYS)}`);
+
 export const firstName = (name: string) => name.split(" ")[0] || name;
 
 export function riyadhDay(date = new Date()) {
@@ -42,7 +55,7 @@ export function dueText(dueDate: string, today = riyadhDay()) {
 }
 
 export function relativeTime(iso: string | null, now = Date.now()) {
-  if (!iso) return "لم يظهر بعد";
+  if (!iso) return "لم يسجّل دخوله بعد";
   const minutes = Math.round((now - Date.parse(iso)) / 60_000);
   if (minutes < 2) return "الآن";
   if (minutes < 60) return `قبل ${arNum(minutes)} دقيقة`;

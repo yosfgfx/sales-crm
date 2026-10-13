@@ -10,8 +10,19 @@ export async function signIn(page: Page, who: Who, ip = "198.51.100.10") {
   const origin = String(test.info().project.use.baseURL || ORIGIN);
   const response = await page.request.post("/api/session", { data: { username: who, password: accounts[who] }, headers: { origin } });
   expect(response.status(), `sign in as ${who}`).toBe(200);
+  const engagement = page.waitForResponse((reply) => reply.url().includes("/api/engagement") && reply.request().method() === "GET", { timeout: 20_000 }).catch(() => null);
   await page.goto("/");
   await expect(page.getByRole("main")).toBeVisible();
+  await engagement;
+  await dismissWelcome(page);
+}
+
+export async function dismissWelcome(page: Page) {
+  const start = page.getByRole("dialog").getByRole("button", { name: /^(ابدأ|ابدئي) يومك$/ });
+  if (await start.waitFor({ timeout: 2_500 }).then(() => true, () => false)) {
+    await start.click();
+    await expect(start).toHaveCount(0);
+  }
 }
 
 const CONTEXT_KEYS = ["baseURL", "viewport", "userAgent", "deviceScaleFactor", "isMobile", "hasTouch", "locale", "timezoneId", "colorScheme"] as const;

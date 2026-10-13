@@ -4,7 +4,7 @@ import type { SocialMessage } from "@/data/social";
 import { createSocialMessage, listSocialMessages, mutateSocialMessage } from "../social";
 import { internal, jsonRequest, tool, type McpContext } from "./context";
 
-const scope = z.enum(["team", "idea", "company", "category", "workspace"]).describe("team = team chat; idea/company/category = discussion of that item (scopeId is its id); workspace = board discussion");
+const scope = z.enum(["team", "idea", "company", "category", "workspace", "meeting"]).describe("team = team chat; idea/company/category = discussion of that item (scopeId is its id); workspace = board discussion; meeting = a meeting room chat (scopeId is the meeting id)");
 
 const compact = (message: SocialMessage, origin: string) => ({
   id: message.id, author: message.authorName, authorId: message.authorId, at: message.createdAt, text: message.text, mentions: message.mentions,

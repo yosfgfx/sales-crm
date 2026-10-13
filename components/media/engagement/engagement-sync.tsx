@@ -13,6 +13,9 @@ export default function EngagementSync({ memberId }: { memberId: string }) {
     void load();
     beat();
     const heartbeat = setInterval(beat, 60_000);
+    const refresh = setInterval(() => {
+      if (document.visibilityState === "visible") void useEngagement.getState().load();
+    }, 120_000);
     const visibility = () => {
       if (document.visibilityState === "visible") {
         beat();
@@ -28,11 +31,14 @@ export default function EngagementSync({ memberId }: { memberId: string }) {
     };
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("wasl:realtime", realtime);
+    window.addEventListener("wasl:engagement", realtime);
     return () => {
       clearInterval(heartbeat);
+      clearInterval(refresh);
       if (reloadTimer) clearTimeout(reloadTimer);
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("wasl:realtime", realtime);
+      window.removeEventListener("wasl:engagement", realtime);
       useEngagement.setState({ state: null, profiles: {} });
     };
   }, [memberId]);

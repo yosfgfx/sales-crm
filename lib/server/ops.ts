@@ -106,7 +106,9 @@ async function ideaOperation(tx: Queryable, actor: TeamMember, op: Exclude<Opera
       break;
     }
     case "removeQuotation": next = removeMediaQuotation(slice, actor, op.ideaId, op.quotationId, ctx); break;
-    case "requestEdit": next = requestMediaIdeaEdit(slice, actor, op.ideaId, typeof op.editRequestId === "string" ? op.editRequestId : "", typeof op.note === "string" ? op.note : "", ctx); break;
+    case "requestEdit":
+      if (typeof op.editRequestId === "string" && (await tx.query("select 1 from wasl.idea_edit_requests where id = $1", [op.editRequestId])).rows.length) throw new MediaServerError("طلب التعديل موجود مسبقاً.", 409, "DUPLICATE_REQUEST");
+      next = requestMediaIdeaEdit(slice, actor, op.ideaId, typeof op.editRequestId === "string" ? op.editRequestId : "", typeof op.note === "string" ? op.note : "", ctx); break;
     case "decideEdit": next = decideMediaIdeaEdit(slice, actor, op.ideaId, typeof op.editRequestId === "string" ? op.editRequestId : "", op.decision === "approved" ? "approved" : "rejected", typeof op.note === "string" ? op.note : "", ctx); break;
     case "addComment": next = addMediaComment(slice, actor, op.ideaId, typeof op.text === "string" ? op.text : "", ctx); break;
   }

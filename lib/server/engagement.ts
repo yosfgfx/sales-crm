@@ -9,7 +9,8 @@ import { insertNotifications, loadIdeas, loadReference } from "./repository";
 type Row = Record<string, unknown>;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DAY = { test: (value: string) => DAY_PATTERN.test(value) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value };
 const MONTH = /^\d{4}-\d{2}$/;
 const iso = (value: unknown) => (value ? new Date(value as string).toISOString() : null);
 const day = (date = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(date);
@@ -44,9 +45,9 @@ export async function recordHeartbeat(q: Queryable, member: TeamMember, now = ne
   const newVisit = gapMinutes > 30;
   await q.query(`insert into wasl.member_presence (member_id, last_seen_at, previous_visit_at, session_started_at) values ($1, $2, null, $2)
     on conflict (member_id) do update set last_seen_at = $2, previous_visit_at = case when $3 then wasl.member_presence.last_seen_at else wasl.member_presence.previous_visit_at end, session_started_at = case when $3 then $2 else wasl.member_presence.session_started_at end`, [member.id, now.toISOString(), newVisit]);
-  const minutes = gapMinutes <= 3 ? Math.max(0, Math.round(gapMinutes)) : 0;
-  await q.query(`insert into wasl.member_activity (member_id, day, active_minutes, first_seen_at, last_seen_at) values ($1, $2::date, $3, $4, $4)
-    on conflict (member_id, day) do update set active_minutes = least(1440, wasl.member_activity.active_minutes + $3), last_seen_at = $4`, [member.id, day(now), minutes, now.toISOString()]);
+  const seconds = gapMinutes <= 3 ? Math.max(0, Math.min(120, Math.round(gapMinutes * 60))) : 0;
+  await q.query(`insert into wasl.member_activity (member_id, day, active_seconds, first_seen_at, last_seen_at) values ($1, $2::date, $3, $4, $4)
+    on conflict (member_id, day) do update set active_seconds = least(86400, wasl.member_activity.active_seconds + $3), last_seen_at = $4`, [member.id, day(now), seconds, now.toISOString()]);
 }
 
 async function presence(q: Queryable) {
@@ -80,7 +81,7 @@ function responseHours(ideas: Idea[], memberId: string, from: string, to: string
   for (const idea of ideas) {
     const history = idea.history;
     history.forEach((event, index) => {
-      const at = event.at.slice(0, 10);
+      const at = day(new Date(event.at));
       if (at < from || at > to) return;
       const designerTurn = event.action === "scheduled" && idea.designerId === memberId;
       const ownerTurn = (event.action === "changes_requested" || event.action === "edit_request_approved") && idea.ownerId === memberId;
@@ -94,15 +95,25 @@ function responseHours(ideas: Idea[], memberId: string, from: string, to: string
   return samples.length ? samples.reduce((sum, value) => sum + value, 0) / samples.length : null;
 }
 
-export async function computeHonor(q: Queryable, month: string, now = new Date()): Promise<HonorEntry[]> {
+const honorCache = new Map<string, { at: number; ranking: HonorEntry[] }>();
+
+export async function cachedHonor(q: Queryable, month: string, now = new Date()) {
+  const cached = honorCache.get(month);
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.ranking;
+  const ranking = await computeHonor(q, month, now);
+  honorCache.set(month, { at: Date.now(), ranking });
+  return ranking;
+}
+
+export async function computeHonor(q: Queryable, month: string, now = new Date(), preloaded?: Idea[]): Promise<HonorEntry[]> {
   const reference = await loadReference(q);
-  const ideas = await loadIdeas(q);
+  const ideas = preloaded || (await loadIdeas(q));
   const from = `${month}-01`, to = monthEnd(month) < day(now) ? monthEnd(month) : day(now);
   const range = [`${from}T00:00:00+03:00`, `${addDays(to, 1)}T00:00:00+03:00`];
   const [messages, comments, active, meetings] = await Promise.all([
     q.query<{ id: string; n: number }>("select author_id as id, count(*)::int as n from wasl.social_messages where deleted_at is null and created_at >= $1 and created_at < $2 group by author_id", range),
     q.query<{ id: string; n: number }>("select actor_id as id, count(*)::int as n from wasl.idea_events where action = 'comment' and at >= $1 and at < $2 group by actor_id", range),
-    q.query<{ id: string; n: number }>("select member_id as id, count(*)::int as n from wasl.member_activity where active_minutes >= 5 and day between $1::date and $2::date group by member_id", [from, to]),
+    q.query<{ id: string; n: number }>("select member_id as id, count(*)::int as n from wasl.member_activity where active_seconds >= 300 and day between $1::date and $2::date group by member_id", [from, to]),
     q.query<{ id: string; n: number }>("select member_id as id, count(*)::int as n from wasl.meeting_attendance a join wasl.meetings m on m.id = a.meeting_id where m.starts_at >= $1 and m.starts_at < $2 group by member_id", range),
   ]);
   const count = (rows: { id: string; n: number }[], id: string) => rows.find((row) => row.id === id)?.n || 0;
@@ -147,7 +158,7 @@ export async function announceHonor(q: Queryable, today = day()) {
 
 async function honorBoard(q: Queryable, viewer: TeamMember, now = new Date()): Promise<HonorBoard> {
   const month = monthOf(day(now));
-  const ranking = await computeHonor(q, month, now);
+  const ranking = await cachedHonor(q, month, now);
   const awards = (await q.query("select a.month, a.member_id, a.score, a.breakdown, a.summary, a.announced_at, (select count(*)::int from wasl.honor_cheers c where c.month = a.month) as cheers, exists (select 1 from wasl.honor_cheers c where c.month = a.month and c.from_id = $1) as cheered from wasl.honor_awards a order by a.month desc limit 12", [viewer.id])).rows;
   const scores = canSeeScores(viewer);
   const toAward = (row: Row): HonorAward => ({ month: String(row.month), memberId: String(row.member_id), score: scores ? Number(row.score) : 0, summary: String(row.summary || ""), announcedAt: iso(row.announced_at)!, cheers: Number(row.cheers), cheered: Boolean(row.cheered), ...(scores ? { breakdown: (typeof row.breakdown === "string" ? JSON.parse(row.breakdown) : row.breakdown) as HonorAward["breakdown"] } : {}) });
@@ -165,33 +176,31 @@ export async function loadEngagement(request: Request): Promise<EngagementState>
   const db = database();
   const member = await requireUser(request, db);
   const now = new Date(), today = day(now), start = weekStart(today);
-  await db.transaction(async (tx) => { await announceHonor(tx, today); }).catch(() => undefined);
-  const [tasks, session, running, focusRows, presenceRows, me, weekTasks, ideas, meetings, honor, push, activity] = await Promise.all([
+  const [tasks, session, running, focusRows, presenceRows, me, weekTasks, weekDelivered, meetings, honor, push, activity, reference] = await Promise.all([
     db.query("select * from wasl.tasks where member_id = $1 and (done_at is null or done_at > now() - interval '7 days') order by done_at nulls first, due_date nulls last, created_at", [member.id]),
     db.query("select * from wasl.work_sessions where member_id = $1 and ended_at is null", [member.id]),
     db.query("select s.member_id, s.idea_id, s.label, s.started_at from wasl.work_sessions s where s.ended_at is null"),
-    db.query<{ idea_id: string | null; label: string; seconds: number }>("select idea_id, label, sum(coalesce(seconds, extract(epoch from now() - started_at)))::int as seconds from wasl.work_sessions where member_id = $1 and started_at >= $2::timestamptz group by idea_id, label", [member.id, `${start}T00:00:00+03:00`]),
+    db.query<{ category: string | null; label: string; seconds: number }>("select c.name as category, s.label, sum(coalesce(s.seconds, extract(epoch from now() - s.started_at)))::int as seconds from wasl.work_sessions s left join wasl.ideas i on i.id = s.idea_id left join wasl.categories c on c.id = i.category_id where s.member_id = $1 and s.started_at >= $2::timestamptz group by c.name, s.label", [member.id, `${start}T00:00:00+03:00`]),
     presence(db),
     db.query("select previous_visit_at, welcomed_on::text as welcomed_on from wasl.member_presence where member_id = $1", [member.id]),
     db.query<{ day: string; n: number }>("select (done_at at time zone 'Asia/Riyadh')::date::text as day, count(*)::int as n from wasl.tasks where member_id = $1 and done_at >= $2::timestamptz group by 1", [member.id, `${start}T00:00:00+03:00`]),
-    loadIdeas(db),
+    db.query<{ day: string; n: number }>("select delivered_at::text as day, count(*)::int as n from wasl.ideas where deleted_at is null and status = 'delivered' and delivered_at >= $2::date and (designer_id = $1 or owner_id = $1) group by delivered_at", [member.id, start]),
     loadMeetings(db, { from: new Date(now.getTime() - 14 * 86_400_000).toISOString(), to: new Date(now.getTime() + 45 * 86_400_000).toISOString() }),
     honorBoard(db, member, now),
     db.query<{ n: number }>("select count(*)::int as n from wasl.push_subscriptions where member_id = $1", [member.id]),
-    db.query<{ day: string }>("select day::text as day from wasl.member_activity where member_id = $1 and active_minutes > 0 and day > $2::date order by day desc", [member.id, addDays(today, -120)]),
+    db.query<{ day: string }>("select day::text as day from wasl.member_activity where member_id = $1 and active_seconds >= 60 and day > $2::date order by day desc", [member.id, addDays(today, -120)]),
+    loadReference(db),
   ]);
-  const categories = (await loadReference(db)).categories;
   const focus = new Map<string, { label: string; minutes: number; ideaId: string | null }>();
   for (const row of focusRows.rows) {
-    const idea = ideas.find((item) => item.id === row.idea_id);
-    const label = idea ? categories.find((category) => category.id === idea.categoryId)?.name || "أعمال" : row.label || "مهام شخصية";
-    const entry = focus.get(label) || { label, minutes: 0, ideaId: idea ? null : null };
+    const label = row.category || row.label || "مهام شخصية";
+    const entry = focus.get(label) || { label, minutes: 0, ideaId: null };
     entry.minutes += Math.round(Number(row.seconds) / 60);
     focus.set(label, entry);
   }
   const week = Array.from({ length: 7 }, (_, index) => addDays(start, index)).map((date) => ({
     day: date,
-    done: (weekTasks.rows.find((row) => row.day === date)?.n || 0) + ideas.filter((idea) => idea.status === "delivered" && idea.deliveredAt === date && (idea.designerId === member.id || idea.ownerId === member.id)).length,
+    done: (weekTasks.rows.find((row) => row.day === date)?.n || 0) + (weekDelivered.rows.find((row) => row.day === date)?.n || 0),
   }));
   const activeDays = new Set(activity.rows.map((row) => row.day));
   let streak = 0;
@@ -202,7 +211,7 @@ export async function loadEngagement(request: Request): Promise<EngagementState>
     if (streak > 120) break;
   }
   const presenceMap = new Map(presenceRows.map((row) => [row.memberId, row.lastSeenAt]));
-  const members = (await loadReference(db)).members.filter((item) => item.active);
+  const members = reference.members.filter((item) => item.active);
   return {
     now: now.toISOString(),
     tasks: tasks.rows.map(toTask),
@@ -224,7 +233,7 @@ export async function loadEngagement(request: Request): Promise<EngagementState>
 export async function loadProfile(request: Request, memberId: string): Promise<MemberProfile> {
   const db = database();
   const viewer = await requireUser(request, db);
-  if (!canSeeScores(viewer) && viewer.id !== memberId) throw new MediaServerError("لوحة الإنجاز متاحة لمدير النظام ومدير الإدارة.", 403, "FORBIDDEN");
+  if (!canSeeScores(viewer)) throw new MediaServerError("لوحة الإنجاز متاحة لمدير النظام ومدير الإدارة.", 403, "FORBIDDEN");
   if (!ID.test(memberId)) throw new MediaServerError("العضو غير موجود.", 404, "NOT_FOUND");
   const reference = await loadReference(db);
   if (!reference.members.some((member) => member.id === memberId)) throw new MediaServerError("العضو غير موجود.", 404, "NOT_FOUND");
@@ -236,7 +245,7 @@ export async function loadProfile(request: Request, memberId: string): Promise<M
     db.query<{ n: number }>("select count(*)::int as n from wasl.social_reactions where member_id = $1 and created_at >= $2 and created_at <= $3", [memberId, ...range]),
     db.query<{ n: number }>("select count(*)::int as n from wasl.idea_events where actor_id = $1 and action = 'comment' and at >= $2 and at <= $3", [memberId, ...range]),
     db.query<{ n: number }>("select count(*)::int as n from wasl.meeting_attendance a join wasl.meetings m on m.id = a.meeting_id where a.member_id = $1 and m.starts_at >= $2 and m.starts_at <= $3", [memberId, ...range]),
-    db.query<{ day: string; minutes: number }>("select day::text as day, active_minutes as minutes from wasl.member_activity where member_id = $1 and day >= $2::date order by day", [memberId, heatFrom]),
+    db.query<{ day: string; minutes: number }>("select day::text as day, round(active_seconds / 60.0)::int as minutes from wasl.member_activity where member_id = $1 and day >= $2::date order by day", [memberId, heatFrom]),
     db.query<{ seconds: number }>("select coalesce(sum(coalesce(seconds, extract(epoch from now() - started_at))), 0)::int as seconds from wasl.work_sessions where member_id = $1 and started_at >= $2", [memberId, range[0]]),
     db.query("select last_seen_at from wasl.member_presence where member_id = $1", [memberId]),
   ]);
@@ -246,13 +255,13 @@ export async function loadProfile(request: Request, memberId: string): Promise<M
   for (let cursor = from; cursor <= today; cursor = addDays(cursor, 1)) if (isWorkDay(cursor)) workDays++;
   const activeDays = activity.rows.filter((row) => row.day >= from && row.minutes >= 5).length;
   const heatmap = Array.from({ length: 35 }, (_, index) => addDays(heatFrom, index)).map((date) => ({ day: date, minutes: activity.rows.find((row) => row.day === date)?.minutes || 0 }));
-  const ranking = await computeHonor(db, monthOf(today), now);
+  const ranking = await cachedHonor(db, monthOf(today), now);
   return {
     memberId, delivered: delivered.length,
     onTimeRate: delivered.length ? Math.round((delivered.filter((idea) => !idea.dueDate || idea.deliveredAt! <= idea.dueDate).length / delivered.length) * 100) : null,
     averageCompletionDays: completion.length ? Math.round((completion.reduce((sum, value) => sum + value, 0) / completion.length) * 10) / 10 : null,
     responseHours: (() => { const value = responseHours(ideas, memberId, from, today, now); return value === null ? null : Math.round(value * 10) / 10; })(),
-    ideasCreated: ideas.filter((idea) => idea.history.some((event) => event.action === "created" && event.actorId === memberId && event.at.slice(0, 10) >= from)).length,
+    ideasCreated: ideas.filter((idea) => idea.history.some((event) => event.action === "created" && event.actorId === memberId && day(new Date(event.at)) >= from)).length,
     messages: messages.rows[0].n, reactions: reactions.rows[0].n, comments: comments.rows[0].n, meetingsAttended: meetings.rows[0].n,
     activeDays, workDays, activityRate: workDays ? Math.round(Math.min(1, activeDays / workDays) * 100) : 0, heatmap,
     honor: ranking.find((entry) => entry.memberId === memberId) || null,
@@ -379,7 +388,10 @@ export async function engagementAction(request: Request) {
         const manager = canManageMeetings(actor) || row.created_by === actor.id;
         const patch: string[] = [], values: unknown[] = [id];
         const set = (column: string, value: unknown) => { values.push(value); patch.push(`${column} = $${values.length}`); };
-        if (body.notes !== undefined) set("notes", typeof body.notes === "string" ? body.notes.slice(0, 20000) : "");
+        if (body.notes !== undefined) {
+          if (!manager && ["ended", "cancelled"].includes(String(row.status))) throw new MediaServerError("انتهى الاجتماع، ويعدّل محضره مدير الاجتماع فقط.", 403, "FORBIDDEN");
+          set("notes", mergeNotes(String(row.notes || ""), typeof body.baseNotes === "string" ? body.baseNotes : undefined, typeof body.notes === "string" ? body.notes : ""));
+        }
         if (!manager && ["title", "startsAt", "durationMinutes", "teamsUrl", "status"].some((key) => body[key] !== undefined)) throw new MediaServerError("يعدّل تفاصيل الاجتماع منشئه أو مدير الإدارة.", 403, "FORBIDDEN");
         if (body.title !== undefined) set("title", text(body.title, 200, "عنوان الاجتماع"));
         if (body.startsAt !== undefined) set("starts_at", meetingTime(body.startsAt));
@@ -394,6 +406,7 @@ export async function engagementAction(request: Request) {
       }
       case "addMeetingItem": {
         const meetingId = uuid(body.meetingId); const row = await lockedMeeting(tx, meetingId);
+        if (!canManageMeetings(actor) && row.created_by !== actor.id) throw new MediaServerError("يضيف البنود والقرارات والمهام مدير الاجتماع.", 403, "FORBIDDEN");
         const kind = String(body.kind);
         if (!["agenda", "decision", "action"].includes(kind)) throw new MediaServerError("نوع البند غير صالح.", 422, "INVALID_INPUT");
         if (row.status === "cancelled") throw new MediaServerError("الاجتماع ملغى.", 409, "INVALID_TRANSITION");
@@ -415,6 +428,8 @@ export async function engagementAction(request: Request) {
         const itemId = uuid(body.id);
         const item = (await tx.query("select i.*, m.created_by as meeting_owner from wasl.meeting_items i join wasl.meetings m on m.id = i.meeting_id where i.id = $1 for update of i", [itemId])).rows[0];
         if (!item) throw new MediaServerError("البند غير موجود.", 404, "NOT_FOUND");
+        const organiser = canManageMeetings(actor) || item.meeting_owner === actor.id;
+        if (!organiser && item.created_by !== actor.id && !(body.done !== undefined && body.text === undefined && body.remove !== true && item.assignee_id === actor.id)) throw new MediaServerError("يعدّل البند مدير الاجتماع أو المسؤول عنه.", 403, "FORBIDDEN");
         if (body.remove === true) {
           if (!(canManageMeetings(actor) || item.created_by === actor.id || item.meeting_owner === actor.id)) throw new MediaServerError("يحذف البند كاتبه أو مدير الاجتماع.", 403, "FORBIDDEN");
           await tx.query("delete from wasl.meeting_items where id = $1", [itemId]);
@@ -450,7 +465,7 @@ export async function engagementAction(request: Request) {
       case "subscribePush": {
         const subscription = body.subscription as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;
         const endpoint = String(subscription?.endpoint || ""), p256dh = String(subscription?.keys?.p256dh || ""), auth = String(subscription?.keys?.auth || "");
-        if (!/^https:\/\//.test(endpoint) || endpoint.length > 1000 || !p256dh || p256dh.length > 200 || !auth || auth.length > 100) throw new MediaServerError("اشتراك الإشعارات غير صالح.", 422, "INVALID_INPUT");
+        if (!pushEndpointAllowed(endpoint) || endpoint.length > 1000 || !p256dh || p256dh.length > 200 || !auth || auth.length > 100) throw new MediaServerError("اشتراك الإشعارات غير صالح.", 422, "INVALID_INPUT");
         await tx.query("insert into wasl.push_subscriptions (id, member_id, endpoint, p256dh, auth, user_agent) values ($1, $2, $3, $4, $5, $6) on conflict (endpoint) do update set member_id = excluded.member_id, p256dh = excluded.p256dh, auth = excluded.auth, failures = 0", [randomUUID(), actor.id, endpoint, p256dh, auth, (request.headers.get("user-agent") || "").slice(0, 300)]);
         return { ok: true };
       }
@@ -470,6 +485,24 @@ export async function engagementAction(request: Request) {
         throw new MediaServerError("إجراء غير معروف.");
     }
   });
+}
+
+const PUSH_HOSTS = ["fcm.googleapis.com", "android.googleapis.com", "updates.push.services.mozilla.com", "push.services.mozilla.com", ".notify.windows.com", ".push.apple.com"];
+export function pushEndpointAllowed(endpoint: string) {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === "https:" && !url.username && !url.password && (url.port === "" || url.port === "443") && PUSH_HOSTS.some((host) => (host.startsWith(".") ? url.hostname.endsWith(host) : url.hostname === host));
+  } catch {
+    return false;
+  }
+}
+
+export function mergeNotes(current: string, base: string | undefined, incoming: string) {
+  const next = incoming.slice(0, 20000);
+  if (base === undefined || base === current) return next;
+  const known = new Set([...base.split("\n"), ...current.split("\n")]);
+  const added = next.split("\n").filter((line) => line.trim() && !known.has(line));
+  return (added.length ? `${current}${current.endsWith("\n") || !current ? "" : "\n"}${added.join("\n")}` : current).slice(0, 20000);
 }
 
 export async function runMeetingReminders(q: Queryable = database()) {

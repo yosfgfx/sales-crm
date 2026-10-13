@@ -2,12 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Dialog as DialogPrimitive } from "radix-ui";
 import type { MediaData, TeamMember } from "@/data/media";
 import { addressed } from "@/data/engagement";
 import { useEngagement } from "@/stores/engagement-store";
 import { Icon3D } from "./icons-3d";
 import { PersonAvatar } from "./person";
-import { arNum, firstName, greeting, nextStep, relativeTime, riyadhDay } from "./format";
+import { arNum, firstName, greeting, nextStep, relativeTime, riyadhDay, streakText } from "./format";
 
 const EASE = [0.25, 1, 0.5, 1] as const;
 const CLOSED = ["delivered", "cancelled", "rejected"];
@@ -39,19 +40,21 @@ export function Welcome({ data, currentUser, onOpenIdea }: { data: MediaData; cu
     void act({ action: "dismissWelcome" }, { reload: false }).catch(() => undefined);
   };
   return (
-    <AnimatePresence>
-      {show && content && (
-        <motion.div
-          key="welcome"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="welcome-title"
-          onKeyDown={(event) => event.key === "Escape" && dismiss()}
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#0E1222]/55 p-0 backdrop-blur-sm sm:p-6"
-          initial={reduce ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.45, ease: EASE } }}
-        >
+    <DialogPrimitive.Root open={show && !!content} onOpenChange={(open) => !open && dismiss()}>
+      <AnimatePresence>
+        {show && content && (
+          <DialogPrimitive.Portal forceMount>
+            <DialogPrimitive.Overlay asChild forceMount>
+              <motion.div
+                key="welcome-overlay"
+                className="fixed inset-0 z-[80] bg-[#0E1222]/55 backdrop-blur-sm"
+                initial={reduce ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.45, ease: EASE } }}
+              />
+            </DialogPrimitive.Overlay>
+            <DialogPrimitive.Content asChild forceMount aria-describedby={undefined}>
+              <div className="fixed inset-0 z-[81] flex items-center justify-center p-0 outline-none sm:p-6">
           <motion.div
             className="relative flex h-full w-full flex-col gap-5 overflow-y-auto bg-[radial-gradient(120%_70%_at_85%_0%,#5B4BD0_0%,#2A2F63_45%,#1D243C_100%)] px-6 pt-10 pb-7 text-white sm:h-auto sm:max-h-[92dvh] sm:max-w-[30em] sm:rounded-[32px] sm:shadow-[0_40px_90px_rgb(14_18_34/0.45)]"
             initial={reduce ? false : { scale: 1.12, opacity: 0, filter: "blur(14px)", rotateX: 8 }}
@@ -74,9 +77,11 @@ export function Welcome({ data, currentUser, onOpenIdea }: { data: MediaData; cu
                 {new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", weekday: "long" }).format(new Date())}
                 {content.meeting ? " · يوم العمل عن بعد" : ""}
               </span>
-              <h1 id="welcome-title" className="font-display !text-[38px] !font-medium !leading-tight text-white">
-                {greeting()} يا {firstName(currentUser.name)}
-              </h1>
+              <DialogPrimitive.Title asChild>
+                <h2 className="font-display !text-[38px] !font-medium !leading-tight text-white">
+                  {greeting()} يا {firstName(currentUser.name)}
+                </h2>
+              </DialogPrimitive.Title>
               <p className="text-[17px] text-[#E3E1FA]">
                 {content.recent
                   ? `${addressed(f, "سلّمت", "سلّمتِ")} «${content.recent.title}» ${content.recent.dueDate && content.recent.deliveredAt! < content.recent.dueDate ? "قبل موعدها" : "في وقتها"}. ${(state?.streak || 0) > 1 ? "بداية قوية تستاهل نكمّل عليها." : "خطوة جميلة نبني عليها اليوم."}`
@@ -131,14 +136,17 @@ export function Welcome({ data, currentUser, onOpenIdea }: { data: MediaData; cu
               </button>
               {(state?.streak || 0) > 1 && (
                 <span className="text-center text-[13px] text-[#C9C4F5]">
-                  {arNum(state!.streak)} أيام نشاط متتالية. {addressed(f, "حافظ عليها اليوم.", "حافظي عليها اليوم.")}
+                  {streakText(state!.streak)}. {addressed(f, "حافظ عليه اليوم.", "حافظي عليه اليوم.")}
                 </span>
               )}
             </Stagger>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        )}
+      </AnimatePresence>
+    </DialogPrimitive.Root>
   );
 }
 

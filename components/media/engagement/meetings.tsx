@@ -10,7 +10,7 @@ import { ContextDiscussion } from "../social";
 import { ActionButton, Icon, Modal, errorText } from "../ui";
 import { Icon3D } from "./icons-3d";
 import { PersonAvatar, useOnline } from "./person";
-import { addDays, arNum, clock, relativeTime, riyadhDay } from "./format";
+import { AGENDA, DECISIONS, TASKS, addDays, arNum, clock, plural, relativeTime, riyadhDay } from "./format";
 
 const EASE = [0.25, 1, 0.5, 1] as const;
 const time = (iso: string) => new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
@@ -37,7 +37,8 @@ function liveState(meeting: Meeting, now: number) {
 function NewMeetingDialog({ open, onClose, data, onCreated }: { open: boolean; onClose: () => void; data: MediaData; onCreated: (id: string) => void }) {
   const { act } = useEngagement();
   const next = useMemo(() => {
-    let day = riyadhDay();
+    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Riyadh", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+    let day = hour >= 10 ? addDays(riyadhDay(), 1) : riyadhDay();
     for (let index = 0; index < 7 && [5, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay()); index++) day = addDays(day, 1);
     return day;
   }, []);
@@ -139,7 +140,7 @@ function AttendeeRow({ member, meeting, manager, now }: { member: TeamMember; me
   );
 }
 
-function ItemList({ meeting, kind, data, editable }: { meeting: Meeting; kind: MeetingItem["kind"]; data: MediaData; editable: boolean }) {
+function ItemList({ meeting, kind, data, editable, currentUserId }: { meeting: Meeting; kind: MeetingItem["kind"]; data: MediaData; editable: boolean; currentUserId: string }) {
   const { act } = useEngagement();
   const items = meeting.items.filter((item) => item.kind === kind);
   const [text, setText] = useState(""), [assignee, setAssignee] = useState(""), [due, setDue] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false);
@@ -169,7 +170,7 @@ function ItemList({ meeting, kind, data, editable }: { meeting: Meeting; kind: M
               {kind === "decision" ? <Icon3D name="flag" className="size-7" /> : owner ? <PersonAvatar member={owner} size="sm" /> : <Icon3D name="check" className="size-7" />}
               <span className={`min-w-0 flex-1 text-sm ${item.done ? "text-[var(--soft)] line-through" : ""}`}>{item.text}</span>
               {kind === "action" && owner && <span className="text-xs text-[#11665E]">أُضيفت إلى «يومي» لدى {owner.name.split(" ")[0]}</span>}
-              {kind === "action" && (
+              {kind === "action" && (editable || item.assigneeId === currentUserId || item.createdBy === currentUserId) && (
                 <input type="checkbox" aria-label={`إنجاز ${item.text}`} checked={item.done} onChange={(event) => void act({ action: "updateMeetingItem", id: item.id, done: event.target.checked })} className="size-5 accent-[#1E8A5F]" />
               )}
               {editable && (
@@ -181,7 +182,7 @@ function ItemList({ meeting, kind, data, editable }: { meeting: Meeting; kind: M
           );
         })}
       </AnimatePresence>
-      {meeting.status !== "cancelled" && (
+      {editable && meeting.status !== "cancelled" && (
         <form onSubmit={add} className="flex flex-wrap gap-2">
           <label className="sr-only" htmlFor={`${meeting.id}-${kind}`}>{kind === "decision" ? "قرار جديد" : "مهمة جديدة"}</label>
           <input id={`${meeting.id}-${kind}`} className="media-input min-w-[12em] flex-1" maxLength={1000} placeholder={kind === "decision" ? "قرار جديد…" : "مهمة جديدة خرجت من الاجتماع…"} value={text} onChange={(event) => setText(event.target.value)} />
@@ -216,9 +217,10 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
   const [current, setCurrent] = useState(() => meeting.items.find((item) => item.kind === "agenda" && !item.done)?.id);
   const [error, setError] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const baseRef = useRef(meeting.notes);
   const joined = meeting.attendance.some((entry) => entry.memberId === currentUser.id && !entry.leftAt);
   const [syncedNotes, setSyncedNotes] = useState(meeting.notes);
-  if (!editing && meeting.notes !== syncedNotes) {
+  if (!editing && saved !== "saving" && meeting.notes !== syncedNotes) {
     setSyncedNotes(meeting.notes);
     setNotes(meeting.notes);
   }
@@ -228,13 +230,21 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
   }, []);
+  useEffect(() => {
+    if (!editing && saved !== "saving") baseRef.current = meeting.notes;
+  }, [meeting.notes, editing, saved]);
   const changeNotes = (value: string) => {
     setNotes(value);
     setSaved("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void act({ action: "updateMeeting", id: meeting.id, notes: value }, { reload: false })
-        .then(() => setSaved("saved"))
+      const base = baseRef.current;
+      void act<{ meeting?: Meeting }>({ action: "updateMeeting", id: meeting.id, notes: value, baseNotes: base }, { reload: false })
+        .then((result) => {
+          baseRef.current = result.meeting?.notes ?? value;
+          if (result.meeting && result.meeting.notes !== value) setNotes(result.meeting.notes);
+          setSaved("saved");
+        })
         .catch((cause) => setError(errorText(cause)));
     }, 900);
   };
@@ -283,7 +293,7 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
           <div className="media-card space-y-3 p-5 sm:p-6">
             <div className="flex items-baseline justify-between">
               <h2 className="!text-xl">جدول الأعمال</h2>
-              <span className="text-sm text-[var(--soft)]">{arNum(agenda.filter((item) => item.done).length)} من {arNum(agenda.length)} بنود</span>
+              <span className="text-sm text-[var(--soft)]">أُنجز {arNum(agenda.filter((item) => item.done).length)} من {arNum(agenda.length)}</span>
             </div>
             {agenda.length === 0 && <p className="text-sm text-[var(--soft)]">لا توجد بنود بعد.</p>}
             {agenda.map((item) => {
@@ -295,6 +305,7 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
                     type="button"
                     aria-label={item.done ? `إلغاء إنهاء البند: ${item.text}` : `إنهاء البند: ${item.text}`}
                     aria-pressed={item.done}
+                    disabled={!manager}
                     onClick={() => run({ action: "updateMeetingItem", id: item.id, done: !item.done })}
                     className={`flex size-9 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${item.done ? "bg-[#1E8A5F] text-white" : "bg-white shadow-[inset_0_0_0_2px_#C7CCD9]"}`}
                   >
@@ -321,7 +332,7 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
               className="media-input min-h-44 resize-y leading-relaxed"
               value={notes}
               maxLength={20000}
-              disabled={status === "cancelled"}
+              disabled={status === "cancelled" || (status === "ended" && !manager)}
               onFocus={() => setEditing(true)}
               onBlur={() => setEditing(false)}
               onChange={(event) => changeNotes(event.target.value)}
@@ -329,11 +340,11 @@ function MeetingRoom({ meeting, data, currentUser, onOpenIdea, onBack }: { meeti
             />
             <div className="space-y-2.5">
               <strong className="flex items-center gap-2"><Icon3D name="flag" className="size-6" />القرارات</strong>
-              <ItemList meeting={meeting} kind="decision" data={data} editable={manager} />
+              <ItemList meeting={meeting} kind="decision" data={data} editable={manager} currentUserId={currentUser.id} />
             </div>
             <div className="space-y-2.5">
               <strong className="flex items-center gap-2"><Icon3D name="check" className="size-6" />مهام خرجت من الاجتماع</strong>
-              <ItemList meeting={meeting} kind="action" data={data} editable={manager} />
+              <ItemList meeting={meeting} kind="action" data={data} editable={manager} currentUserId={currentUser.id} />
             </div>
           </div>
         </section>
@@ -398,7 +409,7 @@ export function Meetings({ data, currentUser, selectedId, onSelect, onOpenIdea }
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-[40em] text-[var(--soft)]">وصل هي غرفتكم المشتركة يوم العمل عن بعد: أجندة مرتبطة بالأفكار، ملاحظات حيّة، قرارات، ومهام تنضاف مباشرة إلى «يومي» لكل شخص. الصوت والصورة عبر Teams.</p>
+        <p className="max-w-[40em] text-sm text-[var(--soft)]">المهام التي تخرج من الاجتماع تنضاف مباشرة إلى «يومي» لدى المسؤول عنها، والصوت والصورة عبر Teams.</p>
         {canManage(currentUser) && (
           <ActionButton primary onClick={() => setCreating(true)}>
             <Icon name="plus" className="size-4" />
@@ -435,7 +446,7 @@ export function Meetings({ data, currentUser, selectedId, onSelect, onOpenIdea }
               </span>
               <strong className="text-lg">{meeting.title}</strong>
               <span className="text-[13px] text-[var(--soft)]">
-                {arNum(meeting.items.filter((item) => item.kind === "agenda").length)} بنود · {arNum(meeting.durationMinutes)} دقيقة{meeting.teamsUrl ? " · Teams" : ""}
+                {plural(meeting.items.filter((item) => item.kind === "agenda").length, AGENDA)} · {arNum(meeting.durationMinutes)} دقيقة{meeting.teamsUrl ? " · Teams" : ""}
               </span>
             </motion.button>
           );
@@ -450,7 +461,7 @@ export function Meetings({ data, currentUser, selectedId, onSelect, onOpenIdea }
                 <button type="button" onClick={() => onSelect(meeting.id)} className="flex w-full flex-wrap items-center justify-between gap-2 p-4 text-start hover:bg-[var(--background)]">
                   <span>
                     <strong className="block">{meeting.title}</strong>
-                    <span className="text-[13px] text-[var(--soft)]">{dateLabel(meeting.startsAt)} · {arNum(meeting.items.filter((item) => item.kind === "decision").length)} قرارات · {arNum(meeting.items.filter((item) => item.kind === "action").length)} مهام</span>
+                    <span className="text-[13px] text-[var(--soft)]">{dateLabel(meeting.startsAt)} · {plural(meeting.items.filter((item) => item.kind === "decision").length, DECISIONS)} · {plural(meeting.items.filter((item) => item.kind === "action").length, TASKS)}</span>
                   </span>
                   <span className="text-xs text-[var(--soft)]">{meeting.status === "cancelled" ? "أُلغي" : relativeTime(meeting.startsAt)}</span>
                 </button>

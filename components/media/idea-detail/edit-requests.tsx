@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EditRequest, Idea, MediaData, TeamMember } from "@/data/media";
-import { canDecideIdeaEdit, canRequestIdeaEdit } from "@/lib/media-workflow";
+import { canDecideIdeaEditOn, canRequestIdeaEdit } from "@/lib/media-workflow";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, Icon, errorText, formatDate } from "../ui";
 import { Avatar } from "../workspace/avatar";
@@ -115,7 +115,7 @@ export function EditRequestsPanel({
       {requests.map((request) => {
         const requester = member(request.requesterId);
         const decider = member(request.decidedBy);
-        const canDecide = canDecideIdeaEdit(currentUser, request);
+        const canDecide = canDecideIdeaEditOn(idea, currentUser, request);
         return (
           <article key={request.id} className="space-y-3 rounded-xl bg-white p-4">
             <header className="flex flex-wrap items-center justify-between gap-2">

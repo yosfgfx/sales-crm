@@ -267,6 +267,7 @@ export async function mutateAccounts(request: Request): Promise<Response> {
         const identityChanged = passwordHash || account.username !== username || (["name", "title", "role", "active"] as const).some((key) => previous[key] !== updated[key]);
         await tx.query("update wasl.accounts set username = $2, password_hash = coalesce($3, password_hash), auth_version = auth_version + $4, updated_at = now() where member_id = $1", [targetId, username, passwordHash || null, identityChanged ? 1 : 0]);
         if (passwordHash || account.username !== username || previous.role !== updated.role || previous.active !== updated.active) await revokeProgrammaticAccess(tx, targetId);
+        if (passwordHash || !updated.active) await tx.query("delete from wasl.push_subscriptions where member_id = $1", [targetId]);
       }
     }
     const targetName = (await memberById(tx, targetId))?.name || "عضو الفريق";

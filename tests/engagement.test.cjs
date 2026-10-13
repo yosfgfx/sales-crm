@@ -19,8 +19,10 @@ test("heartbeats mark members online and accumulate active minutes without bumpi
   assert.ok(first.online.some((entry) => entry.memberId === "sara"));
   await h.pg.query("update wasl.member_presence set last_seen_at = now() - interval '2 minutes' where member_id = 'sara'");
   await act("sara", { action: "heartbeat" });
-  const minutes = (await h.pg.query("select active_minutes from wasl.member_activity where member_id = 'sara'")).rows[0].active_minutes;
-  assert.equal(minutes, 2);
+  const seconds = (await h.pg.query("select active_seconds from wasl.member_activity where member_id = 'sara'")).rows[0].active_seconds;
+  assert.ok(seconds >= 118 && seconds <= 120, `active seconds ${seconds}`);
+  await act("sara", { action: "heartbeat" });
+  assert.ok((await h.pg.query("select active_seconds from wasl.member_activity where member_id = 'sara'")).rows[0].active_seconds <= 122);
   assert.equal((await h.pg.query("select version from wasl.change_cursor")).rows[0].version, cursor);
 });
 
@@ -54,6 +56,9 @@ test("meetings: managers create them, everyone gets notified, action items becom
   await assert.rejects(act("manager", { action: "createMeeting", id: randomUUID(), title: "x", startsAt: new Date().toISOString(), teamsUrl: "javascript:alert(1)" }), (error) => error.status === 422);
   assert.ok((await h.pg.query("select 1 from wasl.notifications where recipient_id = 'sara' and type = 'meeting' and entity_id = $1", [id])).rows.length);
   await act("sara", { action: "joinMeeting", meetingId: id });
+  await assert.rejects(act("sara", { action: "addMeetingItem", meetingId: id, kind: "action", text: "مهمة لزميل", assigneeId: "noura" }), (error) => error.status === 403);
+  assert.equal(engagement.mergeNotes("أ\nب", "أ", "أ\nج"), "أ\nب\nج");
+  assert.equal(engagement.mergeNotes("أ", "أ", "أ\nد"), "أ\nد");
   await act("sara", { action: "updateMeeting", id, notes: "ملاحظات" });
   await assert.rejects(act("sara", { action: "updateMeeting", id, title: "تغيير" }), (error) => error.status === 403);
   const withAction = await act("manager", { action: "addMeetingItem", meetingId: id, kind: "action", text: "إرسال صورة المشهد الثالث", assigneeId: "sara" });
@@ -71,36 +76,40 @@ test("meetings: managers create them, everyone gets notified, action items becom
 });
 
 test("honor board: scores follow the weights, details stay with managers, and the winner is announced once", async () => {
-  await h.pg.query("insert into wasl.member_activity (member_id, day, active_minutes) values ('faisal', '2026-09-10', 120) on conflict do nothing");
+  await h.pg.query("insert into wasl.member_activity (member_id, day, active_seconds) values ('faisal', '2026-08-10', 7200) on conflict do nothing");
+  assert.ok((await h.pg.query("select 1 from wasl.job_runs where key = 'honor:2026-09'")).rows.length, "the month before launch is never announced");
   const ranking = await engagement.computeHonor(h.database, "2026-09", new Date("2026-09-30T20:00:00Z"));
   for (const entry of ranking) assert.ok(entry.score >= 0 && entry.score <= 100);
   assert.ok(!ranking.some((entry) => entry.memberId === "manager" || entry.memberId === "root"));
   assert.equal((await state("sara")).honor.ranking, undefined);
   assert.ok(Array.isArray((await state("manager")).honor.ranking));
-  const winner = await h.database.transaction((tx) => engagement.announceHonor(tx, "2026-10-01"));
-  if (winner) {
-    assert.ok((await h.pg.query("select 1 from wasl.honor_awards where month = '2026-09'")).rows.length);
-    assert.equal(await h.database.transaction((tx) => engagement.announceHonor(tx, "2026-10-02")), null);
-    await assert.rejects(act(winner.memberId, { action: "cheer", month: "2026-09" }), (error) => error.code === "SELF_CHEER");
-    const fan = ["sara", "noura", "faisal"].find((id) => id !== winner.memberId);
-    await act(fan, { action: "cheer", month: "2026-09" });
-    await act(fan, { action: "cheer", month: "2026-09" });
-    assert.equal((await h.pg.query("select count(*)::int as n from wasl.honor_cheers where month = '2026-09'")).rows[0].n, 1);
-  }
+  assert.equal(await h.database.transaction((tx) => engagement.announceHonor(tx, "2026-10-01")), null);
+  await h.pg.query("update wasl.ideas set status = 'delivered', requested_at = '2026-08-01', scheduled_at = '2026-08-05', approved_at = '2026-08-03', delivered_at = '2026-08-12', due_date = '2026-08-20', designer_id = 'faisal' where id = (select id from wasl.ideas where deleted_at is null order by id limit 1)");
+  const winner = await h.database.transaction((tx) => engagement.announceHonor(tx, "2026-09-01"));
+  assert.ok(winner);
+  assert.ok((await h.pg.query("select 1 from wasl.honor_awards where month = '2026-08'")).rows.length);
+  assert.equal(await h.database.transaction((tx) => engagement.announceHonor(tx, "2026-09-02")), null);
+  await assert.rejects(act(winner.memberId, { action: "cheer", month: "2026-08" }), (error) => error.code === "SELF_CHEER");
+  const fan = ["sara", "noura", "faisal"].find((id) => id !== winner.memberId);
+  await act(fan, { action: "cheer", month: "2026-08" });
+  await act(fan, { action: "cheer", month: "2026-08" });
+  assert.equal((await h.pg.query("select count(*)::int as n from wasl.honor_cheers where month = '2026-08'")).rows[0].n, 1);
 });
 
 test("profiles are limited to the administrator and the department manager", async () => {
   await assert.rejects(profile("sara", "faisal"), (error) => error.status === 403);
+  await assert.rejects(profile("sara", "sara"), (error) => error.status === 403);
   const seen = await profile("manager", "sara");
   assert.equal(seen.memberId, "sara"); assert.equal(seen.heatmap.length, 35);
   assert.ok((await profile("admin", "faisal")).workDays > 0);
 });
 
 test("push subscriptions queue important notifications only, and the address form is set by administrators", async () => {
-  await act("noura", { action: "subscribePush", subscription: { endpoint: "https://push.example.test/abc", keys: { p256dh: "BKey", auth: "auth" } } });
+  await act("noura", { action: "subscribePush", subscription: { endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: "BKey", auth: "auth" } } });
+  await assert.rejects(act("noura", { action: "subscribePush", subscription: { endpoint: "https://attacker.example/hook", keys: { p256dh: "x", auth: "y" } } }), (error) => error.status === 422);
   await assert.rejects(act("noura", { action: "subscribePush", subscription: { endpoint: "http://insecure", keys: { p256dh: "x", auth: "y" } } }), (error) => error.status === 422);
   const before = (await h.pg.query("select count(*)::int as n from wasl.push_outbox where member_id = 'noura'")).rows[0].n;
-  await h.pg.query("insert into wasl.notifications (id, recipient_id, type, title, body) values ($1, 'noura', 'activity', 'نشاط', 'x'), ($2, 'noura', 'assignment', 'إسناد', 'y')", [randomUUID(), randomUUID()]);
+  await h.pg.query("insert into wasl.notifications (id, recipient_id, type, title, body) values ($1, 'noura', 'activity', 'نشاط', 'x'), ($2, 'noura', 'assignment', 'إسناد', 'y'), ($3, 'noura', 'chat', 'رسالة', 'z')", [randomUUID(), randomUUID(), randomUUID()]);
   assert.equal((await h.pg.query("select count(*)::int as n from wasl.push_outbox where member_id = 'noura'")).rows[0].n, before + 1);
   await assert.rejects(act("sara", { action: "setAddressForm", memberId: "sara", form: "f" }), (error) => error.status === 403);
   await act("admin", { action: "setAddressForm", memberId: "sara", form: "f" });

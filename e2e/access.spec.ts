@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import accounts from "./accounts.json";
-import { openIdea, pageAs, projectContext } from "./helpers";
+import { openIdea, pageAs, projectContext, dismissWelcome } from "./helpers";
 
 async function loginForm(page: Page, username: string, password: string) {
   await page.getByLabel("اسم تسجيل الدخول").fill(username);
@@ -28,7 +28,8 @@ test("guessing a password slows that device down while the owner still signs in 
   const owner = await (await browser.newContext(projectContext({ extraHTTPHeaders: { "x-nf-client-connection-ip": "198.51.100.77" } }))).newPage();
   await owner.goto("/");
   await loginForm(owner, "root", accounts.root);
-  await expect(owner.getByRole("main").getByRole("heading", { level: 1 })).toContainText("مرحبًا");
+  await dismissWelcome(owner);
+  await expect(owner.getByRole("main").getByRole("heading", { level: 1 })).toContainText(/(صباح|مساء) الخير/);
 });
 
 test("a departing designer's work is reassigned, then the account is switched off and back on (H4)", async ({ browser }) => {

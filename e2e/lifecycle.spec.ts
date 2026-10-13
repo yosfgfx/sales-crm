@@ -37,5 +37,5 @@ test("an idea travels from content to delivery, and the designer never archives 
 
   await noura.reload();
   await noura.getByRole("button", { name: /فتح الإشعارات/ }).click();
-  await expect(noura.getByRole("dialog", { name: "إشعارات الفريق" }).getByText(new RegExp(title.split(" ").at(-1)!)).first()).toBeVisible();
+  await expect(noura.getByRole("dialog", { name: "الإشعارات" }).getByText(new RegExp(title.split(" ").at(-1)!)).first()).toBeVisible();
 });

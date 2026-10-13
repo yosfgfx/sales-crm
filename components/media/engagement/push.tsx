@@ -117,3 +117,16 @@ export function PushPrompt({ currentUser, compact = false }: { currentUser: Team
     </div>
   );
 }
+
+export async function forgetPushOnThisDevice() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const worker = await navigator.serviceWorker.getRegistration("/");
+    const subscription = await worker?.pushManager.getSubscription();
+    if (!subscription) return;
+    await fetch("/api/engagement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "unsubscribePush", endpoint: subscription.endpoint }) });
+    await subscription.unsubscribe();
+  } catch {
+    return;
+  }
+}

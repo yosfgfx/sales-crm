@@ -20,7 +20,7 @@ test("content cannot approve, the manager rejects with a reason, and the owner i
   await expect(idea.getByText(/مكررة مع حملة الشهر الماضي/).first()).toBeVisible();
   await noura.reload();
   await noura.getByRole("button", { name: /فتح الإشعارات/ }).click();
-  await expect(noura.getByRole("dialog", { name: "إشعارات الفريق" }).getByText(new RegExp(title.split(" ").at(-1)!)).first()).toBeVisible();
+  await expect(noura.getByRole("dialog", { name: "الإشعارات" }).getByText(new RegExp(title.split(" ").at(-1)!)).first()).toBeVisible();
 });
 
 test("an administrator moves a draft to the trash, cancels and reopens with an audit trail (H3)", async ({ browser }, info) => {

@@ -14,7 +14,7 @@ import { ActionButton, EmptyState, Icon, Modal, formatDate } from "../ui";
 import { Avatar } from "./avatar";
 import { Icon3D, type Icon3DName } from "../engagement/icons-3d";
 import { PersonAvatar } from "../engagement/person";
-import { PushPrompt } from "../engagement/push";
+import { PushPrompt, forgetPushOnThisDevice } from "../engagement/push";
 import type { View } from "./shared";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -214,6 +214,7 @@ export function AccountDialog({
           <ActionButton
             onClick={() =>
               void run(async () => {
+                await forgetPushOnThisDevice();
                 await fetch("/api/session", { method: "DELETE" });
                 window.location.reload();
               })

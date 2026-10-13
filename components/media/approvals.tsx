@@ -61,6 +61,7 @@ export default function Approvals({
   );
   const activeIdeas = data.ideas.filter((idea) => !idea.deletedAt);
   const hasPendingEdit = (idea: Idea) =>
+    !["cancelled", "rejected"].includes(idea.status) &&
     (idea.editRequests || []).some((request) => request.status === "pending");
   const ideas = activeIdeas.filter((idea) =>
     tab === "review"

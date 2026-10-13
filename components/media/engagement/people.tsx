@@ -105,7 +105,7 @@ function Profile({ member, data, onBack }: { member: TeamMember; data: MediaData
       {!profile && !error && <p role="status" className="text-[var(--soft)]">جارٍ تجهيز لوحة الإنجاز…</p>}
       {profile && (
         <>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-4">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             <Kpi index={0} label="أعمال مُنجزة آخر ٣٠ يوماً" value={arNum(profile.delivered)} hint={profile.delivered ? "بصفته صاحب الفكرة أو المصمم" : "لا تسليمات بعد"} />
             <Kpi index={1} label="في موعدها" value={profile.onTimeRate === null ? "—" : `${arNum(profile.onTimeRate)}٪`} hint={profile.onTimeRate === 100 ? "لم تتأخر أي بطاقة" : "نسبة التسليم قبل الموعد أو فيه"} />
             <Kpi index={2} label="متوسط مدة الإنجاز" value={profile.averageCompletionDays === null ? "—" : `${arNum(profile.averageCompletionDays)} يوم`} hint="من بدء التنفيذ إلى التسليم" />
@@ -119,7 +119,7 @@ function Profile({ member, data, onBack }: { member: TeamMember; data: MediaData
                 <h2 className="!text-xl">نشاط آخر ٥ أسابيع</h2>
                 <span className="text-[13px] text-[var(--soft)]">كلما غمق اللون زاد النشاط</span>
               </div>
-              <div className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] items-center gap-1.5 text-xs text-[var(--soft)]">
+              <div className="grid max-w-[34em] grid-cols-[auto_repeat(7,minmax(0,1fr))] items-center gap-1.5 text-xs text-[var(--soft)]">
                 <span />
                 {(weeks[0] || []).map((day) => <span key={day.day} className="text-center">{new Intl.DateTimeFormat("ar-SA", { weekday: "short", timeZone: "UTC" }).format(new Date(`${day.day}T12:00:00Z`))}</span>)}
                 {weeks.map((week, row) => (

@@ -155,6 +155,7 @@ export default function TeamRealtime({
         const client = new RealtimeClient(config.url, { params: { apikey: config.key }, timeout: 20_000 });
         const channel = client.channel(config.topic, { config: { private: false, broadcast: { self: false }, presence: { key: currentUser.id } } });
         channel.on("broadcast", { event: "update" }, (message) => signal(message.payload ?? {}));
+        channel.on("broadcast", { event: "engagement" }, (message) => window.dispatchEvent(new CustomEvent("wasl:engagement", { detail: message.payload ?? {} })));
         channel.on("presence", { event: "sync" }, () => {
           const present = Object.keys(channel.presenceState());
           useTeamPresence.setState({ live: Object.fromEntries(present.map((id) => [id, true as const])) });
