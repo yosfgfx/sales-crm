@@ -153,11 +153,16 @@ export default function TeamRealtime({
         const { RealtimeClient } = await import("@supabase/realtime-js");
         if (ended) return;
         const client = new RealtimeClient(config.url, { params: { apikey: config.key }, timeout: 20_000 });
-        const channel = client.channel(config.topic, { config: { private: false, broadcast: { self: false } } });
+        const channel = client.channel(config.topic, { config: { private: false, broadcast: { self: false }, presence: { key: currentUser.id } } });
         channel.on("broadcast", { event: "update" }, (message) => signal(message.payload ?? {}));
+        channel.on("presence", { event: "sync" }, () => {
+          const present = Object.keys(channel.presenceState());
+          useTeamPresence.setState({ live: Object.fromEntries(present.map((id) => [id, true as const])) });
+        });
         channel.subscribe((status) => {
           if (status === "SUBSCRIBED") {
             updateConnection(true);
+            void channel.track({ at: Date.now() });
             signal();
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") updateConnection(false);
         });
@@ -185,7 +190,7 @@ export default function TeamRealtime({
       timers.current = [];
       window.removeEventListener("focus", focus);
       updateConnection(false);
-      useTeamPresence.setState({ completed: {}, achievement: null });
+      useTeamPresence.setState({ completed: {}, achievement: null, live: {} });
     };
   }, [currentUser.id]);
   return (

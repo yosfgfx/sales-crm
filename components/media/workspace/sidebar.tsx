@@ -7,6 +7,9 @@ import { isAdministrator } from "@/lib/media-workflow";
 import { ActionButton, Icon } from "../ui";
 import { Avatar } from "./avatar";
 import { navigation, type View } from "./shared";
+import { useMediaStore } from "@/stores/media-store";
+import { isOnline, useTeamPresence } from "@/stores/team-presence";
+import { PersonAvatar } from "../engagement/person";
 
 export function Sidebar({
   view,
@@ -64,17 +67,7 @@ export function Sidebar({
           </ActionButton>
         ))}
       </nav>
-      <div className="mt-7 px-7 text-xs text-[#898da9]">الفريق</div>
-      <div className="space-y-3 px-7 py-4">
-        <div className="flex items-center gap-2 text-xs text-[#b8b9d3]">
-          <span className="size-2 rounded-full bg-[#bea9ff]" />
-          كتابة المحتوى والتنسيق
-        </div>
-        <div className="flex items-center gap-2 text-xs text-[#b8b9d3]">
-          <span className="size-2 rounded-full bg-[#8ecbc4]" />
-          التصميم والإنتاج
-        </div>
-      </div>
+      <SidebarTeam currentUser={currentUser} onOpen={() => go("people")} />
       <div className="mt-auto space-y-4 px-4 pt-8 pb-4">
         {isAdministrator(currentUser) && (
           <ActionButton
@@ -102,7 +95,7 @@ export function Sidebar({
           onClick={() => setAccount(true)}
           className="w-full justify-start gap-3 !bg-transparent !px-1 !text-white !shadow-none"
         >
-          <Avatar name={currentUser.name} />
+          <Avatar name={currentUser.name} memberId={currentUser.id} />
           <div className="flex-1 text-start">
             <span className="block text-sm">{currentUser.name}</span>
             <span className="text-xs text-[#b8b9d3]">
@@ -113,5 +106,33 @@ export function Sidebar({
         </ActionButton>
       </div>
     </>
+  );
+}
+
+function SidebarTeam({ currentUser, onOpen }: { currentUser: TeamMember; onOpen: () => void }) {
+  const members = useMediaStore((state) => state.data.members);
+  const presence = useTeamPresence();
+  const team = members
+    .filter((member) => member.active && member.role !== "superadmin" && member.id !== currentUser.id)
+    .map((member) => ({ member, online: isOnline(presence, member.id) }))
+    .sort((a, b) => Number(b.online) - Number(a.online));
+  const online = team.filter((entry) => entry.online).length;
+  if (!team.length) return null;
+  return (
+    <div className="mt-7 px-4">
+      <button type="button" onClick={onOpen} className="flex w-full items-center justify-between rounded-lg px-3 py-1 text-xs text-[#898da9] hover:text-white">
+        <span>الفريق الآن</span>
+        <span className="text-[#80d6b1]">{online.toLocaleString("ar-SA")} متصل</span>
+      </button>
+      <ul className="mt-2 space-y-1">
+        {team.slice(0, 6).map(({ member, online: active }) => (
+          <li key={member.id} className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-xs text-[#b8b9d3]">
+            <PersonAvatar member={member} size="sm" ring="#1d243c" />
+            <span className="min-w-0 flex-1 truncate">{member.name}</span>
+            <span className="sr-only">{active ? "متصل" : "غير متصل"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

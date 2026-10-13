@@ -147,7 +147,7 @@ test("social backups preserve voice metadata, reversed thread rows, reactions, r
 test("pre-social encrypted backups restore into upgraded tables with new column defaults", async () => {
   const { createBackup, restoreBackup } = await import("../scripts/lib/backup.mjs");
   const source = await freshDatabase();
-  await applyMigrations(source.db, migrationFiles().filter((file) => file.name !== "wasl_social"));
+  await applyMigrations(source.db, migrationFiles().filter((file) => !["wasl_social", "wasl_engagement"].includes(file.name)));
   const document = sampleDocument();
   await importState(source.db, document);
   const archive = await createBackup(source.db);

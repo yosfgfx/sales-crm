@@ -21,12 +21,12 @@ export function toAttachment(row: Row): Attachment {
 }
 
 function toMember(row: Row): TeamMember {
-  return { id: text(row.id), name: text(row.name), role: row.role as TeamMember["role"], title: text(row.title), initials: text(row.initials), color: text(row.color), active: Boolean(row.active) };
+  return { id: text(row.id), name: text(row.name), role: row.role as TeamMember["role"], title: text(row.title), initials: text(row.initials), color: text(row.color), active: Boolean(row.active), addressForm: row.address_form === "f" ? "f" : "m" };
 }
 
 export async function loadReference(q: Queryable): Promise<Pick<MediaData, "members" | "companies" | "categories" | "settings">> {
   const [members, companies, categories, settings] = await Promise.all([
-    q.query("select id, name, role::text as role, title, initials, color, active from wasl.members order by created_at, id"),
+    q.query("select id, name, role::text as role, title, initials, color, active, address_form from wasl.members order by created_at, id"),
     q.query("select id, name, short_name, initials, color, active from wasl.companies order by sort_order, created_at"),
     q.query("select id, name, color, target_per_month, active from wasl.categories order by created_at, id"),
     q.query("select department_name, organization_name, logo_attachment_id from wasl.settings where id"),

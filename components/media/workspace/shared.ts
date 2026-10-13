@@ -2,7 +2,11 @@ import { WORK_TYPE_LABELS, ideaCompanyLabel, type Idea, type MediaData } from "@
 import type { IconName } from "../ui";
 
 export type View =
+  | "today"
   | "overview"
+  | "meetings"
+  | "people"
+  | "honor"
   | "ideas"
   | "approvals"
   | "design"
@@ -12,17 +16,25 @@ export type View =
   | "chat"
   | "admin";
 export const navigation: { id: View; label: string; icon: IconName }[] = [
-  { id: "overview", label: "نظرة عامة", icon: "home" },
+  { id: "today", label: "يومي", icon: "home" },
+  { id: "overview", label: "نظرة عامة", icon: "grid" },
   { id: "ideas", label: "الأفكار والمحتوى", icon: "ideas" },
   { id: "approvals", label: "اعتمادات المدير", icon: "check" },
   { id: "design", label: "استوديو التصميم", icon: "design" },
   { id: "calendar", label: "تقويم التنفيذ", icon: "calendar" },
   { id: "archive", label: "أرشيف الأعمال", icon: "archive" },
   { id: "reports", label: "التقارير الشهرية", icon: "report" },
+  { id: "meetings", label: "الاجتماعات", icon: "clock" },
   { id: "chat", label: "دردشة الفريق", icon: "chat" },
+  { id: "people", label: "الفريق", icon: "people" },
+  { id: "honor", label: "لوحة الشرف", icon: "trophy" },
 ];
 export const descriptions: Record<View, string> = {
+  today: "خطة يومك، وتركيزك، وفريقك في مكان واحد.",
   overview: "كل فكرة، وكل مرحلة، في مساحة واحدة.",
+  meetings: "غرفة الفريق يوم العمل عن بعد: أجندة وملاحظات وقرارات ومهام.",
+  people: "من متصل الآن، ومن يعمل على ماذا.",
+  honor: "نحتفي بمن يُنجز في موعده ويحضر مع فريقه.",
   ideas: "من فكرة واضحة إلى محتوى جاهز للاعتماد.",
   approvals: "راجع التفاصيل والعروض، ثم وجّه الفريق إلى الخطوة التالية.",
   design: "حوّل الأفكار المعتمدة إلى أعمال تستحق المشاهدة.",

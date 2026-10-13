@@ -31,7 +31,8 @@ function context(value: Record<string, unknown>): SocialContext {
   const scope = String(value.scope || "team"),
     scopeId = String(value.scopeId || "main");
   if (
-    !["team", "idea", "company", "category", "workspace"].includes(scope) ||
+    !["team", "idea", "company", "category", "workspace", "meeting"].includes(scope) ||
+    (scope === "meeting" && !UUID.test(scopeId)) ||
     !ID.test(scopeId) ||
     (["team", "workspace"].includes(scope) && scopeId !== "main")
   )
@@ -49,6 +50,12 @@ async function visibleContext(
   writing = false,
 ) {
   if (location.scope === "team" || location.scope === "workspace") return;
+  if (location.scope === "meeting") {
+    const meeting = (await q.query<Row>("select status from wasl.meetings where id=$1", [location.scopeId])).rows[0];
+    if (!meeting) throw new MediaServerError("الاجتماع غير موجود.", 404, "CONTEXT_NOT_FOUND");
+    if (writing && meeting.status === "cancelled") throw new MediaServerError("الاجتماع ملغى.", 409, "CONTEXT_ARCHIVED");
+    return;
+  }
   const table = { idea: "ideas", company: "companies", category: "categories" }[
     location.scope
   ];
@@ -312,6 +319,7 @@ async function notifySocial(
     deleted: "حذف رسالة",
   };
   for (const recipient of recipients) {
+    if (message.scope === "meeting" && !(action === "sent" && message.mentions.includes(recipient.id))) continue;
     const mention =
       action === "sent" && message.mentions.includes(recipient.id);
     const text =

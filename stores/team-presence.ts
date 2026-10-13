@@ -10,6 +10,7 @@ type TeamPresence = {
   completed: Record<string, number>;
   achievement: MediaNotification | null;
   online: Record<string, number>;
+  live: Record<string, true>;
 };
 
 export const useTeamPresence = create<TeamPresence>(() => ({
@@ -17,9 +18,11 @@ export const useTeamPresence = create<TeamPresence>(() => ({
   completed: {},
   achievement: null,
   online: {},
+  live: {},
 }));
 
-export function isOnline(online: Record<string, number>, memberId: string, now = Date.now()) {
-  const seen = online[memberId];
-  return !!seen && (seen === Infinity || now - seen < ONLINE_WINDOW_MS);
+export function isOnline(state: Pick<TeamPresence, "online" | "live">, memberId: string, now = Date.now()) {
+  if (state.live[memberId]) return true;
+  const seen = state.online[memberId];
+  return !!seen && now - seen < ONLINE_WINDOW_MS;
 }

@@ -8,6 +8,8 @@ import { ensureFolder } from "./archive";
 import { BACKUP_EXTENSION, createBackup } from "../../scripts/lib/backup.mjs";
 import { database, type Queryable } from "./db";
 import { insertNotifications } from "./repository";
+import { announceHonor, runMeetingReminders } from "./engagement";
+import { flushPushOutbox } from "./push";
 
 const ACTIVE = ["draft", "quotations", "review", "changes", "approved", "scheduled", "designing", "design_review"];
 const DESIGN = ["approved", "scheduled", "designing", "design_review"];
@@ -119,7 +121,9 @@ export async function runBackgroundWork(force = false) {
   if (!force && Date.now() - lastRun < 60_000) return null;
   lastRun = Date.now();
   const email = await sendPendingEmails().catch(() => null);
-  const results = { email, archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), backup: await runDailyBackup().catch(() => null) };
+  const meetings = await runMeetingReminders().catch(() => 0);
+  const honor = await database().transaction((tx) => announceHonor(tx)).then((winner) => winner?.memberId || null, () => null);
+  const results = { email, meetings, honor, archive: await runDueArchiveJobs(3).catch(() => []), daily: await runDailyJobs().catch(() => null), backup: await runDailyBackup().catch(() => null), push: await flushPushOutbox().catch(() => null) };
   return results;
 }
 

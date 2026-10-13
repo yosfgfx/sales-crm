@@ -5,7 +5,8 @@ export type SocialScope =
   | "idea"
   | "company"
   | "category"
-  | "workspace";
+  | "workspace"
+  | "meeting";
 export interface SocialContext {
   scope: SocialScope;
   scopeId: string;

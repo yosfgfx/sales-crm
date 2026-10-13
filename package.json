@@ -12,7 +12,7 @@
     "frame:rive": "node scripts/rive-frame.mjs",
     "test:workflow": "tsc data/media.ts lib/media-workflow.ts tests/media-workflow.test.ts --outDir /tmp/media-workflow-tests --module commonjs --target ES2022 --esModuleInterop --skipLibCheck --strict && node --test /tmp/media-workflow-tests/tests/media-workflow.test.js && node --test tests/media-store.test.cjs",
     "test:server": "node --test tests/server.test.cjs",
-    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:permissions && npm run test:api && npm run test:db && npm run test:social && npm run test:activity && next build",
+    "verify": "next typegen && tsc --noEmit && eslint && npm run test:workflow && npm run test:server && npm run test:drive && npm run test:import && npm run test:lifecycle && npm run test:security && npm run test:permissions && npm run test:api && npm run test:db && npm run test:social && npm run test:activity && npm run test:engagement && next build",
     "test:db": "node --test tests/db-import.test.mjs",
     "db": "node scripts/db.mjs",
     "test:drive": "node --test tests/drive.test.cjs",
@@ -25,7 +25,8 @@
     "test:locks": "node --test tests/postgres-locks.test.cjs",
     "test:social": "node --test tests/social.test.cjs",
     "test:activity": "node --test tests/workspace-activity.test.cjs",
-    "test:api": "node --test tests/api-mcp.test.cjs"
+    "test:api": "node --test tests/api-mcp.test.cjs",
+    "test:engagement": "node --test tests/engagement.test.cjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",
@@ -52,6 +53,7 @@
     "react-use-measure": "^2.1.7",
     "swiper": "^12.0.2",
     "tailwind-merge": "^3.3.1",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3",
     "zustand": "^5.0.11"
   },
@@ -67,6 +69,7 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "^16.3.0",
     "prettier": "3.8.1",

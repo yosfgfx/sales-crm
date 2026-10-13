@@ -661,3 +661,31 @@ html[data-sidebar-resizing] * {
     outline-color: Highlight;
   }
 }
+
+.media-icon-3d {
+  filter: drop-shadow(0 4px 5px rgb(32 39 60 / 0.22)) drop-shadow(0 1px 1px rgb(32 39 60 / 0.14));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .media-presence-dot::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 9999px;
+    background: #22b573;
+    animation: media-presence-ping 2.4s var(--ease-power2-out) infinite;
+  }
+  .media-focus-live {
+    animation: media-focus-breathe 3.2s var(--ease-power1-in-out) infinite;
+  }
+}
+
+@keyframes media-presence-ping {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes media-focus-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(242 163 58 / 0); }
+  50% { box-shadow: 0 0 0 10px rgb(242 163 58 / 0.12); }
+}

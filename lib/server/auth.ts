@@ -69,7 +69,7 @@ async function accountFor(q: Queryable, memberId: string) {
   return (await q.query<Account>(`select ${ACCOUNT_COLUMNS} from wasl.accounts where member_id = $1`, [memberId])).rows[0] || null;
 }
 async function memberById(q: Queryable, id: string) {
-  return (await q.query<TeamMember>("select id, name, role::text as role, title, initials, color, active from wasl.members where id = $1", [id])).rows[0] || null;
+  return (await q.query<TeamMember>("select id, name, role::text as role, title, initials, color, active, address_form as \"addressForm\" from wasl.members where id = $1", [id])).rows[0] || null;
 }
 
 async function bearerUser(request: Request, q: Queryable): Promise<TeamMember | null> {

@@ -30,6 +30,12 @@ import { getSocialMessage } from "./social/api";
 import { useTeamPresence } from "@/stores/team-presence";
 import type { MediaNotification } from "@/data/media";
 import DiscussionShortcuts from "./discussion-shortcuts";
+import EngagementSync from "./engagement/engagement-sync";
+import { Today } from "./engagement/today";
+import { Welcome } from "./engagement/welcome";
+import { Meetings } from "./engagement/meetings";
+import { HonorBoard } from "./engagement/honor";
+import { People, canSeeProfiles } from "./engagement/people";
 
 export type { View };
 export { IdeaCard } from "./workspace/idea-card";
@@ -46,7 +52,9 @@ export default function MediaWorkspace() {
     [storedData],
   );
   const connected = useTeamPresence((state) => state.connected);
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("today");
+  const [meetingId, setMeetingId] = useState<string | undefined>();
+  const [personId, setPersonId] = useState<string | undefined>();
   const [mobileNav, setMobileNav] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -122,6 +130,8 @@ export default function MediaWorkspace() {
     [data, query],
   );
   const go = (next: View) => {
+    if (next !== "meetings") setMeetingId(undefined);
+    if (next !== "people") setPersonId(undefined);
     setView(next);
     setQuery("");
     setMobileNav(false);
@@ -135,7 +145,11 @@ export default function MediaWorkspace() {
     if (notice.entityType === "chat" && notice.entityId) {
       try {
         const { message } = await getSocialMessage(notice.entityId);
-        if (message.scope === "idea") {
+        if (message.scope === "meeting") {
+          setSelected(null);
+          go("meetings");
+          setMeetingId(message.scopeId);
+        } else if (message.scope === "idea") {
           await store.loadIdea(message.scopeId);
           setIdeaThread(message.id);
           setDetailTab("discussion");
@@ -165,6 +179,17 @@ export default function MediaWorkspace() {
       } catch (cause) {
         setNotice(errorText(cause));
       }
+      return;
+    }
+    if (notice.entityType === "meeting" && notice.entityId) {
+      setSelected(null);
+      go("meetings");
+      setMeetingId(notice.entityId);
+      return;
+    }
+    if (notice.entityType === "honor") {
+      setSelected(null);
+      go("honor");
       return;
     }
     if (
@@ -198,7 +223,7 @@ export default function MediaWorkspace() {
       go("admin");
       return;
     }
-    go("overview");
+    go("today");
   };
   const run = async (action: () => Promise<unknown>, message?: string) => {
     try {
@@ -255,6 +280,8 @@ export default function MediaWorkspace() {
   return (
     <div dir="rtl" className="media-app flex min-h-dvh bg-[var(--background)]">
       <TeamRealtime currentUser={currentUser} onOpenIdea={openIdea} />
+      <EngagementSync memberId={currentUser.id} />
+      <Welcome data={data} currentUser={currentUser} onOpenIdea={openIdea} />
       <a
         href="#workspace-content"
         className="sr-only z-[100] rounded-lg bg-white p-3 text-[var(--primary)] focus:not-sr-only focus:fixed focus:start-4 focus:top-4"
@@ -279,7 +306,8 @@ export default function MediaWorkspace() {
           id="workspace-content"
           className="mx-auto max-w-[110em] space-y-6 p-4 pb-12 lg:p-8"
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className={`flex flex-wrap items-start gap-4 ${view === "today" && !query ? "justify-end" : "justify-between"}`}>
+            {(view !== "today" || query) && (
             <div>
               <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-[var(--soft)]">
                 <span>
@@ -306,6 +334,7 @@ export default function MediaWorkspace() {
                   : descriptions[view]}
               </p>
             </div>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <span
                 className="flex items-center gap-1.5 text-xs text-[var(--soft)]"
@@ -396,6 +425,50 @@ export default function MediaWorkspace() {
             <IdeaList ideas={searchResults} data={data} onOpen={openIdea} />
           ) : (
             <>
+              {view === "today" && (
+                <Today
+                  data={data}
+                  currentUser={currentUser}
+                  onOpenIdea={openIdea}
+                  onOpenMeeting={(id) => {
+                    go("meetings");
+                    setMeetingId(id);
+                  }}
+                  onOpenHonor={() => go("honor")}
+                  onViewIdeas={() => go(currentUser.role === "designer" ? "design" : "ideas")}
+                />
+              )}
+              {view === "meetings" && (
+                <Meetings
+                  data={data}
+                  currentUser={currentUser}
+                  selectedId={meetingId}
+                  onSelect={setMeetingId}
+                  onOpenIdea={openIdea}
+                />
+              )}
+              {view === "honor" && (
+                <HonorBoard
+                  data={data}
+                  currentUser={currentUser}
+                  onOpenProfile={
+                    canSeeProfiles(currentUser)
+                      ? (id) => {
+                          go("people");
+                          setPersonId(id);
+                        }
+                      : undefined
+                  }
+                />
+              )}
+              {view === "people" && (
+                <People
+                  data={data}
+                  currentUser={currentUser}
+                  selectedId={personId}
+                  onSelect={setPersonId}
+                />
+              )}
               {view === "overview" && (
                 <>
                   <Overview

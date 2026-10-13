@@ -31,6 +31,7 @@ export function MemberForm({
     member?.role === "superadmin" ? "admin" : member?.role || "content",
   );
   const [active, setActive] = useState(member?.active ?? true);
+  const [addressForm, setAddressForm] = useState<"m" | "f">(member?.addressForm === "f" ? "f" : "m");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState(account?.email || "");
   const [confirmation, setConfirmation] = useState("");
@@ -75,6 +76,7 @@ export function MemberForm({
               },
               baseline,
             );
+            if ((member.addressForm === "f" ? "f" : "m") !== addressForm) await saveAddressForm(member.id, addressForm);
             onDone(
               "حُفظت بيانات الحساب. إذا تغيّرت بيانات دخوله، يستخدم المستخدم البيانات الجديدة لتسجيل الدخول.",
             );
@@ -87,6 +89,7 @@ export function MemberForm({
               password,
               email,
             });
+            if (addressForm === "f") await saveAddressForm(created.id, addressForm);
             onDone(
               "أُضيف " +
                 created.name +
@@ -159,6 +162,17 @@ export function MemberForm({
         <p className="text-xs text-[var(--soft)]">
           اختياري. تصل إليه إشعارات النظام بالبريد عند تفعيل الإرسال.
         </p>
+        <label className="media-label">
+          صيغة المخاطبة في الواجهة
+          <select
+            className="media-input mt-2"
+            value={addressForm}
+            onChange={(event) => setAddressForm(event.target.value === "f" ? "f" : "m")}
+          >
+            <option value="m">مذكر (ابدأ يومك)</option>
+            <option value="f">مؤنث (ابدئي يومك)</option>
+          </select>
+        </label>
         {!protectedAccount && (
           <label className="media-label">
             صلاحية المستخدم
@@ -246,4 +260,10 @@ export function MemberForm({
       </fieldset>
     </form>
   );
+}
+
+async function saveAddressForm(memberId: string, form: "m" | "f") {
+  const response = await fetch("/api/engagement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setAddressForm", memberId, form }) });
+  if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error || "تعذر حفظ صيغة المخاطبة.");
+  await useMediaStore.getState().refresh();
 }

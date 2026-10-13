@@ -3,7 +3,7 @@
 import { useTeamPresence, isOnline } from "@/stores/team-presence";
 
 export function Avatar({ name, memberId }: { name: string; memberId?: string }) {
-  const online = useTeamPresence((state) => (memberId ? isOnline(state.online, memberId) : false));
+  const online = useTeamPresence((state) => (memberId ? isOnline(state, memberId) : false));
   return (
     <span
       aria-hidden="true"

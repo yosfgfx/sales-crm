@@ -7,7 +7,7 @@ export type HistoryAction = "created" | "edited" | "submitted" | "changes_reques
 
 export interface Company { id: string; name: string; shortName: string; initials: string; color: string; active?: boolean }
 export interface ContentCategory { id: string; name: string; color: string; targetPerMonth: number; active?: boolean }
-export interface TeamMember { id: string; name: string; role: MemberRole; title: string; initials: string; color: string; active: boolean }
+export interface TeamMember { id: string; name: string; role: MemberRole; title: string; initials: string; color: string; active: boolean; addressForm?: "m" | "f" }
 export interface Attachment { id: string; name: string; size: number; mime: string; url: string; kind: "brief" | "quotation" | "final"; channel?: Channel; createdAt?: string }
 export interface Quotation { id: string; vendor: string; amount: number; scope: string; days: number; attachmentId?: string; recommended: boolean }
 export interface HistoryEvent { id: string; at: string; actorId: string; action: HistoryAction; note: string; from?: IdeaStatus; to?: IdeaStatus }
@@ -28,10 +28,10 @@ export type EditRequestStatus = "pending" | "approved" | "rejected";
 export interface EditRequest { id: string; requesterId: string; note: string; status: EditRequestStatus; createdAt: string; decidedBy?: string; decidedAt?: string; decisionNote?: string }
 export type ArchiveStatus = "not_started" | "pending" | "running" | "done" | "failed" | "needs_review";
 export interface IdeaArchive { status: ArchiveStatus; archivedAt?: string; folderUrl?: string }
-export type NotificationEntity = "idea" | "company" | "category" | "member" | "settings" | "chat" | "workspace";
+export type NotificationEntity = "idea" | "company" | "category" | "member" | "settings" | "chat" | "workspace" | "meeting" | "task" | "honor";
 export interface MediaNotification {
   id: string; recipientId: string; ideaId: string; title: string; body: string;
-  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder" | "activity" | "achievement" | "chat" | "mention";
+  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder" | "activity" | "achievement" | "chat" | "mention" | "meeting" | "honor";
   createdAt: string; read: boolean;
   actorId?: string; actorName?: string; entityType?: NotificationEntity; entityId?: string; action?: string;
 }
