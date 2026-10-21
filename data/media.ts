@@ -52,6 +52,8 @@ export interface AccountMutationResponse extends VersionedMediaData { accounts: 
 export interface ScheduleInput { designerId: string; scheduledAt: string; dueDate?: string; priority?: Priority }
 
 export const ALL_COMPANIES_LABEL = "كل الشركات";
+export const FORMER_MEMBER_ID = "former-member";
+export const isFormerMember = (member: Pick<TeamMember, "id">) => member.id === FORMER_MEMBER_ID;
 export function ideaCompanyIds(idea: Pick<Idea, "companyId" | "companyIds" | "allCompanies">, companies?: Company[]): string[] {
   if (idea.allCompanies && companies) return companies.filter((company) => company.active !== false || company.id === idea.companyId).map((company) => company.id);
   return [...new Set([idea.companyId, ...(idea.companyIds || [])].filter(Boolean))];

@@ -7,6 +7,7 @@ import { database, type Queryable } from "./db";
 import { assertSameOrigin, clientAddress, MediaServerError, readJson, responseHeaders } from "./http";
 import { loadIdeas, loadReference, notifyWorkspaceActivity } from "./repository";
 import { loadStateFor } from "./state";
+import { removalPlan, removeMember, type RemovalInput } from "./member-removal";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { newSecret, otpauthUri, verifyCode } from "./totp";
 import QRCode from "qrcode";
@@ -220,12 +221,21 @@ async function workflowSlice(q: Queryable, memberId?: string): Promise<MediaData
 export async function mutateAccounts(request: Request): Promise<Response> {
   assertSameOrigin(request);
   const submitted = await readJson(request, 16_384) as Record<string, unknown> | null;
-  if (!submitted || typeof submitted !== "object" || !["create", "update"].includes(String(submitted.operation))) throw new MediaServerError("بيانات الحساب غير مكتملة.", 422, "INVALID_ACCOUNT");
+  if (!submitted || typeof submitted !== "object" || !["create", "update", "delete", "plan-delete"].includes(String(submitted.operation))) throw new MediaServerError("بيانات الحساب غير مكتملة.", 422, "INVALID_ACCOUNT");
   const db = database();
   const outcome = await db.transaction(async (tx) => {
     await tx.query("select pg_advisory_xact_lock(hashtext('wasl.accounts'))");
     const actor = await requireUser(request, tx);
     requireAdministrator(actor);
+    if (submitted.operation === "plan-delete") {
+      if (typeof submitted.memberId !== "string") throw new MediaServerError("اختر العضو.", 422, "INVALID_ACCOUNT");
+      return { targetId: submitted.memberId, plan: await removalPlan(tx, submitted.memberId) };
+    }
+    if (submitted.operation === "delete") {
+      const removed = await removeMember(tx, actor, submitted as unknown as RemovalInput);
+      await notifyWorkspaceActivity(tx, actor, { entityType: "member", entityId: String(submitted.memberId), action: "account_deleted", title: "حذف عضو من الفريق", body: `حذف حساب ${removed.name}${removed.reassigned ? ` وأعاد إسناد ${removed.reassigned.toLocaleString("ar-SA")} من أعماله` : ""}.` });
+      return { targetId: "", removed };
+    }
     let targetId: string;
     if (submitted.operation === "create") {
       const member = submitted.member as Record<string, unknown> | undefined;
@@ -279,10 +289,11 @@ export async function mutateAccounts(request: Request): Promise<Response> {
     });
     return { targetId };
   });
+  if ("plan" in outcome) return Response.json({ plan: outcome.plan }, { headers: responseHeaders });
   const user = await sessionUser(request);
   const reloginRequired = !user;
   const state = user ? await loadStateFor(user) : null;
-  return Response.json({ version: 0, data: state?.data, accounts: user && isAdministrator(user) ? await summaries(db) : [], currentUser: user, reloginRequired, memberId: outcome.targetId }, { headers: { ...responseHeaders, ...(reloginRequired ? { "Set-Cookie": clearCookie(request) } : {}) } });
+  return Response.json({ version: 0, data: state?.data, accounts: user && isAdministrator(user) ? await summaries(db) : [], currentUser: user, reloginRequired, memberId: outcome.targetId, ...("removed" in outcome ? { removed: outcome.removed } : {}) }, { headers: { ...responseHeaders, ...(reloginRequired ? { "Set-Cookie": clearCookie(request) } : {}) } });
 }
 
 async function runMfa(request: Request): Promise<{ data: Record<string, unknown>; cookie?: string }> {

@@ -201,3 +201,27 @@ test("edit requests and multi-company selection persist through the database", a
   assert.equal((await h.pg.query("select status, decided_by from wasl.idea_edit_requests where id = 'edit-req-1'")).rows[0].decided_by, "manager");
   assert.ok((await h.pg.query("select 1 from wasl.notifications where idea_id = 'idea-001' and recipient_id = $1 and title = 'تعديل معتمد على الفكرة'", [owner])).rows.length);
 });
+
+test("an administrator deletes a member completely and their open work moves to the chosen replacements", async () => {
+  const remove = (who, body) => require(path.join(h.root, "lib/server/auth.ts")).mutateAccounts(h.jsonRequest("/api/accounts", { operation: "delete", ...body }, { cookie: h.cookies[who] }));
+  const json = async (response) => { const body = await response.json(); if (response.status >= 400) throw Object.assign(new Error(body.error), { status: response.status, code: body.code }); return body; };
+  await h.pg.query("update wasl.members set active = true where id in ('faisal', 'omar', 'noura')");
+  await h.pg.query("update wasl.ideas set designer_id = 'omar', status = 'designing', deleted_at = null where id = 'idea-002'");
+  const openDesigned = (await h.pg.query("select id from wasl.ideas where designer_id = 'omar' and status::text in ('approved','scheduled','designing','design_review')")).rows.map((row) => row.id);
+  await h.pg.query("insert into wasl.idea_events (id, idea_id, at, actor_id, action, note) values ('omar-history', 'idea-002', now(), 'omar', 'design_started', 'بدأ التصميم')");
+  await assert.rejects(remove("faisal", { memberId: "omar", confirmName: "عمر الغامدي", designerReplacementId: "faisal" }).then(json), (error) => error.status === 403);
+  await assert.rejects(remove("admin", { memberId: "root", confirmName: "مالك النظام" }).then(json), (error) => error.code === "ROOT_PROTECTED");
+  await assert.rejects(remove("admin", { memberId: "admin", confirmName: "x" }).then(json), (error) => error.code === "SELF_DELETE");
+  await assert.rejects(remove("admin", { memberId: "omar", confirmName: "اسم خاطئ", designerReplacementId: "faisal" }).then(json), (error) => error.code === "CONFIRMATION_REQUIRED");
+  await assert.rejects(remove("admin", { memberId: "omar", confirmName: "عمر الغامدي", designerReplacementId: "noura" }).then(json), (error) => error.code === "REPLACEMENT_ROLE");
+  const result = await remove("admin", { memberId: "omar", confirmName: "عمر الغامدي", designerReplacementId: "faisal" }).then(json);
+  assert.equal(result.removed.reassigned, openDesigned.length);
+  assert.equal((await h.pg.query("select count(*)::int as n from wasl.members where id = 'omar'")).rows[0].n, 0);
+  assert.equal((await h.pg.query("select count(*)::int as n from wasl.accounts where member_id = 'omar'")).rows[0].n, 0);
+  for (const id of openDesigned) assert.equal((await h.pg.query("select designer_id from wasl.ideas where id = $1", [id])).rows[0].designer_id, "faisal");
+  assert.equal((await h.pg.query("select actor_id from wasl.idea_events where id = 'omar-history'")).rows[0].actor_id, "former-member");
+  assert.ok((await h.pg.query("select 1 from wasl.notifications where recipient_id = 'faisal' and action = 'member_removed'")).rows.length);
+  assert.ok(!result.data.members.some((member) => member.id === "omar"));
+  const status = await require(path.join(h.root, "lib/server/auth.ts")).login(h.jsonRequest("/api/session", { username: "omar", password: "Omar-Pass-2026" }, { ip: "10.9.9.9" })).then((response) => response.status, (error) => error.status);
+  assert.notEqual(status, 200);
+});

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { memberDisplayLabel, type TeamMember } from "@/data/media";
+import { isFormerMember, memberDisplayLabel, type TeamMember } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, Icon, Modal, errorText } from "./ui";
 import { MemberForm } from "./team-settings/member-form";
+import { RemoveMemberDialog } from "./team-settings/remove-member";
 
 export default function TeamSettings() {
   const store = useMediaStore();
   const [editing, setEditing] = useState<TeamMember | null>(null);
+  const [removing, setRemoving] = useState<TeamMember | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -62,7 +64,7 @@ export default function TeamSettings() {
           </div>
         )}
         <div className="grid gap-4 md:grid-cols-2">
-          {store.data.members.map((member) => {
+          {store.data.members.filter((member) => !isFormerMember(member)).map((member) => {
             const account = store.accounts.find(
               (item) => item.memberId === member.id,
             );
@@ -94,6 +96,16 @@ export default function TeamSettings() {
                     </div>
                   </div>
                   {canEdit && (
+                    <div className="flex shrink-0 gap-2">
+                    {!protectedAccount && member.id !== store.currentUser?.id && (
+                      <ActionButton
+                        aria-label={"حذف حساب " + member.name + " نهائياً"}
+                        onClick={() => setRemoving(member)}
+                        className="size-10 shrink-0 px-0 !text-[var(--danger)]"
+                      >
+                        <Icon name="trash" className="size-4" />
+                      </ActionButton>
+                    )}
                     <ActionButton
                       aria-label={
                         "تعديل حساب " +
@@ -107,6 +119,7 @@ export default function TeamSettings() {
                     >
                       <Icon name="design" className="size-4" />
                     </ActionButton>
+                    </div>
                   )}
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-[var(--soft)]">
@@ -193,6 +206,14 @@ export default function TeamSettings() {
           />
         )}
       </Modal>
+      <RemoveMemberDialog
+        member={removing}
+        onClose={() => setRemoving(null)}
+        onDone={(text) => {
+          setMessage(text);
+          setRemoving(null);
+        }}
+      />
     </>
   );
 }

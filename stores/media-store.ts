@@ -55,6 +55,8 @@ export interface MediaState {
   loadAccounts: () => Promise<AccountSummary[]>;
   createAccount: (input: NewAccountInput) => Promise<TeamMember>;
   updateAccount: (memberId: string, patch: AccountPatch, expected?: AccountBaseline) => Promise<void>;
+  planMemberRemoval: (memberId: string) => Promise<{ openOwned: number; openDesigned: number; meetingTasks: number; upcomingMeetings: number }>;
+  removeMember: (input: { memberId: string; ownerReplacementId?: string; designerReplacementId?: string; confirmName: string }) => Promise<{ name: string; reassigned: number }>;
 }
 
 function emptyData() { const empty = createInitialMediaData(); empty.ideas = []; empty.notifications = []; return empty; }
@@ -119,17 +121,17 @@ function requireAccountRevision(data: MediaData, accounts: AccountSummary[], acc
   }
 }
 
-function mutateAccount<T = void>(operation: Record<string, unknown>, select?: (next: MediaData, previous: MediaData, memberId?: string) => T, expected?: AccountBaseline): Promise<T> {
+function mutateAccount<T = void>(operation: Record<string, unknown>, select?: (next: MediaData, previous: MediaData, memberId?: string, removed?: { name: string; reassigned: number }) => T, expected?: AccountBaseline): Promise<T> {
   return enqueue(async () => {
     if (refreshPromise) await refreshPromise;
     const { data: previous, currentUser, initialized, accounts, accountsLoaded } = useMediaStore.getState();
     if (!initialized || !currentUser) throw new WorkflowError("سجّل الدخول قبل إدارة حسابات الفريق.", "AUTH_REQUIRED", 401);
     requireAccountRevision(previous, accounts, accountsLoaded, operation.memberId, expected);
     try {
-      const saved = await responseJson<AccountMutationResponse & { memberId?: string }>(await fetch("/api/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(operation) }));
+      const saved = await responseJson<AccountMutationResponse & { memberId?: string; removed?: { name: string; reassigned: number } }>(await fetch("/api/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(operation) }));
       if (saved.reloginRequired || !saved.data) { signedOut("تم تحديث حسابك. سجّل الدخول ببياناتك الجديدة."); return undefined as T; }
       useMediaStore.setState({ data: saved.data, currentUser: saved.currentUser, accounts: saved.accounts, accountsLoaded: true, error: null });
-      return select ? select(saved.data, previous, saved.memberId) : undefined as T;
+      return select ? select(saved.data, previous, saved.memberId, saved.removed) : undefined as T;
     } catch (error) {
       if (error instanceof WorkflowError && error.status === 401) signedOut();
       throw error;
@@ -268,5 +270,7 @@ export const useMediaStore = create<MediaState>(() => ({
   readAccounts: () => enqueue(loadAccountState),
   loadAccounts: () => enqueue(loadAccountState),
   createAccount: ({ username, password, email, ...member }) => mutateAccount({ operation: "create", member, username, password, ...(email ? { email } : {}) }, (next, _previous, memberId) => next.members.find((item) => item.id === memberId)!),
+  planMemberRemoval: async (memberId) => (await responseJson<{ plan: { openOwned: number; openDesigned: number; meetingTasks: number; upcomingMeetings: number } }>(await fetch("/api/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation: "plan-delete", memberId }) }))).plan,
+  removeMember: (input) => mutateAccount({ operation: "delete", ...input }, (_next, _previous, _memberId, removed) => removed!),
   updateAccount: (memberId, { username, password, email, ...patch }, expected) => mutateAccount({ operation: "update", memberId, patch, ...(username !== undefined ? { username } : {}), ...(password !== undefined ? { password } : {}), ...(email !== undefined ? { email } : {}) }, undefined, expected),
 }));

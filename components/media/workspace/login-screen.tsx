@@ -2,7 +2,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { useMediaStore, type MediaState } from "@/stores/media-store";
-import { memberDisplayLabel, type MediaData } from "@/data/media";
+import { isFormerMember, memberDisplayLabel, type MediaData } from "@/data/media";
 import { ActionButton, Icon, errorText } from "../ui";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
@@ -75,7 +75,7 @@ export function LoginScreen({
               value={loginMember}
               onChange={(e) => setLoginMember(e.target.value)}
             >
-              {data.members.map((member) => (
+              {data.members.filter((member) => !isFormerMember(member)).map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.name} · {memberDisplayLabel(member)}
                 </option>
