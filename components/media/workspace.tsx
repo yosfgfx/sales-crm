@@ -31,6 +31,7 @@ import { useTeamPresence } from "@/stores/team-presence";
 import type { MediaNotification } from "@/data/media";
 import DiscussionShortcuts from "./discussion-shortcuts";
 import EngagementSync from "./engagement/engagement-sync";
+import DriveHealthBanner from "./drive-health-banner";
 import { Today } from "./engagement/today";
 import { Welcome } from "./engagement/welcome";
 import { Meetings } from "./engagement/meetings";
@@ -371,6 +372,13 @@ export default function MediaWorkspace() {
               )}
             </div>
           </div>
+          <DriveHealthBanner
+            currentUser={currentUser}
+            onOpen={() => {
+              setAdminTab("drive");
+              go("admin");
+            }}
+          />
           {store.mfa?.required && !store.mfa.enabled && (
             <div
               role="status"

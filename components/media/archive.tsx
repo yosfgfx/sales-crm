@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Asset from "@/components/_ui/asset";
 import { WORK_TYPE_LABELS, ideaHasCompany, type Attachment, type MediaData } from "@/data/media";
 import { useAttachmentSrc } from "./use-attachment-src";
@@ -193,5 +193,22 @@ export default function Archive({
 
 function ArchivePreview({ file, alt }: { file: Attachment; alt: string }) {
   const src = useAttachmentSrc(file);
+  const [failed, setFailed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    const probe = new window.Image();
+    probe.onerror = () => setFailed(src);
+    probe.src = src;
+    return () => {
+      probe.onerror = null;
+    };
+  }, [src]);
+  if (src && failed === src)
+    return (
+      <span className="flex flex-col items-center gap-2 px-4 text-center text-xs text-[var(--soft)]">
+        <Icon name="file" className="size-9" />
+        تعذّر جلب المعاينة من Google Drive
+      </span>
+    );
   return src ? <Asset type="image" width={16} height={9} sizes="(max-width: 768px) 100vw, 33vw" alt={alt} src={src} /> : null;
 }
