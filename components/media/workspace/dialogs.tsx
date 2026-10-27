@@ -20,15 +20,15 @@ import type { View } from "./shared";
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type Run = (action: () => Promise<unknown>, message?: string) => Promise<void>;
 
-const MINE: MediaNotification["type"][] = ["assignment", "approval", "feedback", "reminder", "quotation", "delivery", "honor", "achievement", "archive"];
+const MINE: MediaNotification["type"][] = ["assignment", "approval", "feedback", "reminder", "quotation", "delivery", "honor", "achievement", "archive", "task"];
 const TABS = [
   { id: "all", label: "الكل", match: (notice: MediaNotification) => !!notice },
   { id: "mine", label: "تخصني", match: (notice: MediaNotification) => MINE.includes(notice.type) },
   { id: "mentions", label: "الإشارات", match: (notice: MediaNotification) => notice.type === "mention" || notice.type === "chat" || notice.type === "comment" },
   { id: "meetings", label: "الاجتماعات", match: (notice: MediaNotification) => notice.type === "meeting" },
 ] as const;
-const ICONS: Partial<Record<MediaNotification["type"], Icon3DName>> = { meeting: "video", honor: "trophy", achievement: "trophy", approval: "check", assignment: "bolt", reminder: "bell", feedback: "note", mention: "chat", chat: "chat", quotation: "note", delivery: "check", archive: "calendar" };
-const ACTIONS: Partial<Record<MediaNotification["type"], string>> = { assignment: "افتح العمل", approval: "راجع الآن", feedback: "اعرض الملاحظات", meeting: "ادخل الغرفة", mention: "رد الآن", reminder: "افتح العمل", honor: "لوحة الشرف" };
+const ICONS: Partial<Record<MediaNotification["type"], Icon3DName>> = { task: "check", meeting: "video", honor: "trophy", achievement: "trophy", approval: "check", assignment: "bolt", reminder: "bell", feedback: "note", mention: "chat", chat: "chat", quotation: "note", delivery: "check", archive: "calendar" };
+const ACTIONS: Partial<Record<MediaNotification["type"], string>> = { task: "افتح المهمة", assignment: "افتح العمل", approval: "راجع الآن", feedback: "اعرض الملاحظات", meeting: "ادخل الغرفة", mention: "رد الآن", reminder: "افتح العمل", honor: "لوحة الشرف" };
 
 function groupOf(iso: string, now: number) {
   const age = now - Date.parse(iso);

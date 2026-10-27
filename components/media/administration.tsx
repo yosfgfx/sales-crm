@@ -21,6 +21,7 @@ import DriveIntegration from "./drive-integration";
 import IdeaImport from "./idea-import";
 import AdminWorkspace from "./admin-workspace";
 import ApiAccess from "./api-access";
+import AiSettings from "./ai-settings";
 import type { DiscussionTarget } from "./discussion-shortcuts";
 
 export default function Administration({
@@ -121,6 +122,7 @@ export default function Administration({
           { id: "drive", label: "أرشيف Google Drive" },
           { id: "import", label: "استيراد الأفكار" },
           { id: "api", label: "API وMCP" },
+          { id: "ai", label: "الذكاء الاصطناعي" },
         ]}
       />
       <div
@@ -130,6 +132,7 @@ export default function Administration({
         className="contents"
       >
         {tab === "api" && <ApiAccess />}
+        {tab === "ai" && <AiSettings />}
         {tab === "workspace" && (
           <AdminWorkspace
             onOpenIdea={onOpenIdea}

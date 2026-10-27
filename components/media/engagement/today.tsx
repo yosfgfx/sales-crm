@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { WORK_TYPE_LABELS, ideaCompanyLabel, type Idea, type MediaData, type TeamMember } from "@/data/media";
 import { addressed, type EngagementState, type Meeting } from "@/data/engagement";
 import { isOnline, useTeamPresence } from "@/stores/team-presence";
 import { useEngagement } from "@/stores/engagement-store";
-import { ActionButton, Icon, errorText } from "../ui";
+import { ActionButton, errorText } from "../ui";
 import { Icon3D } from "./icons-3d";
 import { PersonAvatar, useOnline } from "./person";
+import { SmartAdd, TaskRow } from "./tasks";
 import { AGENDA, STAGES, WORKS, addDays, arNum, plural, streakText, clock, daysBetween, dueText, firstName, greeting, isWorkDay, minutesText, nextStep, relativeTime, riyadhDay, stageIndex } from "./format";
 
 const EASE = [0.25, 1, 0.5, 1] as const;
@@ -276,6 +277,7 @@ export function Today({
   onOpenMeeting,
   onOpenHonor,
   onViewIdeas,
+  onViewTasks,
 }: {
   data: MediaData;
   currentUser: TeamMember;
@@ -283,11 +285,10 @@ export function Today({
   onOpenMeeting: (id?: string) => void;
   onOpenHonor: () => void;
   onViewIdeas: () => void;
+  onViewTasks: () => void;
 }) {
-  const { state, act, error } = useEngagement();
+  const { state, error } = useEngagement();
   const [filter, setFilter] = useState<Filter>("today");
-  const [quick, setQuick] = useState("");
-  const [quickError, setQuickError] = useState("");
   const today = riyadhDay();
   const f = currentUser.addressForm;
   const mine = useMemo(
@@ -329,20 +330,6 @@ export function Today({
     counts.today ? `عندك ${plural(counts.today, WORKS)} ${counts.today === 1 ? "موعده" : "موعدها"} اليوم` : mine.length ? `عندك ${plural(mine.length, WORKS)} ${mine.length === 1 ? "جارٍ" : "جارية"}` : addressed(f, "ما عندك أعمال مسندة الآن", "ما عندك أعمال مسندة الآن"),
     meetingToday ? `واجتماع «${nextMeeting.title}» الساعة ${new Intl.DateTimeFormat("ar-SA", { timeZone: "Asia/Riyadh", hour: "numeric", minute: "2-digit" }).format(new Date(nextMeeting.startsAt))}` : "",
   ].filter(Boolean).join(" ") + "." + (top ? ` ${addressed(f, "ابدأ", "ابدئي")} بـ «${top.title}»${top.dueDate === today ? " لأن موعدها اليوم" : top.dueDate && top.dueDate < today ? " لأنها متأخرة" : ""}.` : "");
-
-  const addQuick = async (event: FormEvent) => {
-    event.preventDefault();
-    const title = quick.trim();
-    if (!title) return;
-    setQuickError("");
-    setQuick("");
-    try {
-      await act({ action: "addTask", id: crypto.randomUUID(), title, dueDate: today });
-    } catch (cause) {
-      setQuick(title);
-      setQuickError(errorText(cause));
-    }
-  };
 
   return (
     <div className="flex flex-wrap items-start gap-6 lg:gap-7">
@@ -419,49 +406,18 @@ export function Today({
         </Reveal>
 
         <Reveal index={3}>
-          <form onSubmit={addQuick} className="media-card flex items-center gap-3 py-2.5 ps-3 pe-2.5">
-            <Icon3D name="sparkle" className="size-8" />
-            <label htmlFor="quick-capture" className="sr-only">إضافة سريعة</label>
-            <input
-              id="quick-capture"
-              value={quick}
-              maxLength={300}
-              onChange={(event) => setQuick(event.target.value)}
-              placeholder="وش في بالك؟ أضف مهمة ليومك…"
-              className="min-h-13 min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-[#7A8299]"
-            />
-            <button type="submit" aria-label="إضافة إلى خطة اليوم" className="flex size-13 shrink-0 items-center justify-center rounded-full bg-[#1D243C] text-white transition-transform duration-200 ease-power3-out hover:scale-105 active:scale-95">
-              <Icon name="plus" className="size-5" />
-            </button>
-          </form>
-          {quickError && <p role="alert" className="mt-2 text-sm text-[var(--danger)]">{quickError}</p>}
+          <SmartAdd currentUser={currentUser} />
           {openTasks.length + tasks.filter((task) => task.doneAt && task.doneAt.slice(0, 10) === today).length > 0 && (
             <ul className="mt-3 space-y-2">
-              {[...openTasks, ...tasks.filter((task) => task.doneAt && task.doneAt.slice(0, 10) === today)].slice(0, 8).map((task) => (
-                <motion.li layout key={task.id} className="flex items-center gap-3 rounded-2xl bg-white px-4 py-2.5 shadow-[0_0_0_1px_#E8EAF2]">
-                  <input
-                    type="checkbox"
-                    aria-label={`إنجاز ${task.title}`}
-                    checked={!!task.doneAt}
-                    onChange={(event) => void act({ action: "toggleTask", id: task.id, done: event.target.checked })}
-                    className="size-5 shrink-0 accent-[#1E8A5F]"
-                  />
-                  <span className={`min-w-0 flex-1 ${task.doneAt ? "text-[var(--soft)] line-through" : ""}`}>
-                    {task.title}
-                    {task.source === "meeting" && <span className="ms-2 text-xs text-[#11665E]">من الاجتماع</span>}
-                    {task.dueDate && task.dueDate !== today && <span className="ms-2 text-xs text-[var(--soft)]">{dueText(task.dueDate, today).label}</span>}
-                  </span>
-                  {!task.doneAt && (
-                    <button type="button" className="rounded-lg px-2 py-1 text-xs text-[var(--primary)] hover:bg-[var(--accent)]" onClick={() => void act({ action: "startSession", taskId: task.id, ideaId: task.ideaId, label: task.title })}>
-                      تركيز
-                    </button>
-                  )}
-                  <button type="button" aria-label={`حذف ${task.title}`} className="rounded-lg p-1.5 text-[var(--soft)] hover:bg-[var(--background)]" onClick={() => void act({ action: "deleteTask", id: task.id })}>
-                    <Icon name="close" className="size-3.5" />
-                  </button>
-                </motion.li>
-              ))}
+              <AnimatePresence initial={false}>
+                {[...openTasks, ...tasks.filter((task) => task.doneAt && task.doneAt.slice(0, 10) === today)].slice(0, 8).map((task) => (
+                  <TaskRow key={task.id} task={task} data={data} currentUser={currentUser} onOpenIdea={onOpenIdea} compact />
+                ))}
+              </AnimatePresence>
             </ul>
+          )}
+          {openTasks.length > 8 && (
+            <button type="button" onClick={onViewTasks} className="mt-2 text-sm text-[#5140B8] underline-offset-4 hover:underline">كل مهامي ({arNum(openTasks.length)})</button>
           )}
         </Reveal>
 

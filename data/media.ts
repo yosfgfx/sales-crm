@@ -31,7 +31,7 @@ export interface IdeaArchive { status: ArchiveStatus; archivedAt?: string; folde
 export type NotificationEntity = "idea" | "company" | "category" | "member" | "settings" | "chat" | "workspace" | "meeting" | "task" | "honor";
 export interface MediaNotification {
   id: string; recipientId: string; ideaId: string; title: string; body: string;
-  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder" | "activity" | "achievement" | "chat" | "mention" | "meeting" | "honor";
+  type: "approval" | "feedback" | "assignment" | "quotation" | "delivery" | "comment" | "archive" | "reminder" | "activity" | "achievement" | "chat" | "mention" | "meeting" | "honor" | "task";
   createdAt: string; read: boolean;
   actorId?: string; actorName?: string; entityType?: NotificationEntity; entityId?: string; action?: string;
 }

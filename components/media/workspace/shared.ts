@@ -3,6 +3,7 @@ import type { IconName } from "../ui";
 
 export type View =
   | "today"
+  | "tasks"
   | "overview"
   | "meetings"
   | "people"
@@ -17,6 +18,7 @@ export type View =
   | "admin";
 export const navigation: { id: View; label: string; icon: IconName }[] = [
   { id: "today", label: "يومي", icon: "home" },
+  { id: "tasks", label: "المهام", icon: "check" },
   { id: "overview", label: "نظرة عامة", icon: "grid" },
   { id: "ideas", label: "الأفكار والمحتوى", icon: "ideas" },
   { id: "approvals", label: "اعتمادات المدير", icon: "check" },
@@ -31,6 +33,7 @@ export const navigation: { id: View; label: string; icon: IconName }[] = [
 ];
 export const descriptions: Record<View, string> = {
   today: "خطة يومك، وتركيزك، وفريقك في مكان واحد.",
+  tasks: "اكتب المهمة كما تقولها، والمنصة تفهمها وتربطها وتتابعها معك.",
   overview: "كل فكرة، وكل مرحلة، في مساحة واحدة.",
   meetings: "غرفة الفريق يوم العمل عن بعد: أجندة وملاحظات وقرارات ومهام.",
   people: "من متصل الآن، ومن يعمل على ماذا.",

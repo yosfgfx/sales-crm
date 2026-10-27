@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 
-export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders", "job_runs", "social_voices", "social_messages", "social_reactions", "social_rate_limits", "operation_receipts", "change_cursor", "oauth_clients", "api_keys", "api_audit", "idea_edit_requests", "member_presence", "member_activity", "meetings", "tasks", "meeting_items", "meeting_attendance", "work_sessions", "honor_awards", "honor_cheers", "push_subscriptions"];
+export const BACKUP_TABLES = ["members", "accounts", "companies", "categories", "settings", "ideas", "idea_events", "attachments", "quotations", "notifications", "code_counters", "google_integration", "drive_folders", "archive_jobs", "upload_sessions", "deleted_ideas", "reminders", "job_runs", "social_voices", "social_messages", "social_reactions", "social_rate_limits", "operation_receipts", "change_cursor", "oauth_clients", "api_keys", "api_audit", "idea_edit_requests", "member_presence", "member_activity", "meetings", "tasks", "meeting_items", "meeting_attendance", "work_sessions", "honor_awards", "honor_cheers", "push_subscriptions", "task_updates", "ai_usage"];
 const RESTORE_ORDER = [...BACKUP_TABLES.filter((table) => table !== "settings"), "settings"];
 const MAGIC = Buffer.from("WASLBK1\0", "latin1");
 

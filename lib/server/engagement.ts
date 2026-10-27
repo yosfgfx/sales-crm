@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Idea, MediaNotification, TeamMember } from "@/data/media";
-import { HONOR_WEIGHTS, type EngagementState, type HonorAward, type HonorBoard, type HonorEntry, type Meeting, type MeetingItem, type MemberProfile, type PersonalTask, type WorkSession } from "@/data/engagement";
+import { HONOR_WEIGHTS, type EngagementState, type HonorAward, type HonorBoard, type HonorEntry, type Meeting, type MeetingItem, type MemberProfile, type WorkSession } from "@/data/engagement";
 import { isAdministrator, requireUser } from "./auth";
 import { database, type Queryable } from "./db";
 import { assertSameOrigin, MediaServerError, readJson } from "./http";
 import { insertNotifications, loadIdeas, loadReference } from "./repository";
+import { aiStatus } from "./ai";
+import { canSeeAllTasks, createTask, deleteTask, enrichTask, suggestIdeaTasks, toTask, updateTask } from "./tasks";
 
 type Row = Record<string, unknown>;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -32,9 +34,6 @@ const canManageMeetings = (member: TeamMember) => isAdministrator(member) || mem
 const canSeeScores = canManageMeetings;
 const eligible = (member: TeamMember) => member.active && member.role !== "superadmin" && member.role !== "manager";
 
-function toTask(row: Row): PersonalTask {
-  return { id: String(row.id), title: String(row.title), dueDate: row.due_date ? String(row.due_date) : null, doneAt: iso(row.done_at), ideaId: (row.idea_id as string) || null, meetingId: (row.meeting_id as string) || null, source: row.source as PersonalTask["source"], createdAt: iso(row.created_at)!, createdBy: String(row.created_by) };
-}
 function toSession(row: Row): WorkSession {
   return { id: String(row.id), memberId: String(row.member_id), ideaId: (row.idea_id as string) || null, taskId: (row.task_id as string) || null, label: String(row.label || ""), startedAt: iso(row.started_at)!, endedAt: iso(row.ended_at), seconds: row.seconds === null || row.seconds === undefined ? null : Number(row.seconds) };
 }
@@ -177,7 +176,7 @@ export async function loadEngagement(request: Request): Promise<EngagementState>
   const member = await requireUser(request, db);
   const now = new Date(), today = day(now), start = weekStart(today);
   const [tasks, session, running, focusRows, presenceRows, me, weekTasks, weekDelivered, meetings, honor, push, activity, reference] = await Promise.all([
-    db.query("select * from wasl.tasks where member_id = $1 and (done_at is null or done_at > now() - interval '7 days') order by done_at nulls first, due_date nulls last, created_at", [member.id]),
+    db.query("select * from wasl.tasks where (member_id = $1 or (created_by = $1 and done_at is null)) and (done_at is null or done_at > now() - interval '7 days') order by done_at nulls first, case priority when 'urgent' then 0 when 'high' then 1 when 'normal' then 2 else 3 end, due_date nulls last, created_at", [member.id]),
     db.query("select * from wasl.work_sessions where member_id = $1 and ended_at is null", [member.id]),
     db.query("select s.member_id, s.idea_id, s.label, s.started_at from wasl.work_sessions s where s.ended_at is null"),
     db.query<{ category: string | null; label: string; seconds: number }>("select c.name as category, s.label, sum(coalesce(s.seconds, extract(epoch from now() - s.started_at)))::int as seconds from wasl.work_sessions s left join wasl.ideas i on i.id = s.idea_id left join wasl.categories c on c.id = i.category_id where s.member_id = $1 and s.started_at >= $2::timestamptz group by c.name, s.label", [member.id, `${start}T00:00:00+03:00`]),
@@ -227,6 +226,7 @@ export async function loadEngagement(request: Request): Promise<EngagementState>
     honor,
     welcome: { show: me.rows[0]?.welcomed_on !== today, previousVisitAt: iso(me.rows[0]?.previous_visit_at) },
     push: { publicKey: process.env.WASL_VAPID_PUBLIC_KEY || null, subscribed: push.rows[0]?.n || 0 },
+    ai: { available: (await aiStatus(db).catch(() => ({ available: false }))).available },
   };
 }
 
@@ -322,23 +322,32 @@ export async function engagementAction(request: Request) {
         return { ok: true };
       }
       case "addTask": {
-        const id = uuid(body.id), title = text(body.title, 300, "عنوان المهمة");
-        const dueDate = body.dueDate ? String(body.dueDate) : null;
-        if (dueDate && !DAY.test(dueDate)) throw new MediaServerError("التاريخ غير صالح.", 422, "INVALID_INPUT");
-        const ideaId = optionalId(body.ideaId); await assertIdea(tx, ideaId);
-        await tx.query("insert into wasl.tasks (id, member_id, title, due_date, idea_id, source, created_by) values ($1, $2, $3, $4::date, $5, 'quick', $2) on conflict (id) do nothing", [id, actor.id, title, dueDate, ideaId]);
-        return { ok: true };
+        const task = await createTask(tx, actor, body);
+        return { ok: true, task };
+      }
+      case "enrichTask": {
+        const task = (await tx.query("select * from wasl.tasks where id = $1 and (member_id = $2 or created_by = $2)", [uuid(body.id), actor.id])).rows[0];
+        if (!task) throw new MediaServerError("المهمة غير موجودة.", 404, "NOT_FOUND");
+        return { ok: true, task: await enrichTask(tx, actor, toTask(task), String(body.text || task.title)) };
+      }
+      case "updateTask": {
+        return { ok: true, task: await updateTask(tx, actor, body) };
       }
       case "toggleTask": {
-        const id = uuid(body.id);
-        const updated = await tx.query("update wasl.tasks set done_at = case when $3 then coalesce(done_at, now()) else null end where id = $1 and member_id = $2 returning meeting_id", [id, actor.id, body.done === true]);
-        if (!updated.rows.length) throw new MediaServerError("المهمة غير موجودة.", 404, "NOT_FOUND");
-        await tx.query("update wasl.meeting_items set done = $2 where task_id = $1", [id, body.done === true]);
-        return { ok: true };
+        return { ok: true, task: await updateTask(tx, actor, { id: body.id, status: body.done === true ? "done" : "todo" }) };
       }
       case "deleteTask": {
-        await tx.query("delete from wasl.tasks where id = $1 and member_id = $2", [uuid(body.id), actor.id]);
-        return { ok: true };
+        return deleteTask(tx, actor, String(body.id || ""));
+      }
+      case "suggestTasks": {
+        if (!canSeeAllTasks(actor) && !(await tx.query("select 1 from wasl.ideas where id = $1 and (owner_id = $2 or designer_id = $2)", [String(body.ideaId || ""), actor.id])).rows.length) throw new MediaServerError("تقترح الخطة لأعمالك فقط.", 403, "FORBIDDEN");
+        return { suggestions: await suggestIdeaTasks(tx, actor, String(body.ideaId || "")) };
+      }
+      case "acceptTasks": {
+        const items = Array.isArray(body.tasks) ? body.tasks.slice(0, 12) : [];
+        const created = [];
+        for (const item of items) created.push(await createTask(tx, actor, { ...(item as Record<string, unknown>), exactTitle: (item as Record<string, unknown>).title, ideaId: body.ideaId, source: "ai" }));
+        return { ok: true, tasks: created };
       }
       case "planIdea": {
         const ideaId = optionalId(body.ideaId), dueDate = String(body.day || "");

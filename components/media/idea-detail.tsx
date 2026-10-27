@@ -24,6 +24,7 @@ import {
 import { QuoteDialog } from "./idea-detail/quote-dialog";
 import { EditRequestsPanel } from "./idea-detail/edit-requests";
 import { DeliveryPanel } from "./idea-detail/delivery-panel";
+import { IdeaTasks } from "./engagement/tasks";
 
 export default function IdeaDetail({
   idea,
@@ -201,6 +202,7 @@ export default function IdeaDetail({
     { id: "quotations", label: `العروض (${idea.quotations.length})` },
     { id: "presentation", label: "عرض الاعتماد" },
     { id: "files", label: `الملفات (${idea.attachments.length})` },
+    { id: "tasks", label: "المهام" },
     { id: "activity", label: "سجل العمل" },
   ];
   return (
@@ -317,6 +319,9 @@ export default function IdeaDetail({
                 setUploading={setUploading}
                 setPendingUpload={setPendingUpload}
               />
+            )}
+            {tab === "tasks" && currentUser && (
+              <IdeaTasks ideaId={idea.id} data={data} currentUser={currentUser} />
             )}
             {tab === "activity" && (
               <HistoryTab

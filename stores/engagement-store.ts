@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { EngagementState, Meeting, MemberProfile } from "@/data/engagement";
+import type { EngagementState, Meeting, MemberProfile, PersonalTask, TaskBoard } from "@/data/engagement";
 import { useTeamPresence } from "./team-presence";
 
 type Action = Record<string, unknown> & { action: string };
@@ -11,6 +11,9 @@ interface EngagementStore {
   loading: boolean;
   error: string | null;
   profiles: Record<string, MemberProfile>;
+  board: TaskBoard | null;
+  loadBoard: () => Promise<void>;
+  patchTask: (task: PersonalTask) => void;
   load: () => Promise<void>;
   act: <T = unknown>(payload: Action, options?: { reload?: boolean }) => Promise<T>;
   loadProfile: (memberId: string) => Promise<MemberProfile>;
@@ -37,6 +40,20 @@ export const useEngagement = create<EngagementStore>((set, get) => ({
   loading: false,
   error: null,
   profiles: {},
+  board: null,
+  loadBoard: async () => {
+    try {
+      const board = await request<TaskBoard>("/api/engagement?board=1");
+      set({ board });
+    } catch (error) {
+      set({ error: (error as Error).message });
+    }
+  },
+  patchTask: (task) =>
+    set((current) => ({
+      board: current.board ? { ...current.board, tasks: current.board.tasks.some((item) => item.id === task.id) ? current.board.tasks.map((item) => (item.id === task.id ? task : item)) : [task, ...current.board.tasks] } : current.board,
+      state: current.state ? { ...current.state, tasks: current.state.tasks.some((item) => item.id === task.id) ? current.state.tasks.map((item) => (item.id === task.id ? task : item)) : [task, ...current.state.tasks] } : current.state,
+    })),
   load: () => {
     if (inflight) return inflight;
     set({ loading: true });
@@ -55,12 +72,13 @@ export const useEngagement = create<EngagementStore>((set, get) => ({
   act: async (payload, options = {}) => {
     const result = await request<Record<string, unknown>>("/api/engagement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (result.meeting) get().mergeMeeting(result.meeting as Meeting);
+    if (result.task) get().patchTask(result.task as PersonalTask);
     if (result.online) {
       const online: Record<string, number> = {};
       for (const entry of result.online as { memberId: string; lastSeenAt: string | null }[]) if (entry.lastSeenAt) online[entry.memberId] = Date.parse(entry.lastSeenAt);
       useTeamPresence.setState({ online });
     }
-    if (options.reload !== false) await get().load();
+    if (options.reload !== false) await Promise.all([get().load(), get().board ? get().loadBoard() : Promise.resolve()]);
     return result as never;
   },
   loadProfile: async (memberId) => {

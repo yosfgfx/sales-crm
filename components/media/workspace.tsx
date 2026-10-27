@@ -37,6 +37,7 @@ import { Welcome } from "./engagement/welcome";
 import { Meetings } from "./engagement/meetings";
 import { HonorBoard } from "./engagement/honor";
 import { People, canSeeProfiles } from "./engagement/people";
+import { TaskBoardView } from "./engagement/tasks";
 
 export type { View };
 export { IdeaCard } from "./workspace/idea-card";
@@ -186,6 +187,11 @@ export default function MediaWorkspace() {
       setSelected(null);
       go("meetings");
       setMeetingId(notice.entityId);
+      return;
+    }
+    if (notice.entityType === "task") {
+      setSelected(null);
+      go("tasks");
       return;
     }
     if (notice.entityType === "honor") {
@@ -444,7 +450,11 @@ export default function MediaWorkspace() {
                   }}
                   onOpenHonor={() => go("honor")}
                   onViewIdeas={() => go(currentUser.role === "designer" ? "design" : "ideas")}
+                  onViewTasks={() => go("tasks")}
                 />
+              )}
+              {view === "tasks" && (
+                <TaskBoardView data={data} currentUser={currentUser} onOpenIdea={openIdea} />
               )}
               {view === "meetings" && (
                 <Meetings

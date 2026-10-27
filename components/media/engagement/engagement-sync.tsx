@@ -26,7 +26,9 @@ export default function EngagementSync({ memberId }: { memberId: string }) {
       if (reloadTimer) return;
       reloadTimer = setTimeout(() => {
         reloadTimer = undefined;
-        void useEngagement.getState().load();
+        const store = useEngagement.getState();
+        void store.load();
+        if (store.board) void store.loadBoard();
       }, 1200);
     };
     document.addEventListener("visibilitychange", visibility);
@@ -39,7 +41,7 @@ export default function EngagementSync({ memberId }: { memberId: string }) {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("wasl:realtime", realtime);
       window.removeEventListener("wasl:engagement", realtime);
-      useEngagement.setState({ state: null, profiles: {} });
+      useEngagement.setState({ state: null, profiles: {}, board: null });
     };
   }, [memberId]);
   return null;

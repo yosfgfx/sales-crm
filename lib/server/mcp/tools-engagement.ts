@@ -4,6 +4,7 @@ import { z } from "zod";
 import { engagementAction, loadEngagement, loadProfile } from "../engagement";
 import { internal, jsonRequest, names, tool, type McpContext } from "./context";
 import { loadReference } from "../repository";
+import { loadTaskBoard } from "../tasks";
 import { database } from "../db";
 
 export function registerEngagementTools(server: McpServer, ctx: McpContext) {
@@ -24,11 +25,36 @@ export function registerEngagementTools(server: McpServer, ctx: McpContext) {
     };
   }));
 
-  server.registerTool("add_task", { title: "إضافة مهمة شخصية", description: "Add a task to your own day plan.", inputSchema: { title: z.string().min(1).max(300), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), ideaId: z.string().optional() }, annotations: write },
-    tool(ctx, "add_task", async (args: { title: string; dueDate?: string; ideaId?: string }) => { const id = randomUUID(); await act({ action: "addTask", id, ...args }); return { id }; }));
+  server.registerTool("add_task", {
+    title: "إضافة مهمة", description: "Create a task, optionally for another member (assigneeId) and linked to an idea (ideaId). Natural text works too: «@سارة تجهيز نص الحملة بكرة #IC-2026-012». With smart=true (default) the platform's AI classifies the task, links it to the right idea and sets the sequence step.",
+    inputSchema: { title: z.string().min(1).max(600), assigneeId: z.string().optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), ideaId: z.string().optional(), priority: z.enum(["urgent", "high", "normal", "low"]).optional(), kind: z.enum(["content", "design", "review", "coordination", "meeting", "personal", "other"]).optional(), description: z.string().max(4000).optional(), smart: z.boolean().default(true) }, annotations: write,
+  }, tool(ctx, "add_task", async ({ smart, ...args }: { title: string; smart: boolean; assigneeId?: string; dueDate?: string; ideaId?: string; priority?: string; kind?: string; description?: string }) => {
+    const id = randomUUID();
+    const created = await act({ action: "addTask", id, ...args }) as { task: unknown };
+    if (!smart) return created.task;
+    try { return (await act({ action: "enrichTask", id, text: args.title }) as { task: unknown }).task; } catch { return created.task; }
+  }));
 
-  server.registerTool("complete_task", { title: "إنجاز مهمة", description: "Mark one of your tasks done (or not done).", inputSchema: { taskId: z.string(), done: z.boolean().default(true) }, annotations: write },
+  server.registerTool("list_tasks", { title: "قائمة المهام", description: "Tasks you can see (yours, ones you created, ones on your ideas; managers and administrators see the whole team), with the latest updates and per-member load.", inputSchema: { status: z.enum(["todo", "doing", "done"]).optional(), assigneeId: z.string().optional(), ideaId: z.string().optional() }, annotations: read },
+    tool(ctx, "list_tasks", async (args: { status?: string; assigneeId?: string; ideaId?: string }) => {
+      const board = await loadTaskBoard(database(), ctx.member);
+      const label = names(await loadReference(database()));
+      const tasks = board.tasks.filter((task) => (!args.status || task.status === args.status) && (!args.assigneeId || task.assigneeId === args.assigneeId) && (!args.ideaId || task.ideaId === args.ideaId));
+      return { tasks: tasks.map((task) => ({ ...task, assignee: label.member(task.assigneeId) })), updates: board.updates.slice(0, 30).map((update) => ({ ...update, actor: label.member(update.actorId) })), load: board.load.map((entry) => ({ ...entry, member: label.member(entry.memberId) })) };
+    }));
+
+  server.registerTool("update_task", { title: "تحديث مهمة", description: "Change a task's status (todo/doing/done), assignee, due date, priority, idea link or title, and/or post a progress note (note) that the assignee and creator are notified about.", inputSchema: { taskId: z.string(), status: z.enum(["todo", "doing", "done"]).optional(), assigneeId: z.string().optional(), dueDate: z.string().nullable().optional(), priority: z.enum(["urgent", "high", "normal", "low"]).optional(), ideaId: z.string().nullable().optional(), title: z.string().max(300).optional(), note: z.string().max(2000).optional() }, annotations: write },
+    tool(ctx, "update_task", async ({ taskId, ...patch }: Record<string, unknown> & { taskId: string }) => (await act({ action: "updateTask", id: taskId, ...patch }) as { task: unknown }).task));
+
+  server.registerTool("complete_task", { title: "إنجاز مهمة", description: "Mark a task done (or reopen it).", inputSchema: { taskId: z.string(), done: z.boolean().default(true) }, annotations: write },
     tool(ctx, "complete_task", async ({ taskId, done }: { taskId: string; done: boolean }) => act({ action: "toggleTask", id: taskId, done })));
+
+  server.registerTool("plan_idea_tasks", { title: "اقتراح خطة مهام لفكرة", description: "Ask the platform's AI for a short, sequenced task plan for an idea (content → approval → design → delivery), then create the accepted ones with apply=true.", inputSchema: { ideaId: z.string(), apply: z.boolean().default(false) }, annotations: write },
+    tool(ctx, "plan_idea_tasks", async ({ ideaId, apply }: { ideaId: string; apply: boolean }) => {
+      const { suggestions } = await act({ action: "suggestTasks", ideaId }) as { suggestions: unknown[] };
+      if (!apply) return { suggestions };
+      return act({ action: "acceptTasks", ideaId, tasks: suggestions });
+    }));
 
   server.registerTool("focus_session", { title: "مؤقت التركيز", description: "Start a focus session on an idea or task, or stop the running one.", inputSchema: { action: z.enum(["start", "stop"]), ideaId: z.string().optional(), taskId: z.string().optional(), label: z.string().max(300).optional() }, annotations: write },
     tool(ctx, "focus_session", async (args: { action: "start" | "stop"; ideaId?: string; taskId?: string; label?: string }) => act(args.action === "stop" ? { action: "stopSession" } : { action: "startSession", ideaId: args.ideaId, taskId: args.taskId, label: args.label })));
