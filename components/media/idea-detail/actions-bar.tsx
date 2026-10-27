@@ -166,33 +166,8 @@ export function ActionsBar({
             بدء التصميم
           </ActionButton>
         )}
-        {canDesign && idea.status === "designing" && (
-          <ActionButton
-            primary
-            disabled={busy}
-            onClick={() =>
-              void run(
-                () => store.changeDesignStatus(idea.id, "design_review"),
-                "انتقل العمل إلى مراجعة التصميم.",
-              )
-            }
-          >
-            إرسال التصميم للمراجعة
-          </ActionButton>
-        )}
-        {canDesign && idea.status === "design_review" && (
+        {canDesign && (idea.status === "designing" || idea.status === "design_review") && (
           <>
-            <ActionButton
-              disabled={busy}
-              onClick={() =>
-                void run(
-                  () => store.changeDesignStatus(idea.id, "designing"),
-                  "أُعيد العمل إلى التصميم.",
-                )
-              }
-            >
-              استكمال التصميم
-            </ActionButton>
             <ActionButton
               primary
               disabled={busy}

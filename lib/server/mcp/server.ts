@@ -7,7 +7,7 @@ import { registerEngagementTools } from "./tools-engagement";
 import { fullIdea, registerIdeaTools } from "./tools-ideas";
 
 const INSTRUCTIONS = `Wasl (وصل) is the internal-communications workspace of the corporate communication team (Arabic UI, Asia/Riyadh time).
-Workflow: draft → (quotations) → review → approved → scheduled → designing → design_review → delivered. Ideas can also be changes (sent back), rejected, or cancelled.
+Workflow: draft → (quotations) → review → approved → scheduled → designing → delivered. Ideas can also be changes (sent back), rejected, or cancelled.
 Roles: content writes ideas; manager approves ideas and content (never their own); designer schedules, designs and delivers (the design belongs to the designer); admin/superadmin can do everything.
 Delivered work is archived automatically to Google Drive (year/month/company/project). The team also has a group chat and per-item discussions (read_discussion, post_message); deleted ideas go to a restorable trash.
 An idea can serve several companies (companyIds) or all companies (allCompanies). Members can ask for an edit on a colleague's idea (request_idea_edit); the department manager or an administrator decides it (decide_idea_edit).

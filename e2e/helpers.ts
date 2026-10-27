@@ -12,9 +12,9 @@ export async function signIn(page: Page, who: Who, ip = "198.51.100.10") {
   expect(response.status(), `sign in as ${who}`).toBe(200);
   const engagement = page.waitForResponse((reply) => reply.url().includes("/api/engagement") && reply.request().method() === "GET", { timeout: 20_000 }).catch(() => null);
   await page.goto("/");
-  await expect(page.getByRole("main")).toBeVisible();
   await engagement;
   await dismissWelcome(page);
+  await expect(page.getByRole("main")).toBeVisible();
 }
 
 export async function dismissWelcome(page: Page) {

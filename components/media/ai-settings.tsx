@@ -9,21 +9,31 @@ import { Icon3D } from "./engagement/icons-3d";
 type Usage = { at: string; memberId: string | null; purpose: string; inputTokens: number; outputTokens: number; costUsd: number; ok: boolean; error: string | null };
 const PURPOSES: Record<string, string> = { parse_task: "فهم مهمة", plan_idea: "خطة فكرة", nudge: "تذكير صباحي" };
 
+async function fetchAiStatus(): Promise<AiStatus & { usage: Usage[] }> {
+  const response = await fetch("/api/ai", { cache: "no-store" });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || "تعذر تحميل الحالة.");
+  return body;
+}
+
 export default function AiSettings() {
   const members = useMediaStore((store) => store.data.members);
   const [status, setStatus] = useState<(AiStatus & { usage: Usage[] }) | null>(null);
   const [budget, setBudget] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const load = async () => {
-    const response = await fetch("/api/ai", { cache: "no-store" });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "تعذر تحميل الحالة.");
-    setStatus(body);
-    setBudget(String(body.budgetUsd));
-  };
   useEffect(() => {
-    void load().catch((cause) => setError(errorText(cause)));
+    let cancelled = false;
+    void fetchAiStatus()
+      .then((body) => {
+        if (cancelled) return;
+        setStatus(body);
+        setBudget(String(body.budgetUsd));
+      })
+      .catch((cause) => !cancelled && setError(errorText(cause)));
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const save = async (patch: { enabled?: boolean; budgetUsd?: number }) => {
     setBusy(true);

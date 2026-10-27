@@ -68,8 +68,8 @@ test("meetings: the manager schedules one, a member joins, and an action item la
 test("the daily home, honor board and team pages render, and profiles are limited to managers", async ({ browser }) => {
   const sara = await pageAs(browser, "sara");
   await expect(sara.getByRole("main").getByRole("heading", { level: 1, name: /الخير يا سارة/ })).toBeVisible();
-  await sara.getByLabel("إضافة سريعة").fill("تجهيز مسودة رسالة الجمعة");
-  await sara.getByRole("button", { name: "إضافة إلى خطة اليوم" }).click();
+  await sara.getByLabel("إضافة مهمة").first().fill("تجهيز مسودة رسالة الجمعة");
+  await sara.getByLabel("إضافة مهمة").first().press("Enter");
   await expect(sara.getByText("تجهيز مسودة رسالة الجمعة")).toBeVisible();
   await navigate(sara, "لوحة الشرف");
   await expect(sara.getByRole("heading", { name: "كيف يُختار الموظف المثالي؟" })).toBeVisible();

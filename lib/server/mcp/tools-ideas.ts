@@ -114,8 +114,8 @@ export function registerIdeaTools(server: McpServer, ctx: McpContext) {
   }, tool(ctx, "schedule_idea", async ({ ideaId, ...input }: { ideaId: string; designerId: string; scheduledAt: string; dueDate?: string; priority?: string }) => operate(ctx, { type: "scheduleIdea", ideaId, input })));
 
   server.registerTool("set_design_status", {
-    title: "مرحلة التصميم", description: "Move design work forward: designing (start), design_review (designer's final check) or delivered (final delivery; needs a final file per channel and triggers Google Drive archiving).",
-    inputSchema: { ideaId: z.string(), status: z.enum(["designing", "design_review", "delivered"]) }, annotations: write,
+    title: "مرحلة التصميم", description: "Move design work forward: designing (start) or delivered (final delivery; needs a final file per channel and triggers Google Drive archiving).",
+    inputSchema: { ideaId: z.string(), status: z.enum(["designing", "delivered"]) }, annotations: write,
   }, tool(ctx, "set_design_status", async ({ ideaId, status }: { ideaId: string; status: string }) => operate(ctx, { type: "changeDesignStatus", ideaId, status })));
 
   server.registerTool("add_comment", { title: "إضافة تعليق", description: "Add a comment to an idea's history; the responsible members are notified.", inputSchema: { ideaId: z.string(), text: z.string().min(1).max(4000) }, annotations: write },

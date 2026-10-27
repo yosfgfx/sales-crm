@@ -28,8 +28,6 @@ test("an idea travels from content to delivery, and the designer never archives 
   await idea.getByRole("button", { name: "رفع الملفات وحفظها" }).click();
   await expect(idea.getByText("لم تُرفق النسخة النهائية")).toBeHidden();
   await expect(idea.getByRole("tab", { name: "الملفات (1)" })).toBeVisible();
-  await idea.getByRole("button", { name: "إرسال التصميم للمراجعة" }).click();
-  await expect(idea.getByText("المراجعة النهائية").first()).toBeVisible();
   await idea.getByRole("button", { name: "تسجيل التسليم النهائي" }).click();
   await expect(idea.getByRole("status").filter({ hasText: "تم التسليم" })).toBeVisible();
   await expect(idea.getByText("تم التسليم").first()).toBeVisible();

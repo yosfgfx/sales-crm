@@ -45,7 +45,7 @@ function step(previous: MediaData, memberId: string, operation: (data: MediaData
   data = step(data, "faisal", (d, a) => scheduleMediaIdea(d, a, ideaId, { designerId: "faisal", scheduledAt: "2026-10-10" }));
   reject(() => scheduleMediaIdea(data, actor(data, "omar"), ideaId, { designerId: "omar", scheduledAt: "2026-10-10" }), "FORBIDDEN");
   data = step(data, "faisal", (d, a) => changeMediaDesignStatus(d, a, ideaId, "designing"));
-  data = step(data, "faisal", (d, a) => changeMediaDesignStatus(d, a, ideaId, "design_review"));
+  reject(() => changeMediaDesignStatus(data, actor(data, "faisal"), ideaId, "design_review"), "INVALID_TRANSITION");
   const files: Attachment[] = data.ideas[0].channels.map((channel) => ({ id: `final-${channel}`, name: `${channel}.mp4`, size: 3072, mime: "video/mp4", url: `/api/files/final-${channel}`, kind: "final", channel }));
   data = step(data, "faisal", (d, a) => addMediaAttachments(d, a, ideaId, files.slice(0, 2)));
   reject(() => changeMediaDesignStatus(data, actor(data, "faisal"), ideaId, "delivered"), "MISSING_DELIVERABLES");
@@ -139,7 +139,7 @@ test("every persisted idea activity reaches active managers once with authentica
   const author = actor(before, "noura");
   const next = patchMediaIdea(before, author, "idea-003", { content: "نص يستجيب لملاحظات المدير" });
   const fresh = next.notifications.slice(0, next.notifications.length - before.notifications.length);
-  assert.deepEqual(fresh.map((notice) => notice.recipientId), ["manager"]);
+  assert.deepEqual(fresh.map((notice) => notice.recipientId).sort(), ["admin", "manager"]);
   assert.equal(fresh[0].actorId, author.id); assert.equal(fresh[0].actorName, author.name);
   assert.equal(fresh[0].entityType, "idea"); assert.equal(fresh[0].entityId, "idea-003"); assert.equal(fresh[0].action, "edited");
   assert.match(fresh[0].body, /نفّذ التعديلات المطلوبة/);
@@ -161,7 +161,7 @@ test("completed delivery celebrates both responsible teammates and informs the m
   work.attachments = before.ideas.find((item) => item.status === "delivered" && item.channels.length === 3)!.attachments.map((file, index) => ({ ...file, id: `celebration-file-${index}` }));
   const next = changeMediaDesignStatus(before, actor(before, "faisal"), work.id, "delivered");
   const achievements = next.notifications.filter((notice) => notice.ideaId === work.id && notice.action === "delivered");
-  assert.deepEqual(achievements.map((notice) => notice.recipientId).sort(), ["faisal", "manager", "noura"]);
+  assert.deepEqual(achievements.map((notice) => notice.recipientId).sort(), ["admin", "faisal", "manager", "noura"]);
   assert.ok(achievements.every((notice) => notice.type === "achievement" && notice.actorId === "faisal"));
 });
 

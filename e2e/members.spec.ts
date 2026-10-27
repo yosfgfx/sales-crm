@@ -8,6 +8,8 @@ test("an administrator deletes a member permanently after confirming the name (m
   const created = await admin.request.post("/api/accounts", { data: { operation: "create", member: { name, title: "اختبار", role: "content" }, username, password: "Temp-Member-Pass-2026" }, headers: { origin: String(test.info().project.use.baseURL || ORIGIN) } });
   expect(created.status()).toBe(200);
   await admin.reload();
+  await expect(admin.getByRole("main")).toBeVisible();
+  await admin.waitForLoadState("networkidle");
   const menu = admin.getByRole("button", { name: "فتح القائمة الرئيسية" });
   if (await menu.isVisible()) await menu.click();
   await admin.getByRole("button", { name: "إدارة النظام" }).click();

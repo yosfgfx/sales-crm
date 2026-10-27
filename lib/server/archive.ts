@@ -199,7 +199,7 @@ export async function runArchiveJob(jobId?: string, q: Queryable = database()) {
     await q.query("update wasl.ideas set archive_status = 'done', archived_at = now() where id = $1", [job.idea_id]);
     const actor = (await loadIntegration(q))?.connected_by || idea.ownerId;
     await q.query("insert into wasl.idea_events (id, idea_id, at, actor_id, action, note) values ($1, $2, now(), $3, 'archived', 'أُرشف العمل في Google Drive تلقائياً')", [randomUUID(), job.idea_id, actor]);
-    const managers = (await q.query<{id:string}>("select id from wasl.members where active and role='manager'")).rows.map((member) => member.id);
+    const managers = (await q.query<{id:string}>("select id from wasl.members where active and role in ('manager', 'admin', 'superadmin')")).rows.map((member) => member.id);
     await insertNotifications(q, [...new Set([idea.ownerId, idea.designerId, ...managers].filter(Boolean))].map((recipientId) => ({ id: randomUUID(), recipientId, ideaId: idea.id, type: "archive" as never, title: "أُرشف العمل في Google Drive", body: `النظام · أُرشف ${idea.title} في Google Drive`, createdAt: now, read: false, actorId: actor, actorName: "النظام", entityType: "idea", entityId: idea.id, action: "archived" })));
     return { id: job.id, status: "done" as const };
   } catch (error) {

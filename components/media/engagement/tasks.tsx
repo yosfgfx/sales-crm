@@ -285,8 +285,8 @@ export function TaskBoardView({ data, currentUser, onOpenIdea }: { data: MediaDa
   const visible = tasks.filter((task) => {
     if (member && task.assigneeId !== member) return false;
     switch (filter) {
-      case "mine": return task.assigneeId === currentUser.id && task.status !== "done";
-      case "created": return task.createdBy === currentUser.id && task.status !== "done";
+      case "mine": return (task.assigneeId === currentUser.id || task.createdBy === currentUser.id) && task.status !== "done";
+      case "created": return task.createdBy === currentUser.id && task.assigneeId !== currentUser.id && task.status !== "done";
       case "late": return task.status !== "done" && !!task.dueDate && task.dueDate < today;
       case "today": return task.status !== "done" && task.dueDate === today;
       case "done": return task.status === "done";
@@ -294,8 +294,8 @@ export function TaskBoardView({ data, currentUser, onOpenIdea }: { data: MediaDa
     }
   });
   const counts = {
-    mine: tasks.filter((task) => task.assigneeId === currentUser.id && task.status !== "done").length,
-    created: tasks.filter((task) => task.createdBy === currentUser.id && task.status !== "done").length,
+    mine: tasks.filter((task) => (task.assigneeId === currentUser.id || task.createdBy === currentUser.id) && task.status !== "done").length,
+    created: tasks.filter((task) => task.createdBy === currentUser.id && task.assigneeId !== currentUser.id && task.status !== "done").length,
     late: tasks.filter((task) => task.status !== "done" && !!task.dueDate && task.dueDate < today).length,
     today: tasks.filter((task) => task.status !== "done" && task.dueDate === today).length,
     done: tasks.filter((task) => task.status === "done").length,
@@ -305,7 +305,7 @@ export function TaskBoardView({ data, currentUser, onOpenIdea }: { data: MediaDa
   const stale = tasks.filter((task) => task.status === "doing" && Date.parse(task.updatedAt) < staleBefore).length;
   const doneWeek = (board?.load || []).reduce((sum, entry) => sum + entry.doneWeek, 0);
   const groups = groupTasks(visible, manager && filter !== "mine" && filter !== "created" && !member, data);
-  const filters: [Filter, string][] = manager ? [["team", "كل الفريق"], ["mine", "لي"], ["late", "متأخرة"], ["today", "اليوم"], ["done", "منجزة"]] : [["mine", "لي"], ["created", "أنشأتها"], ["late", "متأخرة"], ["today", "اليوم"], ["done", "منجزة"]];
+  const filters: [Filter, string][] = manager ? [["team", "كل الفريق"], ["mine", "مهامي"], ["late", "متأخرة"], ["today", "اليوم"], ["done", "منجزة"]] : [["mine", "مهامي"], ["created", "أسندتها لغيري"], ["late", "متأخرة"], ["today", "اليوم"], ["done", "منجزة"]];
   return (
     <div className="flex flex-wrap items-start gap-6">
       <section className="flex min-w-0 flex-[999_1_620px] flex-col gap-4">

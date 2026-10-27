@@ -26,11 +26,12 @@ export function WorkBoard({
   const stages =
     mode === "content"
       ? ["draft", "quotations", "review", "changes", ...(showClosed ? ["rejected", "cancelled"] : [])]
-      : ["approved", "scheduled", "designing", "design_review", "delivered"];
+      : ["approved", "scheduled", "designing", "delivered"];
+  const stageOf = (idea: Idea) => (idea.status === "design_review" ? "designing" : idea.status);
   const closedCount = data.ideas.filter((i) => i.status === "rejected" || i.status === "cancelled").length;
   const ideas = data.ideas.filter(
     (i) =>
-      stages.includes(i.status) &&
+      stages.includes(stageOf(i)) &&
       (company === "all" || ideaHasCompany(i, company)) &&
       (category === "all" || i.categoryId === category) &&
       (proposer === "all" ||
@@ -156,12 +157,12 @@ export function WorkBoard({
                   {STATUS_LABELS[stage as Idea["status"]]}
                 </h2>
                 <span className="flex size-6 items-center justify-center rounded-md bg-white text-xs text-[var(--soft)]">
-                  {ideas.filter((i) => i.status === stage).length}
+                  {ideas.filter((i) => stageOf(i) === stage).length}
                 </span>
               </div>
               <div className="space-y-3">
                 {ideas
-                  .filter((i) => i.status === stage)
+                  .filter((i) => stageOf(i) === stage)
                   .sort(
                     (a, b) =>
                       rank[a.priority] - rank[b.priority] ||
@@ -175,8 +176,8 @@ export function WorkBoard({
                       onOpen={onOpen}
                     />
                   ))}
-                {!ideas.some((i) => i.status === stage) && (
-                  <div className="rounded-xl border border-dashed border-[#cdd2df] px-4 py-10 text-center text-xs leading-relaxed text-[var(--soft)]">
+                {!ideas.some((i) => stageOf(i) === stage) && (
+                  <div className="rounded-xl border border-dashed border-[#cdd2df] px-4 py-10 text-center text-xs leading-relaxed text-[#52617b]">
                     {stage === "approved"
                       ? "تنتقل الأفكار إلى هنا بعد اعتماد المدير."
                       : "لا توجد أعمال في هذه المرحلة."}

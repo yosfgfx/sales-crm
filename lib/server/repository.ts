@@ -140,7 +140,7 @@ export async function insertNotifications(q: Queryable, notices: MediaNotificati
 
 export interface WorkspaceActivityInput { entityType: NotificationEntity; entityId: string; action: string; title: string; body: string; recipients?: string[]; type?: MediaNotification["type"] }
 export async function notifyWorkspaceActivity(q: Queryable, actor: TeamMember, input: WorkspaceActivityInput): Promise<void> {
-  const recipients = await q.query<{ id: string }>("select id from wasl.members where active and (role = 'manager' or id = any($1::text[])) order by id", [input.recipients || []]);
+  const recipients = await q.query<{ id: string }>("select id from wasl.members where active and id <> $2 and (role in ('manager', 'admin', 'superadmin') or id = any($1::text[])) order by id", [input.recipients || [], actor.id]);
   const at = new Date().toISOString();
   await insertNotifications(q, recipients.rows.map(({ id }) => ({ id: randomUUID(), recipientId: id, ideaId: input.entityType === "idea" ? input.entityId : "", type: input.type || "activity", title: input.title, body: `${actor.name} · ${input.body}`, createdAt: at, read: false, actorId: actor.id, actorName: actor.name, entityType: input.entityType, entityId: input.entityId, action: input.action })));
 }

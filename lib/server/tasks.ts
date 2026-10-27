@@ -20,11 +20,12 @@ const addDays = (value: string, days: number) => { const date = new Date(`${valu
 const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
 export const canSeeAllTasks = (member: TeamMember) => isAdministrator(member) || member.role === "manager";
 
+const ymd = (value: unknown) => value instanceof Date ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}` : value ? String(value).slice(0, 10) : null;
 export function toTask(row: Row): PersonalTask {
   const ai = typeof row.ai === "string" ? JSON.parse(row.ai) : row.ai;
   const fields = typeof row.fields === "string" ? JSON.parse(row.fields) : row.fields;
   return {
-    id: String(row.id), title: String(row.title), description: String(row.description || ""), dueDate: row.due_date ? String(row.due_date) : null, doneAt: iso(row.done_at), ideaId: (row.idea_id as string) || null, meetingId: (row.meeting_id as string) || null,
+    id: String(row.id), title: String(row.title), description: String(row.description || ""), dueDate: ymd(row.due_date), doneAt: iso(row.done_at), ideaId: (row.idea_id as string) || null, meetingId: (row.meeting_id as string) || null,
     source: row.source as PersonalTask["source"], createdAt: iso(row.created_at)!, createdBy: String(row.created_by), assigneeId: String(row.member_id),
     status: (row.status as TaskStatus) || (row.done_at ? "done" : "todo"), priority: (row.priority as TaskPriority) || "normal", kind: (row.kind as TaskKind) || "other", sequence: row.sequence === null || row.sequence === undefined ? null : Number(row.sequence),
     lastUpdate: String(row.last_update || ""), updatedAt: iso(row.updated_at) || iso(row.created_at)!, ai: (ai && typeof ai === "object" ? ai : {}) as PersonalTask["ai"], fields: (fields && typeof fields === "object" ? fields : {}) as Record<string, string>,
@@ -91,7 +92,7 @@ export function parseTaskText(raw: string, members: Pick<TeamMember, "id" | "nam
   else if (todayWord.test(text)) { dueDate = today; text = text.replace(todayWord, "").trim(); }
   else {
     for (const name of weekday) {
-      const pattern = word(`(?:يوم\\s+)?${name}`);
+      const pattern = word(`يوم\\s+${name}`);
       if (pattern.test(text)) {
         const current = new Date(`${today}T12:00:00Z`).getUTCDay();
         const gap = (dayIndex(name) - current + 7) % 7 || 7;

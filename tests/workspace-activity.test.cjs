@@ -17,7 +17,7 @@ test("creating and editing a new idea notify managers with the authenticated act
   const result = await h.op("admin", { type: "createIdea", input: { ...input, title: "نشاط جديد للفريق", ownerId: "sara" }, actorId: "root", actorName: "اسم مزور", requestId: randomUUID() });
   created = result.idea;
   const fresh = await notices(created.id, "created");
-  assert.deepEqual(fresh.map((notice) => notice.recipient_id), ["manager", "sara"]);
+  assert.deepEqual(fresh.map((notice) => notice.recipient_id).sort(), ["manager", "root", "sara"]);
   assert.ok(fresh.every((notice) => notice.actor_id === "admin" && notice.actor_name === member("admin").name && notice.entity_type === "idea"));
   assert.equal(fresh.find((notice) => notice.recipient_id === "sara").type, "assignment");
   await h.op("sara", { type: "patchIdea", ideaId: created.id, patch: { description: "شرح أكثر دقة للفكرة" }, requestId: randomUUID() });
@@ -77,7 +77,7 @@ test("soft deleted work is visible only to admins, preserves its files, and rest
 
 test("workspace activity includes active managers once and snapshots human actors for account hooks", async () => {
   await h.database.transaction((tx) => repository.notifyWorkspaceActivity(tx, member("admin"), { entityType: "member", entityId: "noura", action: "member_updated", title: "تحديث حساب الفريق", body: "حدّث حساب عضو الفريق", recipients: ["manager", "noura", "inactive-manager", "noura"] }));
-  const rows = await notices("noura", "member_updated"); assert.deepEqual(rows.map((notice) => notice.recipient_id), ["manager", "noura"]);
+  const rows = await notices("noura", "member_updated"); assert.deepEqual(rows.map((notice) => notice.recipient_id).sort(), ["manager", "noura", "root"]);
   assert.ok(rows.every((notice) => notice.actor_name === member("admin").name && notice.body.includes(member("admin").name)));
 });
 
@@ -120,11 +120,11 @@ test("unfinished work restores with explicit replacement assignments when previo
   await h.pg.query("update wasl.members set role='content' where id='sara'");
 });
 
-test("removing a required delivered output reopens final review and marks its archive for review", async () => {
+test("removing a required delivered output reopens design and marks its archive for review", async () => {
   const idea = h.data.ideas.find((item) => item.id === "idea-012");
   const file = idea.attachments.find((item) => item.kind === "final");
   const result = await h.op("admin", { type: "removeAttachment", ideaId: idea.id, attachmentId: file.id });
-  assert.equal(result.idea.status, "design_review");
+  assert.equal(result.idea.status, "designing");
   assert.equal(result.idea.deliveredAt, undefined);
   assert.equal(result.idea.archive.status, "needs_review");
   assert.ok((await notices(idea.id, "attachment_removed")).some((notice) => notice.recipient_id === "manager" && /استكمال نسخ النشر/.test(notice.body)));

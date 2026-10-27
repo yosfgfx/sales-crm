@@ -297,7 +297,7 @@ async function notifySocial(
   }
   const recipients = (
     await q.query<{ id: string }>(
-      "select id from wasl.members where active=true and id<>$1 and (role='manager' or id=any($2::text[]))",
+      "select id from wasl.members where active=true and id<>$1 and (role in ('manager','admin','superadmin') or id=any($2::text[]))",
       [
         actor.id,
         [

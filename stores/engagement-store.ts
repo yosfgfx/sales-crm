@@ -72,7 +72,10 @@ export const useEngagement = create<EngagementStore>((set, get) => ({
   act: async (payload, options = {}) => {
     const result = await request<Record<string, unknown>>("/api/engagement", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (result.meeting) get().mergeMeeting(result.meeting as Meeting);
-    if (result.task) get().patchTask(result.task as PersonalTask);
+    if (result.task) {
+      get().patchTask(result.task as PersonalTask);
+      if (!get().board) void get().loadBoard();
+    }
     if (result.online) {
       const online: Record<string, number> = {};
       for (const entry of result.online as { memberId: string; lastSeenAt: string | null }[]) if (entry.lastSeenAt) online[entry.memberId] = Date.parse(entry.lastSeenAt);

@@ -46,10 +46,10 @@ function approvalReady(idea: Idea) {
 }
 interface NotificationSpec { recipients: string[]; type: MediaNotification["type"]; title: string; body: string }
 function ideaNotices(data: MediaData, actor: TeamMember, previous: Idea | null, next: Idea, action: HistoryAction, note: string, at: string, ctx?: WorkflowContext, specification?: NotificationSpec): MediaNotification[] {
-  const managers = data.members.filter((member) => member.active && member.role === "manager").map((member) => member.id);
+  const managers = data.members.filter((member) => member.active && (member.role === "manager" || isAdministrator(member))).map((member) => member.id);
   const recipients = new Set([...managers, ...(specification?.recipients || []), ...(previous?.ownerId !== next.ownerId ? [next.ownerId] : []), ...(next.designerId && previous?.designerId !== next.designerId ? [next.designerId] : [])]);
   const detail = action === "edited" && previous?.status === "changes" ? "نفّذ التعديلات المطلوبة وفق ملاحظات المدير" : action === "submitted" && previous?.managerFeedback ? "أعاد إرسال الفكرة بعد معالجة ملاحظات المدير" : note;
-  return [...recipients].filter((recipientId) => data.members.some((member) => member.id === recipientId && member.active)).map((recipientId) => {
+  return [...recipients].filter((recipientId) => data.members.some((member) => member.id === recipientId && member.active) && (recipientId !== actor.id || specification?.recipients.includes(recipientId) || (previous?.ownerId !== next.ownerId && recipientId === next.ownerId))).map((recipientId) => {
     const assigned = previous?.ownerId !== next.ownerId && recipientId === next.ownerId || !!next.designerId && previous?.designerId !== next.designerId && recipientId === next.designerId;
     const explicit = specification?.recipients.includes(recipientId);
     const achievement = action === "delivered";
@@ -158,7 +158,7 @@ export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: strin
   if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
 
   if (next.status === "quotations" && !next.needsQuotes && !next.quotations.length) next.status = "draft";
-  const result = commitIdea(data, actor, idea, next, "edited", requiresReapproval ? "عُدّل المحتوى المعتمد وأُعيد إلى المدير للاعتماد مع حفظ ملفات التنفيذ" : idea.status === "changes" ? "تم تنفيذ التعديلات المطلوبة وفق ملاحظات المدير" : "تم تحديث تفاصيل الفكرة", ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager").map((member) => member.id), type: "approval", title: "تعديل محتوى معتمد يحتاج مراجعتك", body: idea.title } : undefined); validateMediaData(result); return result;
+  const result = commitIdea(data, actor, idea, next, "edited", requiresReapproval ? "عُدّل المحتوى المعتمد وأُعيد إلى المدير للاعتماد مع حفظ ملفات التنفيذ" : idea.status === "changes" ? "تم تنفيذ التعديلات المطلوبة وفق ملاحظات المدير" : "تم تحديث تفاصيل الفكرة", ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager" || isAdministrator(member)).map((member) => member.id), type: "approval", title: "تعديل محتوى معتمد يحتاج مراجعتك", body: idea.title } : undefined); validateMediaData(result); return result;
 }
 export function submitMediaIdea(data: MediaData, actor: TeamMember, ideaId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea); approvalReady(idea);
@@ -189,12 +189,12 @@ export function scheduleMediaIdea(data: MediaData, actor: TeamMember, ideaId: st
 export function changeMediaDesignStatus(data: MediaData, actor: TeamMember, ideaId: string, status: "designing" | "design_review" | "delivered", ctx?: WorkflowContext): MediaData {
   ctx = { ...ctx, now: now(ctx) };
   const idea = findIdea(data, ideaId); assertDesign(data, actor, idea);
-  const permitted: Record<string, string[]> = { scheduled: ["designing"], designing: ["design_review"], design_review: ["designing", "delivered"] };
-  if (!permitted[idea.status]?.includes(status)) throw new WorkflowError("أكمل مراحل التنفيذ بالترتيب: الجدولة، التصميم، مراجعة التصميم، التسليم.", "INVALID_TRANSITION");
+  const permitted: Record<string, string[]> = { scheduled: ["designing"], designing: ["delivered"], design_review: ["designing", "delivered"] };
+  if (!permitted[idea.status]?.includes(status)) throw new WorkflowError("أكمل مراحل التنفيذ بالترتيب: الجدولة، التصميم، التسليم.", "INVALID_TRANSITION");
   if (status === "delivered" && missingDeliveryChannels(idea).length) throw new WorkflowError(`أرفق النسخة النهائية لكل قناة: ${missingDeliveryChannels(idea).map((channel) => CHANNEL_LABELS[channel]).join("، ")}.`, "MISSING_DELIVERABLES");
   const action: HistoryAction = status === "designing" ? "design_started" : status === "design_review" ? "design_review" : "delivered";
   const next = { ...idea, status, ...(status === "delivered" ? { deliveredAt: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now(ctx))) } : {}) };
-  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: status === "delivered" ? [idea.ownerId, idea.designerId, actor.id, ...data.members.filter((member) => member.role === "manager").map((member) => member.id)] : [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
+  return commitIdea(data, actor, idea, next, action, `تم تغيير حالة التصميم إلى ${STATUS_LABELS[status]}`, ctx, { recipients: status === "delivered" ? [idea.ownerId, idea.designerId, actor.id, ...data.members.filter((member) => member.role === "manager" || isAdministrator(member)).map((member) => member.id)] : [idea.ownerId], type: status === "delivered" ? "delivery" : "assignment", title: status === "delivered" ? "تم تسليم العمل" : "تحديث حالة التصميم", body: idea.title });
 }
 export function addMediaAttachments(data: MediaData, actor: TeamMember, ideaId: string, attachments: Attachment[], ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId);
@@ -213,8 +213,8 @@ export function removeMediaAttachment(data: MediaData, actor: TeamMember, ideaId
   if (idea.quotations.some((quote) => quote.attachmentId === attachmentId)) throw new WorkflowError("احذف عرض السعر المرتبط أولاً قبل إزالة المرفق.");
   const next: Idea = { ...idea, attachments: idea.attachments.filter((item) => item.id !== attachmentId) };
   const requiresDelivery = idea.status === "delivered" && file.kind === "final" && missingDeliveryChannels(next).length > 0;
-  if (requiresDelivery) { next.status = "design_review"; delete next.deliveredAt; }
-  return commitIdea(data, actor, idea, next, "attachment_removed", requiresDelivery ? `حُذف المخرج النهائي ${file.name} وأُعيد العمل إلى مراجعة التصميم لاستكمال نسخ النشر` : file.kind === "quotation" ? "تم حذف ملف عرض سعر" : `تم حذف المرفق: ${file.name}`, ctx, requiresDelivery ? { recipients: [idea.ownerId, idea.designerId], type: "assignment", title: "العمل يحتاج استكمال نسخة النشر", body: idea.title } : undefined);
+  if (requiresDelivery) { next.status = "designing"; delete next.deliveredAt; }
+  return commitIdea(data, actor, idea, next, "attachment_removed", requiresDelivery ? `حُذف المخرج النهائي ${file.name} وأُعيد العمل إلى التصميم لاستكمال نسخ النشر` : file.kind === "quotation" ? "تم حذف ملف عرض سعر" : `تم حذف المرفق: ${file.name}`, ctx, requiresDelivery ? { recipients: [idea.ownerId, idea.designerId], type: "assignment", title: "العمل يحتاج استكمال نسخة النشر", body: idea.title } : undefined);
 }
 export function addMediaQuotation(data: MediaData, actor: TeamMember, ideaId: string, quote: Quotation, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);
@@ -224,7 +224,7 @@ export function addMediaQuotation(data: MediaData, actor: TeamMember, ideaId: st
   const next: Idea = { ...idea, needsQuotes: true, status: idea.status === "draft" ? "quotations" : idea.status, quotations: [...idea.quotations.map((item) => quote.recommended ? { ...item, recommended: false } : item), quote] };
   const requiresReapproval = designStatuses.includes(idea.status) || idea.status === "delivered";
   if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
-  return commitIdea(data, actor, idea, next, "quotation_added", `أُضيف عرض سعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لاعتماد عرض السعر الجديد" : ""}`, ctx, { recipients: [idea.ownerId, ...(requiresReapproval ? data.members.filter((member) => member.role === "manager").map((member) => member.id) : [])], type: requiresReapproval ? "approval" : "quotation", title: requiresReapproval ? "عرض سعر جديد يحتاج اعتمادك" : "عرض سعر جديد للمراجعة", body: `${idea.title} · ${quote.vendor}` });
+  return commitIdea(data, actor, idea, next, "quotation_added", `أُضيف عرض سعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لاعتماد عرض السعر الجديد" : ""}`, ctx, { recipients: [idea.ownerId, ...(requiresReapproval ? data.members.filter((member) => member.role === "manager" || isAdministrator(member)).map((member) => member.id) : [])], type: requiresReapproval ? "approval" : "quotation", title: requiresReapproval ? "عرض سعر جديد يحتاج اعتمادك" : "عرض سعر جديد للمراجعة", body: `${idea.title} · ${quote.vendor}` });
 }
 export function removeMediaQuotation(data: MediaData, actor: TeamMember, ideaId: string, quotationId: string, ctx?: WorkflowContext): MediaData {
   const idea = findIdea(data, ideaId); assertEditable(data, actor, idea);
@@ -232,7 +232,7 @@ export function removeMediaQuotation(data: MediaData, actor: TeamMember, ideaId:
   const next: Idea = { ...idea, quotations: idea.quotations.filter((item) => item.id !== quotationId) };
   const requiresReapproval = designStatuses.includes(idea.status) || idea.status === "delivered";
   if (requiresReapproval) { next.status = "review"; delete next.approvedAt; delete next.deliveredAt; }
-  return commitIdea(data, actor, idea, next, "quotation_removed", `تم حذف عرض السعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لمراجعة عروض الأسعار" : ""}`, ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager").map((member) => member.id), type: "approval", title: "تغيير عروض الأسعار يحتاج اعتمادك", body: idea.title } : undefined);
+  return commitIdea(data, actor, idea, next, "quotation_removed", `تم حذف عرض السعر من ${quote.vendor}${requiresReapproval ? " وأُعيد العمل إلى المدير لمراجعة عروض الأسعار" : ""}`, ctx, requiresReapproval ? { recipients: data.members.filter((member) => member.role === "manager" || isAdministrator(member)).map((member) => member.id), type: "approval", title: "تغيير عروض الأسعار يحتاج اعتمادك", body: idea.title } : undefined);
 }
 const ownerStages: IdeaStatus[] = ["draft", "quotations", "review", "changes"];
 const finalStatuses: IdeaStatus[] = ["delivered", "cancelled", "rejected"];

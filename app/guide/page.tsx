@@ -15,7 +15,6 @@ const FLOW: IdeaStatus[] = [
   "approved",
   "scheduled",
   "designing",
-  "design_review",
   "delivered",
 ];
 

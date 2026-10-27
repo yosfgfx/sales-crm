@@ -70,7 +70,7 @@ export function greeting(date = new Date()) {
   return hour < 12 ? "صباح الخير" : "مساء الخير";
 }
 
-export const STAGES = [["draft", "quotations"], ["review", "changes"], ["approved", "scheduled"], ["designing"], ["design_review"], ["delivered"]];
+export const STAGES = [["draft", "quotations"], ["review", "changes"], ["approved", "scheduled"], ["designing", "design_review"], ["delivered"]];
 export const stageIndex = (idea: Idea) => Math.max(0, STAGES.findIndex((group) => group.includes(idea.status)));
 
 export function nextStep(idea: Idea, member: TeamMember) {
@@ -92,7 +92,7 @@ export function nextStep(idea: Idea, member: TeamMember) {
     case "design_review": {
       const missing = missingDeliveryChannels(idea);
       if (missing.length) return addressed(f, `ارفع النسخة النهائية لقناة ${CHANNEL_LABELS[missing[0]]} ليصبح العمل جاهزاً للتسليم.`, `ارفعي النسخة النهائية لقناة ${CHANNEL_LABELS[missing[0]]} ليصبح العمل جاهزاً للتسليم.`);
-      return idea.status === "designing" ? addressed(f, "كل النسخ جاهزة، أرسل العمل للمراجعة النهائية.", "كل النسخ جاهزة، أرسلي العمل للمراجعة النهائية.") : addressed(f, "كل النسخ جاهزة، سجّل التسليم النهائي.", "كل النسخ جاهزة، سجّلي التسليم النهائي.");
+      return addressed(f, "كل النسخ جاهزة، سجّل التسليم النهائي.", "كل النسخ جاهزة، سجّلي التسليم النهائي.");
     }
     default:
       return "";

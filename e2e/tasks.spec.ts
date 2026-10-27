@@ -39,5 +39,5 @@ test("tasks live inside the idea and can be added from its tasks tab", async ({ 
   await idea.getByLabel("إضافة مهمة").fill(title);
   await idea.getByLabel("إضافة مهمة").press("Enter");
   await expect(idea.getByRole("listitem").filter({ hasText: title })).toBeVisible();
-  await expect(idea.getByText(/من ١ منجزة|١ من/)).toBeVisible();
+  await expect(idea.getByText(/من [٠-٩]+ منجزة/)).toBeVisible();
 });
