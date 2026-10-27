@@ -7,9 +7,12 @@ import { ActionButton, errorText } from "./ui";
 import { Icon3D } from "./engagement/icons-3d";
 
 type Usage = { at: string; memberId: string | null; purpose: string; inputTokens: number; outputTokens: number; costUsd: number; ok: boolean; error: string | null };
+type ModelOption = { id: string; label: string; hint: string; input: number; output: number };
+type Status = AiStatus & { usage: Usage[]; models: ModelOption[] };
+const EFFORTS: [AiStatus["effort"], string, string][] = [["low", "منخفض", "أسرع وأرخص، ويكفي لتصنيف المهام"], ["medium", "متوسط", "تفكير أعمق في خطط الأفكار"], ["high", "عالٍ", "الأدق والأغلى"]];
 const PURPOSES: Record<string, string> = { parse_task: "فهم مهمة", plan_idea: "خطة فكرة", nudge: "تذكير صباحي" };
 
-async function fetchAiStatus(): Promise<AiStatus & { usage: Usage[] }> {
+async function fetchAiStatus(): Promise<Status> {
   const response = await fetch("/api/ai", { cache: "no-store" });
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || "تعذر تحميل الحالة.");
@@ -18,8 +21,9 @@ async function fetchAiStatus(): Promise<AiStatus & { usage: Usage[] }> {
 
 export default function AiSettings() {
   const members = useMediaStore((store) => store.data.members);
-  const [status, setStatus] = useState<(AiStatus & { usage: Usage[] }) | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [budget, setBudget] = useState("");
+  const [instructions, setInstructions] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -29,13 +33,14 @@ export default function AiSettings() {
         if (cancelled) return;
         setStatus(body);
         setBudget(String(body.budgetUsd));
+        setInstructions(body.instructions);
       })
       .catch((cause) => !cancelled && setError(errorText(cause)));
     return () => {
       cancelled = true;
     };
   }, []);
-  const save = async (patch: { enabled?: boolean; budgetUsd?: number }) => {
+  const save = async (patch: { enabled?: boolean; budgetUsd?: number; model?: string; effort?: string; instructions?: string }) => {
     setBusy(true);
     setError("");
     try {
@@ -90,11 +95,48 @@ export default function AiSettings() {
               <span className="mt-1 block text-xs font-normal text-[var(--soft)]">يتوقف الذكاء تلقائياً عند بلوغها حتى بداية الشهر التالي.</span>
             </label>
             <div className="rounded-xl bg-[var(--background)] p-4">
-              <span className="block text-xs text-[var(--soft)]">النموذج</span>
-              <bdi className="block font-mono text-sm">{status.model}</bdi>
+              <span className="block text-xs text-[var(--soft)]">الحالة</span>
+              <strong className="block">{status.enabled ? "مفعّل" : "متوقف"}</strong>
               <ActionButton className="mt-3" disabled={busy} onClick={() => void save({ enabled: !status.enabled })}>{status.enabled ? "إيقاف الميزات الذكية" : "تشغيل الميزات الذكية"}</ActionButton>
             </div>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset className="rounded-xl bg-[var(--background)] p-4">
+              <legend className="media-label">النموذج</legend>
+              <div className="space-y-2">
+                {status.models.map((model) => (
+                  <label key={model.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${status.model === model.id ? "border-[#a99beb] bg-[var(--accent)]" : "border-[var(--border)] bg-white"}`}>
+                    <input type="radio" name="ai-model" className="mt-1 accent-[var(--primary)]" checked={status.model === model.id} disabled={busy} onChange={() => void save({ model: model.id })} />
+                    <span>
+                      <span className="block font-medium">{model.label}</span>
+                      <span className="block text-xs text-[var(--soft)]">{model.hint} · ${model.input} / ${model.output} لكل مليون رمز (إدخال / إخراج)</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset className="rounded-xl bg-[var(--background)] p-4">
+              <legend className="media-label">جهد التفكير</legend>
+              <div className="space-y-2">
+                {EFFORTS.map(([id, label, hint]) => (
+                  <label key={id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${status.effort === id ? "border-[#a99beb] bg-[var(--accent)]" : "border-[var(--border)] bg-white"}`}>
+                    <input type="radio" name="ai-effort" className="mt-1 accent-[var(--primary)]" checked={status.effort === id} disabled={busy} onChange={() => void save({ effort: id })} />
+                    <span>
+                      <span className="block font-medium">{label}</span>
+                      <span className="block text-xs text-[var(--soft)]">{hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-[var(--soft)]">كل طلب يُسجَّل بتكلفته في الجدول أدناه، فجرّب الإعداد وراقب الفرق.</p>
+            </fieldset>
+          </div>
+          <label className="media-label block rounded-xl bg-[var(--background)] p-4">
+            تعليماتك للنموذج
+            <textarea className="media-input mt-2 min-h-28 resize-y text-sm" maxLength={6000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="مثال: أسند مهام الفيديو دائماً لعمر، واعتبر «رسالة الجمعة» عنواناً وليس موعداً، وفضّل المواعيد قبل الخميس." />
+            <span className="mt-1 block text-xs font-normal text-[var(--soft)]">تُرسل مع كل طلب إلى جانب وصف المنصة والفريق ومراحل العمل، وتُطبَّق على فهم المهام واقتراح الخطط والتذكيرات.</span>
+            <ActionButton className="mt-2" disabled={busy || instructions.trim() === status.instructions} onClick={() => void save({ instructions })}>حفظ التعليمات</ActionButton>
+          </label>
           <div>
             <h3 className="mb-2 text-sm font-bold">آخر الطلبات</h3>
             {status.usage.length === 0 ? (

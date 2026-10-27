@@ -154,4 +154,7 @@ test("smart tasks: natural text is parsed, visibility and permissions hold, remi
   const ai = require(path.join(h.root, "lib/server/ai.ts"));
   const status = await ai.aiStatus(h.database);
   assert.equal(status.configured, false); assert.equal(status.available, false); assert.equal(status.budgetUsd, 80);
+  assert.equal(status.model, "claude-sonnet-5-5"); assert.equal(status.effort, "low");
+  const brief = await ai.platformBrief(h.database, "اعتبر «رسالة الجمعة» عنواناً.");
+  assert.ok(/مواردكم/.test(brief) && /رسالة الجمعة/.test(brief) && /الأدوار/.test(brief));
 });

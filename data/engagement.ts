@@ -14,7 +14,7 @@ export interface TaskBoard { tasks: PersonalTask[]; updates: TaskUpdate[]; load:
 export const TASK_KIND_LABELS: Record<TaskKind, string> = { content: "محتوى", design: "تصميم", review: "مراجعة", coordination: "تنسيق", meeting: "اجتماع", personal: "شخصي", other: "عام" };
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = { todo: "لم تبدأ", doing: "جارية", done: "منجزة" };
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = { urgent: "عاجلة", high: "مهمة", normal: "عادية", low: "منخفضة" };
-export interface AiStatus { configured: boolean; enabled: boolean; budgetUsd: number; spentUsd: number; calls: number; model: string; available: boolean; reason?: string }
+export interface AiStatus { configured: boolean; enabled: boolean; budgetUsd: number; spentUsd: number; calls: number; model: string; effort: "low" | "medium" | "high"; instructions: string; available: boolean; reason?: string }
 export interface TaskSuggestion { title: string; kind: TaskKind; assigneeId: string | null; dueDate: string | null; priority: TaskPriority; sequence: number; reason: string }
 export interface WorkSession { id: string; memberId: string; ideaId: string | null; taskId: string | null; label: string; startedAt: string; endedAt: string | null; seconds: number | null }
 export interface MeetingItem { id: string; kind: "agenda" | "decision" | "action"; text: string; ideaId: string | null; assigneeId: string | null; taskId: string | null; done: boolean; sort: number; createdBy: string; createdAt: string }
