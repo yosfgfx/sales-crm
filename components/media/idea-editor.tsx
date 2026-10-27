@@ -10,7 +10,7 @@ import {
 } from "@/data/media";
 import { useMediaStore } from "@/stores/media-store";
 import { ActionButton, Icon, Modal, bytes, errorText, today } from "./ui";
-import { isAdministrator } from "@/lib/media-workflow";
+import { canOwnIdea } from "@/lib/media-workflow";
 import { RequestSection } from "./idea-editor/request-section";
 import { CoordinationSection } from "./idea-editor/coordination-section";
 import { QuotationsSection, saveQuotationDrafts, type QuotationDraft } from "./idea-editor/quotations-section";
@@ -47,8 +47,7 @@ export default function IdeaEditor({
     channels: idea?.channels || ["screens", "whatsapp", "email"],
     ownerId:
       idea?.ownerId ||
-      (store.currentUser?.role === "content" ||
-      isAdministrator(store.currentUser)
+      (canOwnIdea(store.currentUser)
         ? store.currentUser!.id
         : store.data.members.find((m) => m.role === "content")?.id) ||
       "",

@@ -111,7 +111,7 @@ test("admin uploads are allowed at an approved stage, while deleted work's files
 
 test("unfinished work restores with explicit replacement assignments when previous roles changed", async () => {
   await h.op("admin", { type: "deleteIdea", ideaId: created.id });
-  await h.pg.query("update wasl.members set role='designer' where id='sara'");
+  await h.pg.query("update wasl.members set role='manager' where id='sara'");
   await assert.rejects(h.op("admin", { type: "restoreIdea", ideaId: created.id }), (error) => error.status === 422 && error.code === "RESTORE_ASSIGNMENT_REQUIRED" && /حدد مسؤول محتوى/.test(error.message));
   const restored = await h.op("admin", { type: "restoreIdea", ideaId: created.id, ownerId: "noura" });
   assert.equal(restored.idea.ownerId, "noura"); assert.equal(restored.idea.status, "review"); assert.equal(restored.idea.deletedAt, undefined);

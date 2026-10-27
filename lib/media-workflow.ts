@@ -22,7 +22,9 @@ export function formatMediaDate(value?: string): string {
 }
 export function monthLabel(value: string): string { return new Intl.DateTimeFormat("ar-SA", { calendar: "gregory", month: "long", year: "numeric", timeZone: "Asia/Riyadh" }).format(new Date(`${value}-01T12:00:00Z`)); }
 export function isAdministrator(actor: Pick<TeamMember, "role"> | null | undefined): boolean { return actor?.role === "admin" || actor?.role === "superadmin"; }
-export function canEditIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && !idea.deletedAt && (isAdministrator(actor) || (editableStatuses.includes(idea.status) && actor.role === "content" && idea.ownerId === actor.id)); }
+/** Content writers and designers can both own and write ideas; administrators always can. */
+export function canOwnIdea(member: Pick<TeamMember, "role"> | null | undefined): boolean { return !!member && (isAdministrator(member) || member.role === "content" || member.role === "designer"); }
+export function canEditIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && !idea.deletedAt && (isAdministrator(actor) || (editableStatuses.includes(idea.status) && canOwnIdea(actor) && idea.ownerId === actor.id)); }
 export function canDesignIdea(idea: Idea, actor: TeamMember | null): boolean { return !!actor?.active && !idea.deletedAt && designStatuses.includes(idea.status) && (isAdministrator(actor) || (actor.role === "designer" && (!idea.designerId || idea.designerId === actor.id))); }
 export function missingDeliveryChannels(idea: Idea) { return idea.channels.filter((channel) => !idea.attachments.some((file) => file.kind === "final" && file.channel === channel)); }
 function requireActor(data: MediaData, actor: TeamMember) {
@@ -128,12 +130,12 @@ export function decideMediaIdeaEdit(data: MediaData, actor: TeamMember, ideaId: 
 }
 
 export function createMediaIdea(data: MediaData, actor: TeamMember, raw: NewIdeaInput, ctx?: WorkflowContext): MediaData {
-  requireRole(data, actor, ["admin", "content"]);
+  requireRole(data, actor, ["admin", "content", "designer"]);
   const input = normalizeCompanies(data, Object.fromEntries(patchKeys.filter((key) => raw?.[key] !== undefined || !["companyIds", "allCompanies"].includes(key)).map((key) => [key, raw?.[key]])) as NewIdeaInput);
   if (typeof input.title !== "string" || typeof input.requestedAt !== "string" || typeof input.ownerId !== "string") throw new WorkflowError("بيانات الفكرة غير مكتملة.");
   if (!isAdministrator(actor) && input.ownerId !== actor.id) throw new WorkflowError("يجب أن تكون أنت مسؤول الفكرة الجديدة.", "FORBIDDEN", 403);
   const owner = data.members.find((member) => member.id === input.ownerId && member.active);
-  if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً من فريق المحتوى والتنسيق.");
+  if (!owner || !canOwnIdea(owner)) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى أو التصميم.");
   if (!input.title.trim()) throw new WorkflowError("أدخل عنوان الفكرة.");
   const at = now(ctx), ideaId = id(ctx);
   const year = input.requestedAt.slice(0, 4) || riyadhToday().slice(0, 4);
@@ -147,7 +149,7 @@ export function patchMediaIdea(data: MediaData, actor: TeamMember, ideaId: strin
   if (!isAdministrator(actor) && patch.ownerId && patch.ownerId !== actor.id) throw new WorkflowError("تغيير مسؤول الفكرة متاح لمدير النظام.", "FORBIDDEN", 403);
   if (patch.ownerId !== undefined && patch.ownerId !== idea.ownerId) {
     const owner = data.members.find((member) => member.id === patch.ownerId && member.active);
-    if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى والتنسيق.");
+    if (!owner || !canOwnIdea(owner)) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى أو التصميم.");
   }
   patch = normalizeCompanies(data, patch, idea);
   const changed = (Object.keys(patch) as (keyof IdeaPatch)[]).filter((key) => JSON.stringify(patch[key] ?? (key === "companyIds" ? [] : key === "allCompanies" ? false : undefined)) !== JSON.stringify(idea[key] ?? (key === "companyIds" ? [] : key === "allCompanies" ? false : undefined)));
@@ -254,7 +256,7 @@ export function restoreMediaIdea(data: MediaData, actor: TeamMember, ideaId: str
   const notes: string[] = [];
   const assignmentError = () => { throw new WorkflowError("حدد مسؤول محتوى ومصممًا فعالين عند الاستعادة من إدارة النظام.", "RESTORE_ASSIGNMENT_REQUIRED", 422); };
   if (assignment?.ownerId !== undefined) {
-    const owner = data.members.find((member) => member.id === assignment.ownerId && member.active && (isAdministrator(member) || member.role === "content"));
+    const owner = data.members.find((member) => member.id === assignment.ownerId && member.active && canOwnIdea(member));
     if (!owner) assignmentError();
     restored.ownerId = owner!.id;
     if (owner!.id !== idea.ownerId) notes.push(`أُعيد إسناد المحتوى إلى ${owner!.name}`);
@@ -266,7 +268,7 @@ export function restoreMediaIdea(data: MediaData, actor: TeamMember, ideaId: str
     if (designer!.id !== idea.designerId) notes.push(`أُعيد إسناد التصميم إلى ${designer!.name}`);
   }
   if (!["delivered", "cancelled", "rejected"].includes(restored.status)) {
-    const owner = data.members.find((member) => member.id === restored.ownerId && member.active && (isAdministrator(member) || member.role === "content"));
+    const owner = data.members.find((member) => member.id === restored.ownerId && member.active && canOwnIdea(member));
     const designer = !restored.designerId || data.members.some((member) => member.id === restored.designerId && member.active && member.role === "designer");
     if (!owner || !designer || (["scheduled", "designing", "design_review"].includes(restored.status) && !restored.designerId)) assignmentError();
   }
@@ -302,7 +304,7 @@ export function reassignMediaIdea(data: MediaData, actor: TeamMember, ideaId: st
   const notes: string[] = [];
   if (input.ownerId !== undefined && input.ownerId !== idea.ownerId) {
     const owner = data.members.find((member) => member.id === input.ownerId && member.active);
-    if (!owner || !(isAdministrator(owner) || owner.role === "content")) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى والتنسيق.");
+    if (!owner || !canOwnIdea(owner)) throw new WorkflowError("اختر مسؤولاً فعالاً من فريق المحتوى أو التصميم.");
     next.ownerId = owner.id; notes.push(`المسؤول: ${owner.name}`);
   }
   if (input.designerId !== undefined && input.designerId !== idea.designerId) {
@@ -373,7 +375,7 @@ export function updateMediaMember(data: MediaData, actor: TeamMember, memberId: 
   if (member.id === "root" && (patch.role !== undefined || patch.active === false)) throw new WorkflowError("لا يمكن تغيير صلاحية حساب root أو تعطيله.", "ROOT_PROTECTED", 403);
   if ((patch.name !== undefined && !patch.name.trim()) || (patch.title !== undefined && !patch.title.trim())) throw new WorkflowError("اسم العضو ومسماه مطلوبان.");
   const updated = { ...member, ...patch, ...(patch.name ? { name: patch.name.trim(), initials: patch.name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join(" ") } : {}), ...(patch.title ? { title: patch.title.trim() } : {}) };
-  if (data.ideas.some((idea) => !idea.deletedAt && !["delivered", "cancelled", "rejected"].includes(idea.status) && ((idea.ownerId === memberId && (!updated.active || !(isAdministrator(updated) || updated.role === "content"))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
+  if (data.ideas.some((idea) => !idea.deletedAt && !["delivered", "cancelled", "rejected"].includes(idea.status) && ((idea.ownerId === memberId && (!updated.active || !canOwnIdea(updated))) || (idea.designerId === memberId && (!updated.active || updated.role !== "designer"))))) {
     throw new WorkflowError("أعد إسناد أفكار العضو ومهام التصميم المفتوحة قبل تعطيله أو تغيير صلاحيته. ستبقى أعماله المسلّمة منسوبة إليه.", "MEMBER_IN_USE", 409);
   }
   const result = { ...data, members: data.members.map((item) => item.id === memberId ? updated : item) }; validateMediaData(result); return result;
@@ -420,7 +422,7 @@ export function validateMediaData(value: unknown): asserts value is MediaData {
     if (!item.title || codes.has(item.code as string)) fail(); codes.add(item.code as string);
     if ((item.allCompanies !== undefined && typeof item.allCompanies !== "boolean") || (item.companyIds !== undefined && (!Array.isArray(item.companyIds) || item.companyIds.length > 50 || item.companyIds.some((companyId) => !companyIds.has(companyId as string))))) fail();
     if (!companyIds.has(item.companyId as string) || !categoryIds.has(item.categoryId as string) || !memberIds.has(item.ownerId as string) || (item.designerId && !memberIds.has(item.designerId as string))) fail();
-    if (!item.deletedAt && !["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && (isAdministrator(member) || member.role === "content")) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
+    if (!item.deletedAt && !["delivered", "cancelled", "rejected"].includes(item.status as string) && (!members.some((member) => member.id === item.ownerId && canOwnIdea(member)) || (item.designerId && !members.some((member) => member.id === item.designerId && member.role === "designer")))) fail();
     if (!hasEnumKey(item.workType, WORK_TYPE_LABELS) || !hasEnumKey(item.priority, PRIORITY_LABELS) || !hasEnumKey(item.status, STATUS_LABELS) || typeof item.needsQuotes !== "boolean") fail();
     if (!Array.isArray(item.channels) || !item.channels.length || item.channels.length > 3 || new Set(item.channels).size !== item.channels.length || item.channels.some((channel) => !hasEnumKey(channel, CHANNEL_LABELS))) fail();
     if (!validDate(item.requestedAt) || !validDate(item.dueDate) || item.dueDate < item.requestedAt || (!str(item.scheduledAt, 10) || (item.scheduledAt !== "" && !validDate(item.scheduledAt))) || (item.deliveredAt !== undefined && !validDate(item.deliveredAt)) || (item.approvedAt !== undefined && !dateTime(item.approvedAt)) || !dateTime(item.createdAt) || !dateTime(item.updatedAt)) fail();

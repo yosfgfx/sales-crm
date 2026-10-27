@@ -9,7 +9,7 @@ import Administration from "./administration";
 import Approvals from "./approvals";
 import Archive from "./archive";
 import { Reports } from "./reports";
-import { isAdministrator } from "@/lib/media-workflow";
+import { canOwnIdea, isAdministrator } from "@/lib/media-workflow";
 import {
   descriptions,
   matches,
@@ -120,8 +120,7 @@ export default function MediaWorkspace() {
     (n) => n.recipientId === currentUser?.id && !n.read,
   );
   const pending = data.ideas.filter((i) => i.status === "review").length;
-  const canCreate =
-    currentUser?.role === "content" || isAdministrator(currentUser);
+  const canCreate = canOwnIdea(currentUser);
   const containsDemoArtifacts = data.ideas.some((idea) =>
     idea.attachments.some((file) => file.id.startsWith("demo-")),
   );

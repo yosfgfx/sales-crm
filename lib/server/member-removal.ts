@@ -45,7 +45,7 @@ export async function removeMember(q: Queryable, actor: TeamMember, input: Remov
   const needsOwner = plan.openOwned + plan.meetingTasks + plan.upcomingMeetings > 0;
   const owner = needsOwner ? await activeMember(q, input.ownerReplacementId, "البديل الذي تُسند إليه الأعمال") : null;
   if (owner && owner.id === memberId) throw new MediaServerError("اختر عضواً آخر غير العضو المحذوف.", 422, "REPLACEMENT_REQUIRED");
-  if (owner && plan.openOwned && !["content", "admin", "superadmin"].includes(owner.role)) throw new MediaServerError("الأفكار المفتوحة تحتاج بديلاً من فريق المحتوى والتنسيق أو مدير نظام.", 422, "REPLACEMENT_ROLE");
+  if (owner && plan.openOwned && !["content", "designer", "admin", "superadmin"].includes(owner.role)) throw new MediaServerError("الأفكار المفتوحة تحتاج بديلاً من فريق المحتوى أو التصميم أو مدير نظام.", 422, "REPLACEMENT_ROLE");
   const designer = plan.openDesigned ? await activeMember(q, input.designerReplacementId, "المصمم البديل") : null;
   if (designer && (designer.id === memberId || designer.role !== "designer")) throw new MediaServerError("اختر مصمماً فعالاً آخر للأعمال التي في مرحلة التصميم.", 422, "REPLACEMENT_ROLE");
 

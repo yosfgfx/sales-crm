@@ -7,7 +7,7 @@ import {
   type Priority,
 } from "@/data/media";
 import type { MediaState } from "@/stores/media-store";
-import { isAdministrator } from "@/lib/media-workflow";
+import { canOwnIdea, isAdministrator } from "@/lib/media-workflow";
 
 type Update = <K extends keyof NewIdeaInput>(key: K, value: NewIdeaInput[K]) => void;
 
@@ -34,9 +34,7 @@ export function CoordinationSection({
           >
             {store.data.members
               .filter(
-                (m) =>
-                  (m.role === "content" || isAdministrator(m)) &&
-                  m.active,
+                (m) => canOwnIdea(m) && m.active,
               )
               .map((m) => (
                 <option key={m.id} value={m.id}>

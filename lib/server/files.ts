@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Attachment, TeamMember } from "@/data/media";
 import { isAdministrator, requireAdministrator, requireUser } from "./auth";
+import { canOwnIdea } from "@/lib/media-workflow";
 import { deleteBlob, putBlob, readBlob } from "./blob-store";
 import { database } from "./db";
 import { assertSameOrigin, limitedBody, MediaServerError, responseHeaders } from "./http";
@@ -38,7 +39,7 @@ export function assertUploadAllowed(actor: TeamMember, kind: string, idea: { sta
   if (!idea || idea.deletedAt) throw new MediaServerError("لم يتم العثور على الفكرة.", 404, "NOT_FOUND");
   if (kind === "final") {
     if ((!isAdministrator(actor) && !["scheduled", "designing", "design_review"].includes(idea.status)) || !channel || !idea.channels.includes(channel) || (!isAdministrator(actor) && (actor.role !== "designer" || idea.designerId !== actor.id))) throw new MediaServerError("إرفاق النسخ النهائية متاح للمصمم المكلّف بعد جدولة الفكرة، وللقنوات المطلوبة فقط.", 403, "FILE_PERMISSION");
-  } else if (!isAdministrator(actor) && (!["draft", "quotations", "changes"].includes(idea.status) || actor.role !== "content" || idea.ownerId !== actor.id)) {
+  } else if (!isAdministrator(actor) && (!["draft", "quotations", "changes"].includes(idea.status) || !canOwnIdea(actor) || idea.ownerId !== actor.id)) {
     throw new MediaServerError("إضافة مرفقات المحتوى متاحة لمسؤول الفكرة أثناء إعدادها أو تعديلها.", 403, "FILE_PERMISSION");
   }
 }

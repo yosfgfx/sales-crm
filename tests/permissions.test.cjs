@@ -35,7 +35,7 @@ const CASES = [
   { name: "change settings", allowed: ADMINS, op: () => ({ type: "updateSettings", patch: { departmentName: "إدارة التواصل الداخلي" } }) },
   { name: "reassign an idea", allowed: ADMINS, op: () => ({ type: "reassignIdea", ideaId: "idea-003", ownerId: "noura" }) },
   { name: "review an idea", allowed: [...ADMINS, "manager"], op: () => ({ type: "reviewIdea", ideaId: "idea-002", decision: "changes", feedback: "ملاحظة" }) },
-  { name: "create an idea", allowed: [...ADMINS, "noura"], op: (who) => ({ type: "createIdea", input: { title: `فكرة ${who}`, companyId: "mawaredcom", department: "التواصل", categoryId: "wellbeing", workType: "design", description: "", content: "", executionPlan: "", channels: ["screens"], ownerId: who, requestedAt: "2026-10-10", dueDate: "2026-10-20", priority: "normal", needsQuotes: false } }) },
+  { name: "create an idea", allowed: [...ADMINS, "noura", "faisal"], op: (who) => ({ type: "createIdea", input: { title: `فكرة ${who}`, companyId: "mawaredcom", department: "التواصل", categoryId: "wellbeing", workType: "design", description: "", content: "", executionPlan: "", channels: ["screens"], ownerId: who, requestedAt: "2026-10-10", dueDate: "2026-10-20", priority: "normal", needsQuotes: false } }) },
 ];
 
 for (const item of CASES.filter((entry) => !entry.skip)) {
