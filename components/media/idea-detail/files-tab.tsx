@@ -8,6 +8,17 @@ import ArchiveRepair from "../archive-repair";
 import AttachmentLink from "../attachment-link";
 import { ActionButton, Channels, Icon, bytes, formatDate } from "../ui";
 import { ARCHIVE_TEXT } from "./constants";
+import Asset from "@/components/_ui/asset";
+import { useAttachmentSrc } from "../use-attachment-src";
+
+function AttachmentThumb({ file }: { file: Attachment }) {
+  const src = useAttachmentSrc(file);
+  return (
+    <AttachmentLink file={file} label={`فتح الصورة ${file.name}`} className="relative block h-20 w-28 shrink-0 overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_var(--border)] transition-transform duration-300 ease-power3-out hover:scale-[1.03]">
+      {src ? <Asset type="image" width={7} height={5} fit="cover" sizes="112px" alt="" src={src} /> : <span className="flex h-full items-center justify-center text-[var(--soft)]"><Icon name="file" /></span>}
+    </AttachmentLink>
+  );
+}
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type Run = (action: () => Promise<unknown>, success: string) => Promise<void>;
@@ -79,9 +90,13 @@ export function FilesTab({
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[var(--background)] p-4"
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="rounded-lg bg-white p-2 text-[var(--primary)]">
-                <Icon name="file" />
-              </span>
+              {file.mime.startsWith("image/") ? (
+                <AttachmentThumb file={file} />
+              ) : (
+                <span className="rounded-lg bg-white p-2 text-[var(--primary)]">
+                  <Icon name="file" />
+                </span>
+              )}
               <div className="min-w-0">
                 <AttachmentLink
                   file={file}
